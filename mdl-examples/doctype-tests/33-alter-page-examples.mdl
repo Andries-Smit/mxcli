@@ -10,19 +10,21 @@
 -- after each step.
 --
 -- Operations covered:
---   AP01. SET page-level property (Title)
---   AP02. INSERT a widget into a container
---   AP03. INSERT a DataGrid2 with initial columns
---   AP04. INSERT an attribute column into a DataGrid2
---   AP05. INSERT a CUSTOM CONTENT COLUMN with action buttons
---   AP06. SET property on a DataGrid2 column
---   AP07. REPLACE a column
---   AP08. DROP a column
---   AP09. REPLACE a widget subtree
---   AP10. DROP a widget
---   AP11. ADD / DROP page variables
---   AP12. SET Layout (change page layout, auto-map placeholders)
---   AP13. ALTER SNIPPET — the same operations work on snippets
+--   AP01.  SET a widget property
+--   AP02.  INSERT a widget into a container
+--   AP03.  INSERT a DataGrid2 with initial columns
+--   AP04.  INSERT an attribute column into a DataGrid2
+--   AP05.  INSERT a CUSTOM CONTENT COLUMN with action buttons
+--   AP06.  SET property on a DataGrid2 column
+--   AP07.  REPLACE a column
+--   AP08.  DROP a column
+--   AP09.  REPLACE a widget subtree
+--   AP10.  DROP a widget
+--   AP11.  ADD / DROP page variables
+--   AP12.  SET Layout (change page layout, auto-map placeholders)
+--   AP12b. MULTI-OPERATION ALTER block (set + insert + drop in one block)
+--   AP12c. Cross-page bulk updates — pointer to UPDATE WIDGETS
+--   AP13.  ALTER SNIPPET — the same operations work on snippets
 --
 -- Naming note: this file avoids attribute names that are MDL reserved keywords
 -- (Description, Status, Actions, etc.) so dotted column refs parse cleanly.
@@ -327,6 +329,45 @@ alter page AlterPg.Product_Overview {
 alter page AlterPg.Product_Overview {
   set layout = Atlas_Core.Atlas_TopBar
 };
+
+-- MARK: AP12b — Multi-operation ALTER block
+
+-- ============================================================================
+-- AP12b: A single ALTER PAGE block can combine many operations on the same
+-- page. Operations are applied sequentially in order; later operations see
+-- the page state produced by earlier ones (e.g., you can SET on a widget
+-- you just INSERTed).
+--
+-- Use this for related changes that should be applied atomically — e.g.,
+-- renaming a column's caption, adding a sibling column, and removing an
+-- obsolete one in one go.
+-- ============================================================================
+
+alter page AlterPg.Product_Overview {
+  set caption = 'Product Name' on dgProducts.Name;
+  insert after dgProducts.Lifecycle {
+    column Sku (attribute: Name, caption: 'SKU')
+  };
+  drop widget dgProducts.Sku
+};
+
+-- MARK: AP12c — Bulk updates across multiple pages
+
+-- ============================================================================
+-- AP12c: ALTER PAGE targets a SINGLE page (or snippet). For bulk updates
+-- across many pages — e.g., "add Class='card' to every Container in the
+-- StyleTest module" — use UPDATE WIDGETS instead. UPDATE WIDGETS has its
+-- own WHERE / IN module / DRY RUN syntax. See 12-styling-examples.mdl for
+-- the full reference. Quick example:
+--
+--   update widgets
+--     set 'Class' = 'card'
+--     where widgettype like '%Container%'
+--     in AlterPg
+--     dry run;
+--
+-- (No-op here; this is a doc-only reference to the cross-page mechanism.)
+-- ============================================================================
 
 -- MARK: AP13 — ALTER SNIPPET
 
