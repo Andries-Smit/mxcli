@@ -110,37 +110,11 @@ func (pb *pageBuilder) buildDataGridV3(w *ast.WidgetV3) (*pages.CustomWidget, er
 	for _, child := range w.Children {
 		switch strings.ToLower(child.Type) {
 		case "column":
-			attr := child.GetAttribute()
-			if attr == "" && child.Name != "" && len(child.Children) == 0 {
-				attr = child.Name
+			col, err := pb.buildColumnSpecFromAST(child)
+			if err != nil {
+				return nil, err
 			}
-			col := backend.DataGridColumnSpec{
-				Attribute:  pb.resolveAttributePath(attr),
-				Caption:    child.GetCaption(),
-				Properties: child.Properties,
-			}
-			// Build child widgets; filter-type children go to the column filter slot
-			for _, grandchild := range child.Children {
-				if filterWidgetID := dataGridFilterWidgetID(grandchild.Type); filterWidgetID != "" {
-					fw, err := pb.widgetBackend.BuildFilterWidget(backend.FilterWidgetSpec{
-						WidgetID:   filterWidgetID,
-						FilterName: grandchild.Name,
-					}, pb.backend.Path())
-					if err != nil {
-						return nil, mdlerrors.NewBackend("build column filter widget", err)
-					}
-					col.FilterWidget = fw
-				} else {
-					childWidget, err := pb.buildWidgetV3(grandchild)
-					if err != nil {
-						return nil, mdlerrors.NewBackend("build column child widget", err)
-					}
-					if childWidget != nil {
-						col.ChildWidgets = append(col.ChildWidgets, childWidget)
-					}
-				}
-			}
-			columns = append(columns, col)
+			columns = append(columns, *col)
 		case "controlbar":
 			for _, controlBarChild := range child.Children {
 				childWidget, err := pb.buildWidgetV3(controlBarChild)
@@ -190,6 +164,42 @@ func (pb *pageBuilder) buildDataGridV3(w *ast.WidgetV3) (*pages.CustomWidget, er
 	}
 
 	return grid, nil
+}
+
+// buildColumnSpecFromAST converts a single AST column widget into a
+// DataGridColumnSpec. Filter-type grandchildren are routed to the column
+// filter slot; other grandchildren become ChildWidgets (custom content).
+func (pb *pageBuilder) buildColumnSpecFromAST(child *ast.WidgetV3) (*backend.DataGridColumnSpec, error) {
+	attr := child.GetAttribute()
+	if attr == "" && child.Name != "" && len(child.Children) == 0 {
+		attr = child.Name
+	}
+	col := backend.DataGridColumnSpec{
+		Attribute:  pb.resolveAttributePath(attr),
+		Caption:    child.GetCaption(),
+		Properties: child.Properties,
+	}
+	for _, grandchild := range child.Children {
+		if filterWidgetID := dataGridFilterWidgetID(grandchild.Type); filterWidgetID != "" {
+			fw, err := pb.widgetBackend.BuildFilterWidget(backend.FilterWidgetSpec{
+				WidgetID:   filterWidgetID,
+				FilterName: grandchild.Name,
+			}, pb.backend.Path())
+			if err != nil {
+				return nil, mdlerrors.NewBackend("build column filter widget", err)
+			}
+			col.FilterWidget = fw
+		} else {
+			childWidget, err := pb.buildWidgetV3(grandchild)
+			if err != nil {
+				return nil, mdlerrors.NewBackend("build column child widget", err)
+			}
+			if childWidget != nil {
+				col.ChildWidgets = append(col.ChildWidgets, childWidget)
+			}
+		}
+	}
+	return &col, nil
 }
 
 func (pb *pageBuilder) buildDataGridColumnV3(w *ast.WidgetV3) (*pages.DataGridColumn, error) {

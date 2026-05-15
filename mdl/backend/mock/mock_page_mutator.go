@@ -3,6 +3,8 @@
 package mock
 
 import (
+	"fmt"
+
 	"github.com/mendixlabs/mxcli/mdl/backend"
 	"github.com/mendixlabs/mxcli/model"
 	"github.com/mendixlabs/mxcli/sdk/pages"
@@ -22,6 +24,8 @@ type MockPageMutator struct {
 	InsertWidgetFunc         func(widgetRef string, columnRef string, position backend.InsertPosition, widgets []pages.Widget) error
 	DropWidgetFunc           func(refs []backend.WidgetRef) error
 	ReplaceWidgetFunc        func(widgetRef string, columnRef string, widgets []pages.Widget) error
+	InsertColumnsFunc        func(gridRef, afterColumnRef string, position backend.InsertPosition, columns []*backend.DataGridColumnSpec) error
+	ReplaceColumnFunc        func(gridRef, columnRef string, columns []*backend.DataGridColumnSpec) error
 	FindWidgetFunc           func(name string) bool
 	AddVariableFunc          func(name, dataType, defaultValue string) error
 	DropVariableFunc         func(name string) error
@@ -80,6 +84,20 @@ func (m *MockPageMutator) ReplaceWidget(widgetRef string, columnRef string, widg
 		return m.ReplaceWidgetFunc(widgetRef, columnRef, widgets)
 	}
 	return nil
+}
+
+func (m *MockPageMutator) InsertColumns(gridRef, afterColumnRef string, position backend.InsertPosition, columns []*backend.DataGridColumnSpec) error {
+	if m.InsertColumnsFunc != nil {
+		return m.InsertColumnsFunc(gridRef, afterColumnRef, position, columns)
+	}
+	return fmt.Errorf("MockBackend.InsertColumns not configured")
+}
+
+func (m *MockPageMutator) ReplaceColumn(gridRef, columnRef string, columns []*backend.DataGridColumnSpec) error {
+	if m.ReplaceColumnFunc != nil {
+		return m.ReplaceColumnFunc(gridRef, columnRef, columns)
+	}
+	return fmt.Errorf("MockBackend.ReplaceColumn not configured")
 }
 
 func (m *MockPageMutator) FindWidget(name string) bool {

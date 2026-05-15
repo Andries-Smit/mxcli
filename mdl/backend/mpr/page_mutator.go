@@ -195,6 +195,163 @@ func (m *mprPageMutator) ReplaceWidget(widgetRef string, columnRef string, widge
 	return nil
 }
 
+// InsertColumns inserts new DataGrid2 columns before/after an existing column.
+// Columns are serialized as CustomWidgets$WidgetObject (not as form widgets).
+func (m *mprPageMutator) InsertColumns(gridRef, afterColumnRef string, position backend.InsertPosition, columns []*backend.DataGridColumnSpec) error {
+	if afterColumnRef == "" {
+		return fmt.Errorf("InsertColumns requires a column reference")
+	}
+	result := findBsonColumn(m.rawData, gridRef, afterColumnRef, m.widgetFinder)
+	if result == nil {
+		return fmt.Errorf("column %q on widget %q not found", afterColumnRef, gridRef)
+	}
+	gridResult := m.widgetFinder(m.rawData, gridRef)
+	if gridResult == nil {
+		return fmt.Errorf("widget %q not found", gridRef)
+	}
+	columnsTypePointerID := findColumnsPropertyTypePointer(gridResult.widget)
+	if columnsTypePointerID == "" {
+		return fmt.Errorf("widget %q is not a DataGrid2 (no columns property)", gridRef)
+	}
+	columnObjectTypeID, columnPropertyIDs := extractColumnPropertyIDs(gridResult.widget, columnsTypePointerID)
+	if columnObjectTypeID == "" {
+		return fmt.Errorf("could not extract column type schema from %q", gridRef)
+	}
+	var newBsonColumns []any
+	for _, col := range columns {
+		colBson := m.backend.buildDataGrid2ColumnObject(col, columnObjectTypeID, columnPropertyIDs)
+		newBsonColumns = append(newBsonColumns, colBson)
+	}
+	insertIdx := result.index
+	if strings.EqualFold(string(position), "after") {
+		insertIdx = result.index + 1
+	}
+	newArr := make([]any, 0, len(result.parentArr)+len(newBsonColumns))
+	newArr = append(newArr, result.parentArr[:insertIdx]...)
+	newArr = append(newArr, newBsonColumns...)
+	newArr = append(newArr, result.parentArr[insertIdx:]...)
+	dSetArray(result.parentDoc, result.parentKey, newArr)
+	return nil
+}
+
+// ReplaceColumn replaces a single DataGrid2 column with new columns.
+// Columns are serialized as CustomWidgets$WidgetObject (not as form widgets).
+func (m *mprPageMutator) ReplaceColumn(gridRef, columnRef string, columns []*backend.DataGridColumnSpec) error {
+	if columnRef == "" {
+		return fmt.Errorf("ReplaceColumn requires a column reference")
+	}
+	result := findBsonColumn(m.rawData, gridRef, columnRef, m.widgetFinder)
+	if result == nil {
+		return fmt.Errorf("column %q on widget %q not found", columnRef, gridRef)
+	}
+	gridResult := m.widgetFinder(m.rawData, gridRef)
+	if gridResult == nil {
+		return fmt.Errorf("widget %q not found", gridRef)
+	}
+	columnsTypePointerID := findColumnsPropertyTypePointer(gridResult.widget)
+	if columnsTypePointerID == "" {
+		return fmt.Errorf("widget %q is not a DataGrid2 (no columns property)", gridRef)
+	}
+	columnObjectTypeID, columnPropertyIDs := extractColumnPropertyIDs(gridResult.widget, columnsTypePointerID)
+	if columnObjectTypeID == "" {
+		return fmt.Errorf("could not extract column type schema from %q", gridRef)
+	}
+	var newBsonColumns []any
+	for _, col := range columns {
+		colBson := m.backend.buildDataGrid2ColumnObject(col, columnObjectTypeID, columnPropertyIDs)
+		newBsonColumns = append(newBsonColumns, colBson)
+	}
+	newArr := make([]any, 0, len(result.parentArr)-1+len(newBsonColumns))
+	newArr = append(newArr, result.parentArr[:result.index]...)
+	newArr = append(newArr, newBsonColumns...)
+	newArr = append(newArr, result.parentArr[result.index+1:]...)
+	dSetArray(result.parentDoc, result.parentKey, newArr)
+	return nil
+}
+
+// findColumnsPropertyTypePointer locates the "columns" property's $ID in the
+// widget's Type.ObjectType.PropertyTypes array. Returns "" if not found.
+func findColumnsPropertyTypePointer(widgetDoc bson.D) string {
+	widgetType := dGetDoc(widgetDoc, "Type")
+	if widgetType == nil {
+		return ""
+	}
+	objType := dGetDoc(widgetType, "ObjectType")
+	if objType == nil {
+		return ""
+	}
+	for _, pt := range dGetArrayElements(dGet(objType, "PropertyTypes")) {
+		ptDoc, ok := pt.(bson.D)
+		if !ok {
+			continue
+		}
+		if dGetString(ptDoc, "PropertyKey") == "columns" {
+			return extractBinaryIDFromDoc(dGet(ptDoc, "$ID"))
+		}
+	}
+	return ""
+}
+
+// extractColumnPropertyIDs walks an existing CustomWidget's Type tree and
+// builds the pages.PropertyTypeIDEntry map for the column object type.
+// Returns the columnObjectTypeID and the per-column-property map (forward
+// direction; the reverse of buildColumnPropKeyMap).
+func extractColumnPropertyIDs(widgetDoc bson.D, columnsTypePointerID string) (objectTypeID string, propIDs map[string]pages.PropertyTypeIDEntry) {
+	propIDs = make(map[string]pages.PropertyTypeIDEntry)
+	widgetType := dGetDoc(widgetDoc, "Type")
+	if widgetType == nil {
+		return
+	}
+	objType := dGetDoc(widgetType, "ObjectType")
+	if objType == nil {
+		return
+	}
+	for _, pt := range dGetArrayElements(dGet(objType, "PropertyTypes")) {
+		ptDoc, ok := pt.(bson.D)
+		if !ok || extractBinaryIDFromDoc(dGet(ptDoc, "$ID")) != columnsTypePointerID {
+			continue
+		}
+		valType := dGetDoc(ptDoc, "ValueType")
+		if valType == nil {
+			return
+		}
+		colObjType := dGetDoc(valType, "ObjectType")
+		if colObjType == nil {
+			return
+		}
+		objectTypeID = extractBinaryIDFromDoc(dGet(colObjType, "$ID"))
+		for _, cpt := range dGetArrayElements(dGet(colObjType, "PropertyTypes")) {
+			cptDoc, ok := cpt.(bson.D)
+			if !ok {
+				continue
+			}
+			key := dGetString(cptDoc, "PropertyKey")
+			cid := extractBinaryIDFromDoc(dGet(cptDoc, "$ID"))
+			cvt := dGetDoc(cptDoc, "ValueType")
+			var vid, vtype, defVal string
+			if cvt != nil {
+				vid = extractBinaryIDFromDoc(dGet(cvt, "$ID"))
+				// The discriminator is the inner "Type" field on the
+				// CustomWidgets$WidgetValueType document, e.g. "Expression",
+				// "TextTemplate", "Widgets", "Enumeration", "Boolean".
+				vtype = dGetString(cvt, "Type")
+				defVal = dGetString(cvt, "DefaultValue")
+			}
+			if key == "" || cid == "" {
+				continue
+			}
+			propIDs[key] = pages.PropertyTypeIDEntry{
+				PropertyTypeID: cid,
+				ValueTypeID:    vid,
+				ValueType:      vtype,
+				DefaultValue:   defVal,
+			}
+		}
+		return
+	}
+	return
+}
+
 func (m *mprPageMutator) AddVariable(name, dataType, defaultValue string) error {
 	// Check for duplicate variable name
 	existingVars := dGetArrayElements(dGet(m.rawData, "Variables"))

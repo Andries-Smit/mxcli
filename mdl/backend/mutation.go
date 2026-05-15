@@ -96,6 +96,15 @@ type PageMutator interface {
 	// columnRef is "" for widget targeting.
 	ReplaceWidget(widgetRef string, columnRef string, widgets []pages.Widget) error
 
+	// InsertColumns inserts new DataGrid2 columns relative to an existing column.
+	// Used when the INSERT target is a column ref (e.g., `grid.colName`).
+	// Columns are serialized as CustomWidgets$WidgetObject, not as form widgets.
+	InsertColumns(gridRef string, afterColumnRef string, position InsertPosition, columns []*DataGridColumnSpec) error
+
+	// ReplaceColumn replaces a single DataGrid2 column with new columns.
+	// Columns are serialized as CustomWidgets$WidgetObject, not as form widgets.
+	ReplaceColumn(gridRef string, columnRef string, columns []*DataGridColumnSpec) error
+
 	// FindWidget checks if a widget with the given name exists in the tree.
 	FindWidget(name string) bool
 

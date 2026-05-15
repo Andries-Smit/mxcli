@@ -10,7 +10,6 @@ import (
 	"github.com/mendixlabs/mxcli/mdl/ast"
 	"github.com/mendixlabs/mxcli/mdl/backend"
 	mdlerrors "github.com/mendixlabs/mxcli/mdl/errors"
-	"github.com/mendixlabs/mxcli/mdl/linter"
 	"github.com/mendixlabs/mxcli/model"
 	"github.com/mendixlabs/mxcli/sdk/pages"
 )
@@ -181,6 +180,17 @@ func applyInsertWidgetMutator(ctx *ExecContext, mutator backend.PageMutator, op 
 	// Find entity context from enclosing DataView/DataGrid/ListView
 	entityCtx := mutator.EnclosingEntity(op.Target.Widget)
 
+	// Special path: inserting columns into a DataGrid2 column. Columns are
+	// CustomWidgets$WidgetObject, not Forms$* widgets, so we go through
+	// InsertColumns to serialize them correctly.
+	if op.Target.IsColumn() && allColumns(op.Widgets) {
+		specs, err := buildColumnSpecsFromAST(ctx, op.Widgets, moduleName, moduleID, entityCtx, mutator)
+		if err != nil {
+			return mdlerrors.NewBackend("build column specs", err)
+		}
+		return mutator.InsertColumns(op.Target.Widget, op.Target.Column, backend.InsertPosition(op.Position), specs)
+	}
+
 	// Build new widgets from AST
 	widgets, err := buildWidgetsFromAST(ctx, op.Widgets, moduleName, moduleID, entityCtx, mutator)
 	if err != nil {
@@ -217,6 +227,16 @@ func applyReplaceWidgetMutator(ctx *ExecContext, mutator backend.PageMutator, op
 	// Find entity context from enclosing DataView/DataGrid/ListView
 	entityCtx := mutator.EnclosingEntity(op.Target.Widget)
 
+	// Special path: replacing a DataGrid2 column with new columns. Columns are
+	// CustomWidgets$WidgetObject, not Forms$* widgets.
+	if op.Target.IsColumn() && allColumns(op.NewWidgets) {
+		specs, err := buildColumnSpecsFromAST(ctx, op.NewWidgets, moduleName, moduleID, entityCtx, mutator, op.Target.Widget, op.Target.Column)
+		if err != nil {
+			return mdlerrors.NewBackend("build replacement column specs", err)
+		}
+		return mutator.ReplaceColumn(op.Target.Widget, op.Target.Column, specs)
+	}
+
 	// Build new widgets from AST, excluding the target widget/column from the
 	// duplicate-name scope so a same-name replacement is allowed.
 	widgets, err := buildWidgetsFromAST(ctx, op.NewWidgets, moduleName, moduleID, entityCtx, mutator, op.Target.Widget, op.Target.Column)
@@ -225,6 +245,56 @@ func applyReplaceWidgetMutator(ctx *ExecContext, mutator backend.PageMutator, op
 	}
 
 	return mutator.ReplaceWidget(op.Target.Widget, op.Target.Column, widgets)
+}
+
+// allColumns returns true if all widgets in the slice have type "column".
+// Used to dispatch ALTER PAGE INSERT/REPLACE into a DataGrid2 column to the
+// column-specific mutator path.
+func allColumns(widgets []*ast.WidgetV3) bool {
+	if len(widgets) == 0 {
+		return false
+	}
+	for _, w := range widgets {
+		if !strings.EqualFold(w.Type, "column") {
+			return false
+		}
+	}
+	return true
+}
+
+// buildColumnSpecsFromAST converts AST column widgets to DataGridColumnSpec
+// instances using the executor's pageBuilder for attribute path resolution
+// and child widget construction.
+func buildColumnSpecsFromAST(ctx *ExecContext, widgets []*ast.WidgetV3, moduleName string, moduleID model.ID, entityContext string, mutator backend.PageMutator, excludeFromScope ...string) ([]*backend.DataGridColumnSpec, error) {
+	paramScope, paramEntityNames := mutator.ParamScope()
+	widgetScope := mutator.WidgetScope()
+	for _, name := range excludeFromScope {
+		delete(widgetScope, name)
+	}
+
+	pb := &pageBuilder{
+		backend:          ctx.Backend,
+		moduleID:         moduleID,
+		moduleName:       moduleName,
+		entityContext:    entityContext,
+		widgetScope:      widgetScope,
+		paramScope:       paramScope,
+		paramEntityNames: paramEntityNames,
+		execCache:        ctx.Cache,
+		fragments:        ctx.Fragments,
+		themeRegistry:    ctx.GetThemeRegistry(),
+		widgetBackend:    ctx.Backend,
+	}
+
+	var result []*backend.DataGridColumnSpec
+	for _, w := range widgets {
+		spec, err := pb.buildColumnSpecFromAST(w)
+		if err != nil {
+			return nil, mdlerrors.NewBackend("build column "+w.Name, err)
+		}
+		result = append(result, spec)
+	}
+	return result, nil
 }
 
 // ============================================================================
@@ -268,36 +338,4 @@ func buildWidgetsFromAST(ctx *ExecContext, widgets []*ast.WidgetV3, moduleName s
 		result = append(result, widget)
 	}
 	return result, nil
-}
-
-// ============================================================================
-// Static validation (used by mxcli check without project connection)
-// ============================================================================
-
-// ValidateAlterPage checks ALTER PAGE statements for patterns that produce
-// invalid BSON and crash MxBuild without a useful error message.
-func ValidateAlterPage(s *ast.AlterPageStmt) []linter.Violation {
-	var violations []linter.Violation
-	for _, op := range s.Operations {
-		insert, ok := op.(*ast.InsertWidgetOp)
-		if !ok {
-			continue
-		}
-		for _, w := range insert.Widgets {
-			if strings.EqualFold(w.Type, "column") && len(w.Children) > 0 {
-				violations = append(violations, linter.Violation{
-					RuleID:   "MDL-ALTPAGE001",
-					Severity: linter.SeverityError,
-					Message: fmt.Sprintf(
-						"ALTER PAGE INSERT: column '%s' has nested widgets — "+
-							"inserting a custom content column via ALTER PAGE produces invalid BSON "+
-							"and crashes MxBuild (InvalidCastException: DivContainer → WidgetObject). "+
-							"Use CREATE OR REPLACE PAGE to rebuild the page instead.",
-						w.Name,
-					),
-				})
-			}
-		}
-	}
-	return violations
 }

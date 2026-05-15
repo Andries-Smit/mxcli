@@ -396,66 +396,77 @@ func TestApplyReplaceWidgetMutator_SameNameAllowed(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// ValidateAlterPage static checks
+// INSERT custom content column — uses InsertColumns (not InsertWidget)
 // ---------------------------------------------------------------------------
 
-// TestValidateAlterPage_CustomContentColumnInsert ensures that inserting a
-// COLUMN with nested widgets (custom content column) is flagged before
-// execution — this pattern crashes MxBuild with InvalidCastException.
-func TestValidateAlterPage_CustomContentColumnInsert(t *testing.T) {
-	stmt := &ast.AlterPageStmt{
-		PageName: ast.QualifiedName{Module: "MyModule", Name: "TestPage"},
-		Operations: []ast.AlterPageOperation{
-			&ast.InsertWidgetOp{
-				Position: "AFTER",
-				Target:   ast.WidgetRef{Widget: "colName"},
-				Widgets: []*ast.WidgetV3{
-					{
-						Type: "column",
-						Name: "colActions",
-						Children: []*ast.WidgetV3{
-							{Type: "actionbutton", Name: "btnEdit"},
-						},
-					},
-				},
-			},
-		},
-	}
-	violations := ValidateAlterPage(stmt)
-	if len(violations) == 0 {
-		t.Fatal("expected a violation for custom content column INSERT, got none")
-	}
-	v := violations[0]
-	if v.RuleID != "MDL-ALTPAGE001" {
-		t.Errorf("expected rule MDL-ALTPAGE001, got %s", v.RuleID)
-	}
-	if !strings.Contains(v.Message, "colActions") {
-		t.Errorf("violation message should mention column name 'colActions': %s", v.Message)
-	}
-}
+// TestAlterPage_InsertCustomContentColumn verifies that INSERT BEFORE/AFTER a
+// column ref with a column body routes to InsertColumns (which serializes as
+// CustomWidgets$WidgetObject) rather than InsertWidget (which would emit
+// Forms$* widget BSON and crash MxBuild with InvalidCastException).
+func TestAlterPage_InsertCustomContentColumn(t *testing.T) {
+	insertColumnsCalled := false
+	insertWidgetCalled := false
 
-// TestValidateAlterPage_AttributeColumnInsert_OK ensures that inserting a
-// plain attribute column (no nested widgets) is not flagged.
-func TestValidateAlterPage_AttributeColumnInsert_OK(t *testing.T) {
-	stmt := &ast.AlterPageStmt{
-		PageName: ast.QualifiedName{Module: "MyModule", Name: "TestPage"},
-		Operations: []ast.AlterPageOperation{
-			&ast.InsertWidgetOp{
-				Position: "AFTER",
-				Target:   ast.WidgetRef{Widget: "colName"},
-				Widgets: []*ast.WidgetV3{
-					{
-						Type: "column",
-						Name: "colPrice",
-						Properties: map[string]any{"attribute": "Price", "caption": "Price"},
-						// No Children — this is a safe attribute column
-					},
+	mutator := &mock.MockPageMutator{
+		FindWidgetFunc: func(name string) bool { return false },
+		WidgetScopeFunc: func() map[string]model.ID {
+			return map[string]model.ID{"grid": model.ID("grid-id"), "colName": model.ID("col-id")}
+		},
+		ParamScopeFunc:      func() (map[string]model.ID, map[string]string) { return nil, nil },
+		EnclosingEntityFunc: func(widgetRef string) string { return "MyModule.Customer" },
+		InsertColumnsFunc: func(gridRef, afterColumnRef string, position backend.InsertPosition, columns []*backend.DataGridColumnSpec) error {
+			insertColumnsCalled = true
+			if gridRef != "grid" {
+				t.Errorf("expected gridRef 'grid', got %q", gridRef)
+			}
+			if afterColumnRef != "colName" {
+				t.Errorf("expected columnRef 'colName', got %q", afterColumnRef)
+			}
+			if !strings.EqualFold(string(position), "after") {
+				t.Errorf("expected position 'after', got %q", position)
+			}
+			if len(columns) != 1 {
+				t.Fatalf("expected 1 column, got %d", len(columns))
+			}
+			if len(columns[0].ChildWidgets) != 1 {
+				t.Errorf("expected 1 child widget, got %d", len(columns[0].ChildWidgets))
+			}
+			return nil
+		},
+		InsertWidgetFunc: func(widgetRef, columnRef string, position backend.InsertPosition, widgets []pages.Widget) error {
+			insertWidgetCalled = true
+			return nil
+		},
+	}
+
+	op := &ast.InsertWidgetOp{
+		Position: "AFTER",
+		Target:   ast.WidgetRef{Widget: "grid", Column: "colName"},
+		Widgets: []*ast.WidgetV3{
+			{
+				Type: "column",
+				Name: "colActions",
+				Children: []*ast.WidgetV3{
+					{Type: "actionbutton", Name: "btnEdit", Properties: map[string]any{"caption": "Edit"}},
 				},
 			},
 		},
 	}
-	violations := ValidateAlterPage(stmt)
-	if len(violations) != 0 {
-		t.Errorf("expected no violations for attribute column INSERT, got: %v", violations)
+
+	mb := &mock.MockBackend{
+		IsConnectedFunc: func() bool { return true },
+		ListModulesFunc: func() ([]*model.Module, error) { return nil, nil },
+	}
+	ctx, _ := newMockCtx(t, withBackend(mb))
+
+	err := applyInsertWidgetMutator(ctx, mutator, op, "MyModule", model.ID("mod-id"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !insertColumnsCalled {
+		t.Error("expected InsertColumns to be called for column INSERT")
+	}
+	if insertWidgetCalled {
+		t.Error("InsertWidget must NOT be called for column INSERT")
 	}
 }
