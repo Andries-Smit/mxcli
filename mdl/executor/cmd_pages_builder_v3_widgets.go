@@ -26,6 +26,24 @@ func (pb *pageBuilder) buildDataViewV3(w *ast.WidgetV3) (*pages.DataView, error)
 		},
 	}
 
+	if v := w.GetStringProp("FormOrientation"); v != "" {
+		switch strings.ToLower(v) {
+		case "vertical":
+			dv.FormOrientation = pages.FormOrientationVertical
+		case "horizontal":
+			dv.FormOrientation = pages.FormOrientationHorizontal
+		default:
+			return nil, mdlerrors.NewBackend("dataview FormOrientation", fmt.Errorf("invalid value %q (expected Horizontal or Vertical)", v))
+		}
+	}
+	if _, ok := w.Properties["LabelWidth"]; ok {
+		lw := w.GetIntProp("LabelWidth")
+		if lw < 0 || lw > 12 {
+			return nil, mdlerrors.NewBackend("dataview LabelWidth", fmt.Errorf("value %d out of range (expected 0..12)", lw))
+		}
+		dv.LabelWidth = &lw
+	}
+
 	// Handle DataSource
 	if ds := w.GetDataSource(); ds != nil {
 		dataSource, entityName, err := pb.buildDataSourceV3(ds)

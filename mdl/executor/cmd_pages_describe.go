@@ -544,6 +544,8 @@ type rawWidget struct {
 	EntityContext string
 	// Full widget ID (e.g. "com.mendix.widget.custom.switch.Switch")
 	WidgetID string
+	// DataView-only: LabelWidth read from BSON (-1 = not set, 0..12 = explicit)
+	LabelWidth int
 	// Pluggable Image widget properties
 	ImageUrl        string // Image URL (from textTemplate)
 	AlternativeText string // Alt text (from textTemplate)

@@ -1,0 +1,79 @@
+-- ============================================================================
+-- Bug test: issue #554 — DataView Form Orientation always Horizontal
+-- ============================================================================
+--
+-- Before the fix, `dataview ... (FormOrientation: Vertical)` was parsed by the
+-- grammar's generic-property branch but silently dropped: pages.DataView had
+-- no FormOrientation/LabelWidth fields, the V3 builder did not read either
+-- property, and the BSON writer hardcoded `LabelWidth: 3` (Horizontal).
+--
+-- Mendix stores Form Orientation as DataView.LabelWidth:
+--   LabelWidth = 0     -> Vertical (label above input)
+--   LabelWidth > 0     -> Horizontal (label beside input, takes N/12 of row)
+-- Default per metamodel is 3.
+--
+-- After the fix, MDL accepts both forms:
+--   FormOrientation: Vertical | Horizontal
+--   LabelWidth: <0..12>
+-- with LabelWidth winning when both are present.
+--
+-- To verify in Studio Pro:
+--   1. Run this script.
+--   2. Open Bug554.PageVertical — "Form Orientation" panel should show Vertical.
+--   3. Open Bug554.PageHorizontal — should show Horizontal.
+--   4. Open Bug554.PageLabelWidth5 — Horizontal, label width slider at 5.
+-- ============================================================================
+
+CREATE MODULE Bug554;
+
+CREATE PERSISTENT ENTITY Bug554.Customer (
+  Name: String(200)
+);
+
+CREATE OR REPLACE PAGE Bug554.PageVertical (
+  Title: 'Vertical form',
+  Layout: Atlas_Core.PopupLayout,
+  Params: { $Customer: Bug554.Customer }
+) {
+  layoutgrid lg {
+    row r {
+      column c (DesktopWidth: AutoFill) {
+        dataview dv (DataSource: $Customer, FormOrientation: Vertical) {
+          textbox tb (Label: 'Name', Attribute: Name)
+        }
+      }
+    }
+  }
+}
+
+CREATE OR REPLACE PAGE Bug554.PageHorizontal (
+  Title: 'Horizontal form',
+  Layout: Atlas_Core.PopupLayout,
+  Params: { $Customer: Bug554.Customer }
+) {
+  layoutgrid lg {
+    row r {
+      column c (DesktopWidth: AutoFill) {
+        dataview dv (DataSource: $Customer, FormOrientation: Horizontal) {
+          textbox tb (Label: 'Name', Attribute: Name)
+        }
+      }
+    }
+  }
+}
+
+CREATE OR REPLACE PAGE Bug554.PageLabelWidth5 (
+  Title: 'LabelWidth=5',
+  Layout: Atlas_Core.PopupLayout,
+  Params: { $Customer: Bug554.Customer }
+) {
+  layoutgrid lg {
+    row r {
+      column c (DesktopWidth: AutoFill) {
+        dataview dv (DataSource: $Customer, LabelWidth: 5) {
+          textbox tb (Label: 'Name', Attribute: Name)
+        }
+      }
+    }
+  }
+}

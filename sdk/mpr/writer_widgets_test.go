@@ -259,6 +259,36 @@ func TestSerializeTextBox(t *testing.T) {
 	}
 }
 
+func TestSerializeDataViewLabelWidth(t *testing.T) {
+	five := 5
+	zero := 0
+	cases := []struct {
+		name string
+		dv   *pages.DataView
+		want int64
+	}{
+		{"default is Horizontal=3", &pages.DataView{}, 3},
+		{"FormOrientation Vertical -> 0", &pages.DataView{FormOrientation: pages.FormOrientationVertical}, 0},
+		{"FormOrientation Horizontal -> 3", &pages.DataView{FormOrientation: pages.FormOrientationHorizontal}, 3},
+		{"explicit LabelWidth=5", &pages.DataView{LabelWidth: &five}, 5},
+		{"explicit LabelWidth=0 wins over Horizontal", &pages.DataView{LabelWidth: &zero, FormOrientation: pages.FormOrientationHorizontal}, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := serializeDataView(tc.dv)
+			var lw int64 = -1
+			for _, elem := range got {
+				if elem.Key == "LabelWidth" {
+					lw = elem.Value.(int64)
+				}
+			}
+			if lw != tc.want {
+				t.Errorf("LabelWidth = %d, want %d", lw, tc.want)
+			}
+		})
+	}
+}
+
 func TestSerializeRadioButtons(t *testing.T) {
 	rb := &pages.RadioButtons{
 		BaseWidget: pages.BaseWidget{

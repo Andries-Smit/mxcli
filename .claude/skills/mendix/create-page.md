@@ -480,6 +480,17 @@ dataview dataView1 (datasource: $Customer) {
 }
 ```
 
+**Form Orientation (label placement):** the DataView's Studio Pro "Form
+Orientation" radio is stored as `LabelWidth` in BSON. Specify either form in MDL:
+
+```sql
+dataview dv (datasource: $Customer, FormOrientation: Vertical)    -- label above
+dataview dv (datasource: $Customer, FormOrientation: Horizontal)  -- label beside (default, LabelWidth=3)
+dataview dv (datasource: $Customer, LabelWidth: 4)                -- explicit, 0..12 columns of 12
+```
+
+`LabelWidth: 0` ⇔ `FormOrientation: Vertical`. If both are given, `LabelWidth` wins.
+
 ### GALLERY Widget
 
 Display items in card layout with selection and responsive columns:

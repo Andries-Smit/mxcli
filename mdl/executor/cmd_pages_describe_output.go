@@ -315,6 +315,12 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 				props = append(props, fmt.Sprintf("DataSource: $%s", w.DataSource.Reference))
 			}
 		}
+		switch {
+		case w.LabelWidth == 0:
+			props = append(props, "FormOrientation: Vertical")
+		case w.LabelWidth > 0 && w.LabelWidth != 3:
+			props = append(props, fmt.Sprintf("LabelWidth: %d", w.LabelWidth))
+		}
 		props = appendAppearanceProps(props, w)
 		formatWidgetProps(ctx.Output, prefix, header, props, " {\n")
 		outputDataContainerContext(ctx.Output, prefix+"  ", w.Name, w.EntityContext, false)

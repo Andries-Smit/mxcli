@@ -418,6 +418,19 @@ func serializeTitle(t *pages.Title) bson.D {
 	return doc
 }
 
+// dataViewLabelWidth resolves the LabelWidth to write to BSON. LabelWidth wins
+// if explicitly set; otherwise FormOrientation is the source (Vertical -> 0,
+// Horizontal/unset -> Mendix's metamodel default of 3).
+func dataViewLabelWidth(dv *pages.DataView) int64 {
+	if dv.LabelWidth != nil {
+		return int64(*dv.LabelWidth)
+	}
+	if dv.FormOrientation == pages.FormOrientationVertical {
+		return 0
+	}
+	return 3
+}
+
 // serializeDataView serializes a DataView widget with all required properties.
 func serializeDataView(dv *pages.DataView) bson.D {
 	// Build NoEntityMessage as Texts$Text
@@ -464,7 +477,7 @@ func serializeDataView(dv *pages.DataView) bson.D {
 		{Key: "DataSource", Value: dataSource},
 		{Key: "Editability", Value: editability},
 		{Key: "FooterWidgets", Value: footerWidgets},
-		{Key: "LabelWidth", Value: int64(3)},
+		{Key: "LabelWidth", Value: dataViewLabelWidth(dv)},
 		{Key: "Name", Value: dv.Name},
 		{Key: "NoEntityMessage", Value: noEntityMessage},
 		{Key: "ReadOnlyStyle", Value: "Control"},

@@ -9,14 +9,26 @@ import (
 // DataView represents a data view widget.
 type DataView struct {
 	BaseWidget
-	DataSource      DataSource  `json:"dataSource,omitempty"`
-	Editable        bool        `json:"editable"`
-	ReadOnly        bool        `json:"readOnly,omitempty"`
-	ShowFooter      bool        `json:"showFooter"`
-	Widgets         []Widget    `json:"widgets,omitempty"`
-	FooterWidgets   []Widget    `json:"footerWidgets,omitempty"`
-	NoEntityMessage *model.Text `json:"noEntityMessage,omitempty"`
+	DataSource      DataSource      `json:"dataSource,omitempty"`
+	Editable        bool            `json:"editable"`
+	ReadOnly        bool            `json:"readOnly,omitempty"`
+	ShowFooter      bool            `json:"showFooter"`
+	Widgets         []Widget        `json:"widgets,omitempty"`
+	FooterWidgets   []Widget        `json:"footerWidgets,omitempty"`
+	NoEntityMessage *model.Text     `json:"noEntityMessage,omitempty"`
+	FormOrientation FormOrientation `json:"formOrientation,omitempty"`
+	LabelWidth      *int            `json:"labelWidth,omitempty"`
 }
+
+// FormOrientation controls label placement inside a DataView. Mendix
+// stores this as DataView.LabelWidth: 0 = Vertical (label above input),
+// >0 = Horizontal (label beside input, taking LabelWidth/12 of the row).
+type FormOrientation string
+
+const (
+	FormOrientationHorizontal FormOrientation = "Horizontal"
+	FormOrientationVertical   FormOrientation = "Vertical"
+)
 
 // ListView represents a list view widget.
 type ListView struct {

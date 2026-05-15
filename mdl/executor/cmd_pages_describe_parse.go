@@ -211,6 +211,7 @@ func parseRawWidget(ctx *ExecContext, w map[string]any, parentEntityContext ...s
 		} else if inheritedCtx != "" {
 			widget.EntityContext = inheritedCtx
 		}
+		widget.LabelWidth = extractDataViewLabelWidth(w)
 		widget.Children = parseDataViewChildren(ctx, w, widget.EntityContext)
 		return []rawWidget{widget}
 
@@ -548,6 +549,24 @@ func extractDataViewDataSource(ctx *ExecContext, w map[string]any) *rawDataSourc
 	}
 
 	return nil
+}
+
+// extractDataViewLabelWidth reads the DataView LabelWidth as an int. Returns
+// -1 when absent so callers can omit the property from output.
+func extractDataViewLabelWidth(w map[string]any) int {
+	v, ok := w["LabelWidth"]
+	if !ok {
+		return -1
+	}
+	switch n := v.(type) {
+	case int32:
+		return int(n)
+	case int64:
+		return int(n)
+	case int:
+		return n
+	}
+	return -1
 }
 
 // extractLabelText extracts the label text from an input widget.
