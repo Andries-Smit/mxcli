@@ -219,15 +219,15 @@ alter page AlterPg.Product_Overview {
 -- AP06: SET a property on a DataGrid2 column (caption, visibility, etc.)
 -- ============================================================================
 
--- Column property aliases use capitalized names (Caption, Alignment, Visible, …)
--- that match the schema PropertyKeys; see columnPropertyAliases in page_mutator.go.
+-- Column property names (caption, alignment, visible, sortable, …) are
+-- case-insensitive: caption and Caption both work.
 alter page AlterPg.Product_Overview {
-  set Caption = 'Name' on dgProducts.Name
+  set caption = 'Name' on dgProducts.Name
 };
 
 -- Multiple column properties in a single SET.
 alter page AlterPg.Product_Overview {
-  set (Caption = 'Cost', Alignment = right) on dgProducts.Price
+  set (caption = 'Cost', alignment = right) on dgProducts.Price
 };
 
 -- MARK: AP07 — REPLACE a column

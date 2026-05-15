@@ -71,6 +71,8 @@ set title = 'New Page Title'
 
 **Pluggable widget properties** use quoted names to set values in the widget's `Object.Properties[]`. Boolean values are stored as `"yes"`/`"no"` in BSON.
 
+**Column property names are case-insensitive** in MDL — `set caption = …` and `set Caption = …` both work. The internal BSON keys are dictated by the widget schema and stay case-sensitive on the storage side.
+
 > **Warning: Style on DYNAMICTEXT** — Setting `style` directly on a DYNAMICTEXT widget crashes MxBuild with a NullReferenceException. Wrap the DYNAMICTEXT in a CONTAINER and apply styling to the container instead:
 > ```sql
 > -- Wrong: crashes MxBuild

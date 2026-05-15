@@ -1489,6 +1489,9 @@ func collectWidgetScopeInChildren(wDoc bson.D, scope map[string]model.ID) {
 // ---------------------------------------------------------------------------
 
 // columnPropertyAliases maps user-facing property names to internal column property keys.
+// MDL lookup is case-insensitive (see columnPropertyAliasesCI below); the values
+// here are the BSON-internal PropertyKeys defined by the DataGrid2 widget schema
+// and must stay case-sensitive.
 var columnPropertyAliases = map[string]string{
 	"Caption":       "header",
 	"Attribute":     "attribute",
@@ -1506,8 +1509,18 @@ var columnPropertyAliases = map[string]string{
 	"Tooltip":       "tooltip",
 }
 
+// columnPropertyAliasesCI is a lowercase-keyed view of columnPropertyAliases
+// used for case-insensitive MDL lookup (set caption = … vs set Caption = …).
+var columnPropertyAliasesCI = func() map[string]string {
+	m := make(map[string]string, len(columnPropertyAliases))
+	for k, v := range columnPropertyAliases {
+		m[strings.ToLower(k)] = v
+	}
+	return m
+}()
+
 func setColumnPropertyMut(colDoc bson.D, propKeyMap map[string]string, propName string, value any) error {
-	internalKey := columnPropertyAliases[propName]
+	internalKey := columnPropertyAliasesCI[strings.ToLower(propName)]
 	if internalKey == "" {
 		internalKey = propName
 	}
@@ -1523,14 +1536,62 @@ func setColumnPropertyMut(colDoc bson.D, propKeyMap map[string]string, propName 
 		if propKey != internalKey {
 			continue
 		}
-		if valDoc := dGetDoc(propDoc, "Value"); valDoc != nil {
-			strVal := fmt.Sprintf("%v", value)
-			dSet(valDoc, "PrimitiveValue", strVal)
-			return nil
+		valDoc := dGetDoc(propDoc, "Value")
+		if valDoc == nil {
+			return fmt.Errorf("column property %q has no Value", propName)
 		}
-		return fmt.Errorf("column property %q has no Value", propName)
+		strVal := fmt.Sprintf("%v", value)
+		// TextTemplate-valued properties (header, tooltip) store the text inside
+		// a nested Forms$ClientTemplate → Texts$Text → Items[Translation].Text.
+		if textTemplate := dGetDoc(valDoc, "TextTemplate"); textTemplate != nil {
+			if updateClientTemplateText(textTemplate, strVal) {
+				return nil
+			}
+		}
+		// Primitive-valued properties (sortable, visible, alignment, etc.)
+		dSet(valDoc, "PrimitiveValue", strVal)
+		return nil
 	}
 	return fmt.Errorf("column property %q not found", propName)
+}
+
+// updateClientTemplateText replaces the Template.Items[*].Text of a
+// Forms$ClientTemplate. Returns true if a Translation entry was updated.
+// If no Translation exists, a new en_US one is appended.
+func updateClientTemplateText(clientTemplate bson.D, text string) bool {
+	template := dGetDoc(clientTemplate, "Template")
+	if template == nil {
+		return false
+	}
+	items := dGetArrayElements(dGet(template, "Items"))
+	updated := false
+	for _, item := range items {
+		itemDoc, ok := item.(bson.D)
+		if !ok {
+			continue
+		}
+		if dGetString(itemDoc, "$Type") == "Texts$Translation" {
+			dSet(itemDoc, "Text", text)
+			updated = true
+		}
+	}
+	if updated {
+		return true
+	}
+	// No existing Translation — append an en_US one.
+	newItem := bson.D{
+		{Key: "$ID", Value: bsonutil.NewIDBsonBinary()},
+		{Key: "$Type", Value: "Texts$Translation"},
+		{Key: "LanguageCode", Value: "en_US"},
+		{Key: "Text", Value: text},
+	}
+	newArr := bson.A{int32(3)}
+	for _, item := range items {
+		newArr = append(newArr, item)
+	}
+	newArr = append(newArr, newItem)
+	dSet(template, "Items", newArr)
+	return true
 }
 
 func applyPageLevelSetMut(rawData bson.D, prop string, value any) error {
