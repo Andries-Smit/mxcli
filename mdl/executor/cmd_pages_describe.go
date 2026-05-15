@@ -459,8 +459,8 @@ type rawSortColumn struct {
 
 // rawDataSource represents a data source for describe output.
 type rawDataSource struct {
-	Type            string          // "microflow", "nanoflow", "parameter", "database"
-	Reference       string          // Qualified name or parameter name
+	Type            string          // "microflow", "nanoflow", "parameter", "database", "selection"
+	Reference       string          // Qualified name, parameter name, or selection-source widget name
 	XPathConstraint string          // XPath constraint (WHERE clause)
 	SortColumns     []rawSortColumn // Multiple sort columns
 }

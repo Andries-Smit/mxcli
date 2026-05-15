@@ -1373,6 +1373,13 @@ create page PgTest.P019_Gallery_Simple
 
 /**
  * Classic master-detail layout.
+ *
+ * The gallery must use `Selection: Single` AND `ItemSelectionMode: toggle`
+ * — without `toggle`, Studio Pro rejects the DataView with:
+ *   "A data view cannot listen to the selection of a gallery 'customerList',
+ *    because it is not available here."
+ * (The default `clear` mode means clicking re-selects only; the DataView
+ * binding requires click-to-toggle so the selection is observable.)
  */
 create page PgTest.P020_Master_Detail
 (
@@ -1389,7 +1396,8 @@ create page PgTest.P020_Master_Detail
         dynamictext masterTitle (content: 'Customers: {1}',contentparams:[{1}='too many'], rendermode: H3)
         gallery customerList (
           datasource: database from PgTest.Customer sort by Name asc,
-          selection: single
+          selection: single,
+          ItemSelectionMode: toggle
         ) {
           template template1 {
             dynamictext custName (content: '{1}',contentparams:[{1}=Name], rendermode: H4)

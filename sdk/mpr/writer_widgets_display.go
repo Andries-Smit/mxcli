@@ -549,6 +549,7 @@ func serializeDataViewDataSource(ds pages.DataSource) any {
 		return bson.D{
 			{Key: "$ID", Value: idToBsonBinary(string(d.ID))},
 			{Key: "$Type", Value: "Forms$ListenTargetSource"},
+			{Key: "ForceFullObjects", Value: false},
 			{Key: "ListenTarget", Value: d.WidgetName},
 		}
 	case *pages.AssociationSource:

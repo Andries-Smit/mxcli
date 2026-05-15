@@ -22,7 +22,8 @@
     },
     {
       "propertyKey": "itemSelectionMode",
-      "value": "clear",
+      "source": "ItemSelectionMode",
+      "default": "clear",
       "operation": "primitive"
     },
     {

@@ -27,6 +27,7 @@ Built-in rules check for:
   - Unconfigured images (MPR005) - IMAGE widgets with no source configured
   - Empty containers (MPR006) - layout containers with no children
   - Navigation page security (MPR007) - pages in navigation need allowed roles
+  - Gallery selection listener (MPR009) - DataView 'DataSource: selection X' needs gallery 'ItemSelectionMode: toggle' (Studio Pro CE3637)
   - Entity access rules (SEC001) - persistent entities need access rules
   - Password policy (SEC002) - password minimum length should be 8+
   - Demo users (SEC003) - demo users should be off at Production security
@@ -131,6 +132,7 @@ Examples:
 		lint.AddRule(rules.NewValidationFeedbackRule())
 		lint.AddRule(rules.NewImageSourceRule())
 		lint.AddRule(rules.NewEmptyContainerRule())
+		lint.AddRule(rules.NewGallerySelectionListenerRule())
 		lint.AddRule(rules.NewPageNavigationSecurityRule())
 		lint.AddRule(rules.NewNoEntityAccessRulesRule())
 		lint.AddRule(rules.NewWeakPasswordPolicyRule())

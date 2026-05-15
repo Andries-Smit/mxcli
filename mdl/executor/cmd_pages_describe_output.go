@@ -313,6 +313,8 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 				props = append(props, fmt.Sprintf("DataSource: nanoflow %s", w.DataSource.Reference))
 			case "parameter":
 				props = append(props, fmt.Sprintf("DataSource: $%s", w.DataSource.Reference))
+			case "selection":
+				props = append(props, fmt.Sprintf("DataSource: selection %s", w.DataSource.Reference))
 			}
 		}
 		switch {

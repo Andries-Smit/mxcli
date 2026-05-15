@@ -546,6 +546,12 @@ func extractDataViewDataSource(ctx *ExecContext, w map[string]any) *rawDataSourc
 	case "Forms$DatabaseSource":
 		// Database/XPath source - for now just note it's a database source
 		return &rawDataSource{Type: "database", Reference: ""}
+	case "Forms$ListenTargetSource":
+		// Master-detail binding: DataView listens to a selection-aware container
+		// (Gallery/ListView/DataGrid) by widget name.
+		if target, ok := ds["ListenTarget"].(string); ok && target != "" {
+			return &rawDataSource{Type: "selection", Reference: target}
+		}
 	}
 
 	return nil
