@@ -110,6 +110,9 @@ func (pb *pageBuilder) buildPageV3(s *ast.CreatePageStmtV3) (*pages.Page, error)
 	}
 
 	// Build variables
+	if pb.localVariables == nil {
+		pb.localVariables = make(map[string]bool, len(s.Variables))
+	}
 	for _, v := range s.Variables {
 		localVar := &pages.LocalVariable{
 			BaseElement: model.BaseElement{
@@ -122,6 +125,7 @@ func (pb *pageBuilder) buildPageV3(s *ast.CreatePageStmtV3) (*pages.Page, error)
 			VariableType: mdlTypeToBsonType(v.DataType),
 		}
 		page.Variables = append(page.Variables, localVar)
+		pb.localVariables[v.Name] = true
 	}
 
 	// Build FormCallArgument for the main placeholder
@@ -219,6 +223,9 @@ func (pb *pageBuilder) buildSnippetV3(s *ast.CreateSnippetStmtV3) (*pages.Snippe
 	}
 
 	// Build variables
+	if pb.localVariables == nil {
+		pb.localVariables = make(map[string]bool, len(s.Variables))
+	}
 	for _, v := range s.Variables {
 		localVar := &pages.LocalVariable{
 			BaseElement: model.BaseElement{
@@ -231,6 +238,7 @@ func (pb *pageBuilder) buildSnippetV3(s *ast.CreateSnippetStmtV3) (*pages.Snippe
 			VariableType: mdlTypeToBsonType(v.DataType),
 		}
 		snippet.Variables = append(snippet.Variables, localVar)
+		pb.localVariables[v.Name] = true
 	}
 
 	// Build widgets (expanding fragments)
@@ -1291,6 +1299,17 @@ func (pb *pageBuilder) resolveTemplateAttributePath(attrRef string) string {
 func (pb *pageBuilder) resolveTemplateAttributePathFull(attrRef string, param *pages.ClientTemplateParameter) {
 	if attrRef == "" {
 		return
+	}
+
+	// Bare $localVar reference (no .attribute suffix) for a page-level local
+	// variable: emit as Forms$PageVariable.LocalVariable so Studio Pro doesn't
+	// interpret the literal "$localVar" as an entity attribute path.
+	if after, ok := strings.CutPrefix(attrRef, "$"); ok && !strings.Contains(after, ".") {
+		if pb.localVariables[after] {
+			param.SourceVariable = after
+			param.SourceVariableKind = "local"
+			return
+		}
 	}
 
 	// Check for $paramName.Attribute pattern where paramName is a page parameter

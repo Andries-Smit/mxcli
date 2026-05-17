@@ -49,6 +49,12 @@ type pageBuilder struct {
 
 	// Entity context for resolving short attribute names inside DataViews
 	entityContext string // Qualified entity name (e.g., "Module.Entity")
+
+	// Local page/snippet variables (Variables: { $name: Type = 'default' }).
+	// Used to distinguish a $localVar reference from a page parameter when
+	// resolving TextTemplate parameters — local variables must be stored as
+	// Forms$PageVariable.LocalVariable in BSON, not as a literal Expression.
+	localVariables map[string]bool
 }
 
 // initPluggableEngine lazily initializes the pluggable widget engine.

@@ -570,12 +570,26 @@ func extractTextTemplateParameters(ctx *ExecContext, textTemplate map[string]any
 			continue
 		}
 
-		// Check for SourceVariable (page/snippet parameter reference)
+		// Check for SourceVariable (page parameter / local variable / snippet parameter)
 		sourceVarName := ""
+		isLocalVariable := false
 		if srcVar, ok := pMap["SourceVariable"].(map[string]any); ok && srcVar != nil {
-			if paramName, ok := srcVar["PageParameter"].(string); ok && paramName != "" {
-				sourceVarName = paramName
+			// Local page-level variable — Studio Pro UI emits this form for
+			// $varName references that bind to a Variables entry.
+			if name, ok := srcVar["LocalVariable"].(string); ok && name != "" {
+				sourceVarName = name
+				isLocalVariable = true
+			} else if name, ok := srcVar["PageParameter"].(string); ok && name != "" {
+				sourceVarName = name
+			} else if name, ok := srcVar["SnippetParameter"].(string); ok && name != "" {
+				sourceVarName = name
 			}
+		}
+
+		// Local variable: emit as bare $varName (no .attribute suffix).
+		if isLocalVariable {
+			result = append(result, "$"+sourceVarName)
+			continue
 		}
 
 		// Check for AttributeRef

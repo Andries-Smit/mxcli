@@ -1036,13 +1036,42 @@ func serializeColumnClientTemplateParameter(param *pages.ClientTemplateParameter
 
 	var sourceVariable any
 	if param.SourceVariable != "" {
-		sourceVariable = bson.D{
+		// Studio Pro distinguishes between three Forms$PageVariable bindings:
+		//   - LocalVariable     → page-level Variables entry (Kind="local")
+		//   - SnippetParameter  → snippet parameter            (Kind="snippet")
+		//   - PageParameter     → page parameter               (Kind="" default)
+		// Emitting a $localVar reference as a literal Expression causes Studio
+		// Pro to interpret the value as an entity attribute path.
+		fields := bson.D{
 			{Key: "$ID", Value: bsonutil.NewIDBsonBinary()},
 			{Key: "$Type", Value: "Forms$PageVariable"},
-			{Key: "PageParameter", Value: param.SourceVariable},
-			{Key: "UseAllPages", Value: false},
-			{Key: "Widget", Value: ""},
 		}
+		switch param.SourceVariableKind {
+		case "local":
+			fields = append(fields,
+				bson.E{Key: "LocalVariable", Value: param.SourceVariable},
+				bson.E{Key: "PageParameter", Value: ""},
+				bson.E{Key: "SnippetParameter", Value: ""},
+			)
+		case "snippet":
+			fields = append(fields,
+				bson.E{Key: "LocalVariable", Value: ""},
+				bson.E{Key: "PageParameter", Value: ""},
+				bson.E{Key: "SnippetParameter", Value: param.SourceVariable},
+			)
+		default:
+			fields = append(fields,
+				bson.E{Key: "LocalVariable", Value: ""},
+				bson.E{Key: "PageParameter", Value: param.SourceVariable},
+				bson.E{Key: "SnippetParameter", Value: ""},
+			)
+		}
+		fields = append(fields,
+			bson.E{Key: "SubKey", Value: ""},
+			bson.E{Key: "UseAllPages", Value: false},
+			bson.E{Key: "Widget", Value: ""},
+		)
+		sourceVariable = fields
 	}
 
 	return bson.D{

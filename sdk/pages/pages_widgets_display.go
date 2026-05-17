@@ -42,10 +42,11 @@ type ClientTemplate struct {
 // Used to substitute values for placeholders like {1}, {2} in template text.
 type ClientTemplateParameter struct {
 	model.BaseElement
-	AttributeRef   string          `json:"attributeRef,omitempty"`   // Qualified attribute path like "Module.Entity.Attribute"
-	Expression     string          `json:"expression,omitempty"`     // Literal expression like "'Hello'"
-	SourceVariable string          `json:"sourceVariable,omitempty"` // Variable reference like "$Product" (page/snippet parameter)
-	FormattingInfo *FormattingInfo `json:"formattingInfo,omitempty"`
+	AttributeRef       string          `json:"attributeRef,omitempty"`       // Qualified attribute path like "Module.Entity.Attribute"
+	Expression         string          `json:"expression,omitempty"`         // Literal expression like "'Hello'"
+	SourceVariable     string          `json:"sourceVariable,omitempty"`     // Variable name (no $ prefix)
+	SourceVariableKind string          `json:"sourceVariableKind,omitempty"` // "" (default = page parameter), "local" (page-level Variables entry), or "snippet"
+	FormattingInfo     *FormattingInfo `json:"formattingInfo,omitempty"`
 }
 
 // DynamicText represents dynamic text based on an attribute.
