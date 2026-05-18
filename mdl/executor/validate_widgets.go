@@ -20,17 +20,12 @@ import (
 	"github.com/mendixlabs/mxcli/mdl/linter"
 )
 
-// universalWidgetProperties are AST keys that the visitor sets on every
-// widget regardless of type. Any widget definition implicitly accepts them
-// even though they don't appear in propertyMappings.
-var universalWidgetProperties = map[string]bool{
-	"widgettype":            true, // set by the pluggablewidget / customwidget grammar
-	"class":                 true, // Forms$Appearance.Class
-	"style":                 true, // Forms$Appearance.Style
-	"designproperties":      true, // Forms$Appearance.DesignProperties
-	"visible":               true,
-	"editable":              true,
-	"conditionalvisibility": true,
+// extraUniversalWidgetProperties are AST keys produced by the visitor that
+// aren't already covered by isBuiltinPropName (e.g. conditional-binding
+// metadata). The main allow-list is derived from isBuiltinPropName so the
+// validator stays in sync with whatever the widget engine actually accepts.
+var extraUniversalWidgetProperties = map[string]bool{
+	"conditionalvisibility":  true,
 	"conditionaleditability": true,
 }
 
@@ -122,6 +117,14 @@ func validatePluggableWidgetProperties(w *ast.WidgetV3, registry *WidgetRegistry
 
 	var out []linter.Violation
 	for key := range w.Properties {
+		// Builtin property names (Label, Class, Visible, DataSource, …) are
+		// MDL-recognized keywords that the widget engine routes via a
+		// dedicated path rather than via propertyMappings. Accept them
+		// universally so the validator doesn't false-positive on legitimate
+		// MDL idioms like `Label: 'X'` on widgets whose def.json omits it.
+		if isBuiltinPropName(key) {
+			continue
+		}
 		lower := strings.ToLower(key)
 		if allowed[lower] {
 			continue
@@ -186,7 +189,7 @@ func allowedWidgetProperties(def *WidgetDefinition) (map[string]bool, []string) 
 		}
 	}
 
-	for k := range universalWidgetProperties {
+	for k := range extraUniversalWidgetProperties {
 		allowed[k] = true
 	}
 
