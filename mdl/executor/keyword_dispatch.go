@@ -202,3 +202,71 @@ func ResolveKeyword(keyword, version string) (*KeywordResolution, bool) {
 		DeprecatedFrom: binding.DeprecatedFrom,
 	}, true
 }
+
+// =============================================================================
+// Legacy native-widget catalog (read-side)
+// =============================================================================
+//
+// LegacyWidget describes a native (Forms$*) widget that has been superseded by
+// a pluggable replacement. Consumed by mxcli check --post-migration to scan a
+// project's pages/snippets and report widgets that survived a Mendix upgrade
+// untouched (Studio Pro does not auto-migrate native stacks to pluggable).
+
+// LegacyWidget describes one deprecated native widget.
+type LegacyWidget struct {
+	// GoTypeName is the unqualified Go type name of the parsed widget struct
+	// in sdk/pages (e.g. "DataGrid"). The scanner matches this against
+	// reflect.TypeOf(w).Elem().Name() so we don't have to import pages here.
+	GoTypeName string
+	// BSONType is the corresponding BSON $Type, for diagnostic messages.
+	BSONType string
+	// DeprecatedFrom is the Mendix version (inclusive) at which the widget is
+	// no longer the recommended stack.
+	DeprecatedFrom string
+	// Replacement is the recommended replacement (pluggable widget ID or
+	// MDL keyword).
+	Replacement string
+	// Hint is a one-line user-facing message describing the recommended
+	// migration path.
+	Hint string
+}
+
+// LegacyWidgets is the editorial catalog of deprecated native widgets. Add new
+// entries as Mendix promotes more pluggable replacements (e.g. Forms$Gallery
+// → pluggable Gallery, Forms$DropDown → pluggable ComboBox, etc.).
+//
+// Only entries that can be detected via type-switching the parsed page widget
+// tree belong here. Pluggable-on-pluggable upgrades (e.g. DataGrid 2.x point
+// releases) are handled by widget-definition drift classification, not by
+// this catalog.
+var LegacyWidgets = []LegacyWidget{
+	{
+		GoTypeName:     "DataGrid",
+		BSONType:       "Forms$DataGrid",
+		DeprecatedFrom: "11.0.0",
+		Replacement:    "com.mendix.widget.web.datagrid.Datagrid",
+		Hint:           "migrate to pluggable Datagrid 2.x (`DATAGRID` keyword resolves to this on 11.0+)",
+	},
+}
+
+// FindLegacyWidget returns the catalog entry for the given Go type name, or
+// nil when the type isn't a known deprecated native widget. Matching is
+// case-sensitive — Go type names are stable.
+func FindLegacyWidget(goTypeName string) *LegacyWidget {
+	for i := range LegacyWidgets {
+		if LegacyWidgets[i].GoTypeName == goTypeName {
+			return &LegacyWidgets[i]
+		}
+	}
+	return nil
+}
+
+// IsDeprecatedOnVersion reports whether the legacy widget is deprecated at
+// the given project Mendix version. Empty version (unknown) returns true so
+// the scanner errs on the side of flagging.
+func (lw *LegacyWidget) IsDeprecatedOnVersion(version string) bool {
+	if version == "" || lw.DeprecatedFrom == "" {
+		return true
+	}
+	return compareVersion(version, lw.DeprecatedFrom) >= 0
+}

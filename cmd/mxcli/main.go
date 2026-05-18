@@ -252,6 +252,7 @@ func init() {
 	// Check command flags
 	checkCmd.Flags().BoolP("references", "r", false, "Validate references against the project")
 	checkCmd.Flags().String("format", "text", "Output format: text, json, sarif")
+	checkCmd.Flags().Bool("post-migration", false, "Scan the project for legacy native widgets that survived a Mendix upgrade (requires -p)")
 
 	// Diff command flags
 	diffCmd.Flags().StringP("format", "f", "unified", "Output format: unified, side, struct")

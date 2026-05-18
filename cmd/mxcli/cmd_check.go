@@ -29,12 +29,19 @@ for the module reference.
 
 Output includes structured rule IDs (MDL prefix) for each validation issue.
 
+Use --post-migration to scan an existing project (independent of the script)
+for legacy native widgets that have pluggable replacements — Studio Pro does
+not auto-migrate these on a Mendix major-version upgrade.
+
 Examples:
   # Check syntax only (no project needed)
   mxcli check script.mdl
 
   # Check syntax and validate references against a project
   mxcli check script.mdl -p app.mpr --references
+
+  # Scan the project for legacy native widgets after a Mendix upgrade
+  mxcli check script.mdl -p app.mpr --post-migration
 
   # Output as JSON or SARIF
   mxcli check script.mdl --format json
@@ -45,6 +52,7 @@ Examples:
 		filePath := args[0]
 		projectPath, _ := cmd.Flags().GetString("project")
 		checkRefs, _ := cmd.Flags().GetBool("references")
+		postMigration, _ := cmd.Flags().GetBool("post-migration")
 		format := resolveFormat(cmd, "text")
 		isStructured := format != "" && format != "text"
 
@@ -194,6 +202,39 @@ Examples:
 			}
 			if !isStructured {
 				fmt.Printf("✓ All references valid\n")
+			}
+		}
+
+		// Post-migration scan: walk the project for native widgets that
+		// have pluggable replacements (Studio Pro does not auto-migrate
+		// these on a Mendix major-version upgrade).
+		if postMigration {
+			if projectPath == "" {
+				fmt.Fprintln(os.Stderr, "Error: --project (-p) is required for --post-migration")
+				os.Exit(1)
+			}
+			if !isStructured {
+				fmt.Printf("\nScanning project for legacy native widgets: %s\n", projectPath)
+			}
+			legacyViolations, err := scanLegacyWidgets(projectPath)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error scanning project: %v\n", err)
+				os.Exit(1)
+			}
+			if isStructured {
+				formatter.Format(legacyViolations, os.Stderr)
+			} else if len(legacyViolations) > 0 {
+				fmt.Fprintln(os.Stderr)
+				formatter.Format(legacyViolations, os.Stderr)
+				fmt.Fprintf(os.Stderr, "\n✗ %d legacy widget(s) found\n", len(legacyViolations))
+			} else {
+				fmt.Printf("✓ No legacy native widgets found\n")
+			}
+			if len(legacyViolations) > 0 {
+				summary := linter.Summarize(legacyViolations)
+				if summary.Errors > 0 {
+					os.Exit(1)
+				}
 			}
 		}
 
