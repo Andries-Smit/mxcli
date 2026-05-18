@@ -121,6 +121,12 @@ Examples:
 		// Check for intra-script duplicate definitions (CREATE X … CREATE X without DROP)
 		violations = append(violations, executor.CheckScriptDuplicates(prog)...)
 
+		// Validate pluggable widget properties against widget definitions —
+		// catches typos in property keys before MxBuild does. Uses built-in
+		// definitions alone when no project is given; with --project, also
+		// loads project-installed .def.json files for full coverage.
+		violations = append(violations, executor.ValidateWidgetProperties(prog, projectPath)...)
+
 		if isStructured {
 			// Always emit structured output (even when clean)
 			formatter.Format(violations, os.Stderr)
