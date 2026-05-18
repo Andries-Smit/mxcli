@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -52,10 +53,15 @@ and generate skill documentation in .claude/skills/widgets/.
 
 This enables CREATE PAGE to use any project widget via the pluggable engine.
 
+Each run compares the generated content against any existing .def.json.
+Unchanged files are reported as "up to date"; content drift (e.g. when
+mxcli was upgraded and now emits additional fields like objectLists) is
+auto-refreshed without needing --force.
+
 Requires --project (-p) to locate the project's widgets/ directory.`,
 	Example: `  mxcli widget init -p /path/to/app.mpr
   mxcli widget init -p app.mpr
-  mxcli widget init -p app.mpr --force   # re-extract after upgrading mxcli`,
+  mxcli widget init -p app.mpr --force   # rewrite every .def.json even when content matches`,
 	RunE: runWidgetInit,
 }
 
@@ -73,7 +79,7 @@ func init() {
 	widgetExtractCmd.MarkFlagRequired("mpk")
 
 	widgetInitCmd.Flags().StringP("project", "p", "", "Path to .mpr project file")
-	widgetInitCmd.Flags().Bool("force", false, "Re-extract every .def.json even when one already exists (use after upgrading mxcli, when stale defs miss newer fields like objectLists)")
+	widgetInitCmd.Flags().Bool("force", false, "Rewrite every .def.json unconditionally (default auto-refreshes only when content drifts)")
 	widgetInitCmd.MarkFlagRequired("project")
 
 	widgetDocsCmd.Flags().StringP("project", "p", "", "Path to .mpr project file")
@@ -316,6 +322,16 @@ func operationForType(t string) string {
 func runWidgetInit(cmd *cobra.Command, args []string) error {
 	projectPath, _ := cmd.Flags().GetString("project")
 	force, _ := cmd.Flags().GetBool("force")
+	return ExtractWidgetDefinitions(projectPath, force, true)
+}
+
+// ExtractWidgetDefinitions scans `projectDir/widgets/` for .mpk files and
+// generates/refreshes `projectDir/.mxcli/widgets/<name>.def.json` for each.
+// Auto-refreshes definitions whose generated content has drifted (e.g. when
+// mxcli was upgraded and now emits additional fields like objectLists).
+// When `force` is true, every existing def.json is rewritten regardless.
+// When `verbose` is false, suppresses per-widget output but keeps the summary.
+func ExtractWidgetDefinitions(projectPath string, force bool, verbose bool) error {
 	projectDir := filepath.Dir(projectPath)
 	widgetsDir := filepath.Join(projectDir, "widgets")
 	outputDir := filepath.Join(projectDir, ".mxcli", "widgets")
@@ -329,7 +345,9 @@ func runWidgetInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to scan widgets directory: %w", err)
 	}
 	if len(matches) == 0 {
-		fmt.Println("No .mpk files found in widgets/ directory.")
+		if verbose {
+			fmt.Println("No .mpk files found in widgets/ directory.")
+		}
 		return nil
 	}
 
@@ -337,7 +355,7 @@ func runWidgetInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create output directory: %w", err)
 	}
 
-	var extracted, skipped int
+	var extracted, refreshed, upToDate, skipped int
 	for _, mpkPath := range matches {
 		mpkDef, err := mpk.ParseMPK(mpkPath)
 		if err != nil {
@@ -358,41 +376,63 @@ func runWidgetInit(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Skip if already exists on disk (unless --force was passed).
-		// --force is needed when older mxcli builds produced definitions
-		// missing fields the current build emits (e.g. objectLists for
-		// engine-routed widgets — see #548 / fixture 32).
-		if !force {
-			if _, err := os.Stat(outPath); err == nil {
-				skipped++
-				continue
-			}
-		}
-
+		// Generate fresh def.json content
 		defJSON := generateDefJSON(mpkDef, mdlName)
-		data, err := json.MarshalIndent(defJSON, "", "  ")
+		freshData, err := json.MarshalIndent(defJSON, "", "  ")
 		if err != nil {
 			log.Printf("warning: skipping %s: %v", mpkDef.ID, err)
 			skipped++
 			continue
 		}
-		data = append(data, '\n')
+		freshData = append(freshData, '\n')
 
-		if err := os.WriteFile(outPath, data, 0644); err != nil {
+		// Compare against existing — auto-refresh stale defs (those generated
+		// by an older mxcli build before fields like `objectLists` were
+		// emitted), report unchanged defs as "up to date". --force bypasses
+		// the comparison and rewrites unconditionally.
+		existingData, existsErr := os.ReadFile(outPath)
+		switch {
+		case existsErr != nil:
+			extracted++
+		case bytes.Equal(existingData, freshData):
+			if force {
+				refreshed++
+			} else {
+				upToDate++
+				continue
+			}
+		default:
+			refreshed++
+		}
+
+		if err := os.WriteFile(outPath, freshData, 0644); err != nil {
 			return fmt.Errorf("failed to write %s: %w", outPath, err)
 		}
-		kind := "custom"
-		if mpkDef.IsPluggable {
-			kind = "pluggable"
+		if verbose {
+			kind := "custom"
+			if mpkDef.IsPluggable {
+				kind = "pluggable"
+			}
+			marker := "+"
+			if existsErr == nil {
+				marker = "~"
+			}
+			fmt.Printf("  %s %-12s %-20s %s\n", marker, kind, mdlName, mpkDef.ID)
 		}
-		fmt.Printf("  %-12s %-20s %s\n", kind, mdlName, mpkDef.ID)
-		extracted++
 	}
 
-	fmt.Printf("\nExtracted: %d, Skipped: %d (existing or unparseable)\n", extracted, skipped)
+	if verbose {
+		fmt.Printf("\nExtracted: %d new, %d refreshed, %d up to date, %d skipped (built-in or unparseable)\n",
+			extracted, refreshed, upToDate, skipped)
+	} else if extracted > 0 || refreshed > 0 {
+		// Concise one-liner when called from another command
+		fmt.Printf("  Widget definitions: %d new, %d refreshed\n", extracted, refreshed)
+	}
 
 	// Also generate docs
-	fmt.Println("\nGenerating widget documentation...")
+	if verbose {
+		fmt.Println("\nGenerating widget documentation...")
+	}
 	return generateWidgetDocs(projectDir)
 }
 
