@@ -54,7 +54,8 @@ This enables CREATE PAGE to use any project widget via the pluggable engine.
 
 Requires --project (-p) to locate the project's widgets/ directory.`,
 	Example: `  mxcli widget init -p /path/to/app.mpr
-  mxcli widget init -p app.mpr`,
+  mxcli widget init -p app.mpr
+  mxcli widget init -p app.mpr --force   # re-extract after upgrading mxcli`,
 	RunE: runWidgetInit,
 }
 
@@ -72,6 +73,7 @@ func init() {
 	widgetExtractCmd.MarkFlagRequired("mpk")
 
 	widgetInitCmd.Flags().StringP("project", "p", "", "Path to .mpr project file")
+	widgetInitCmd.Flags().Bool("force", false, "Re-extract every .def.json even when one already exists (use after upgrading mxcli, when stale defs miss newer fields like objectLists)")
 	widgetInitCmd.MarkFlagRequired("project")
 
 	widgetDocsCmd.Flags().StringP("project", "p", "", "Path to .mpr project file")
@@ -313,6 +315,7 @@ func operationForType(t string) string {
 
 func runWidgetInit(cmd *cobra.Command, args []string) error {
 	projectPath, _ := cmd.Flags().GetString("project")
+	force, _ := cmd.Flags().GetBool("force")
 	projectDir := filepath.Dir(projectPath)
 	widgetsDir := filepath.Join(projectDir, "widgets")
 	outputDir := filepath.Join(projectDir, ".mxcli", "widgets")
@@ -355,10 +358,15 @@ func runWidgetInit(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Skip if already exists on disk
-		if _, err := os.Stat(outPath); err == nil {
-			skipped++
-			continue
+		// Skip if already exists on disk (unless --force was passed).
+		// --force is needed when older mxcli builds produced definitions
+		// missing fields the current build emits (e.g. objectLists for
+		// engine-routed widgets — see #548 / fixture 32).
+		if !force {
+			if _, err := os.Stat(outPath); err == nil {
+				skipped++
+				continue
+			}
 		}
 
 		defJSON := generateDefJSON(mpkDef, mdlName)
