@@ -15,11 +15,13 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mendixlabs/mxcli/cmd/mxcli/docker"
 	"github.com/mendixlabs/mxcli/mdl/ast"
@@ -101,6 +103,37 @@ type testEnv struct {
 	projectPath string // path to the copied MPR file
 }
 
+// robustRemoveAll wraps os.RemoveAll with retries and a chmod pass for files
+// the .NET runtime may briefly hold or leave read-only after `mx check` exits.
+// Without this, t.TempDir's auto-cleanup occasionally fails on CI with
+// ENOTEMPTY for the test root directory (e.g. `directory not empty` on
+// `/tmp/TestMxCheck_DoctypeScripts06b-soap-examples.mdl*/001/`).
+func robustRemoveAll(path string) {
+	for attempt := 0; attempt < 5; attempt++ {
+		if err := os.RemoveAll(path); err == nil || os.IsNotExist(err) {
+			return
+		}
+		// Walk the tree and add owner write bits — .NET sometimes drops
+		// these on cache files, which makes unlinkat fail with EACCES on
+		// the parent directory.
+		_ = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			info, infoErr := d.Info()
+			if infoErr != nil {
+				return nil
+			}
+			_ = os.Chmod(p, info.Mode()|0o200)
+			return nil
+		})
+		time.Sleep(time.Duration(50*(attempt+1)) * time.Millisecond)
+	}
+	// Last-resort: ignore residual files. t.TempDir's cleanup will retry
+	// once more; if it still fails the test marks itself failed and the
+	// CI log will tell us what's left.
+}
+
 // copyTestProject copies the shared source project to a temp directory and returns the MPR path.
 // The temp directory is automatically cleaned up when the test finishes.
 func copyTestProject(t *testing.T) string {
@@ -111,6 +144,15 @@ func copyTestProject(t *testing.T) string {
 	}
 
 	destDir := t.TempDir()
+
+	// Register a robust cleanup that runs *before* t.TempDir's built-in
+	// auto-cleanup (LIFO order). mx check writes .mendix-cache/ and a
+	// deployment/ tree containing files that the .NET runtime may hold
+	// briefly after process exit, causing t.TempDir's RemoveAll to fail
+	// with ENOTEMPTY on CI runners. Retry RemoveAll until the directory
+	// is gone (or we give up), then t.TempDir's cleanup sees an absent
+	// path and exits cleanly.
+	t.Cleanup(func() { robustRemoveAll(destDir) })
 
 	// Copy the MPR file
 	srcMPR := filepath.Join(sharedSourceProject, sharedSourceMPR)
