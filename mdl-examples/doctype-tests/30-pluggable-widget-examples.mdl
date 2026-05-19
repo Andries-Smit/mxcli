@@ -3,12 +3,15 @@
 -- Pluggable Widget Examples — PLUGGABLEWIDGET syntax
 -- ============================================================================
 --
--- Filename uses `.test.mdl` suffix so `make test-integration` skips it.
--- This file is a syntax reference, not a working executable script:
--- the pluggable widgets it uses (Badge, ProgressBar, Tooltip, Accordion,
--- Timeline, Maps, etc.) require their `.mpk` files in the project's
--- `widgets/` folder + `mxcli widget init` to be runnable. The integration
--- test creates a blank project that doesn't have those.
+-- Runs in CI via TestMxCheck_DoctypeScripts. The .mpk widgets ship with
+-- vanilla Mendix 11+; TestMain runs mxcli widget init on the shared source
+-- project so the .def.json files are present before per-test copies.
+--
+-- TODO(grammar): TRIGGER and MENUTRIGGER child-slot keywords are not yet
+-- in MDLPage.g4 widgetTypeV3 (alongside GROUP/MARKER/SERIES). Until they
+-- land, the Tooltip + PopupMenu trigger patterns cannot be expressed and
+-- those test cases (commented out below) are skipped. Track under v0.11+
+-- pluggable-widget grammar work.
 --
 -- Tests the PLUGGABLEWIDGET keyword that drives the def.json-based pluggable
 -- widget engine. These are distinct from the static DATAGRID/GALLERY/COMBOBOX/
@@ -96,14 +99,19 @@ create page PW.P_PW02_Properties (
   layoutgrid lg1 {
     row r1 {
       column c1 (desktopwidth: 12) {
-        -- Tooltip with all-primitive properties
-        pluggablewidget 'com.mendix.widget.web.tooltip.Tooltip' tooltip1 (
-          renderMethod: 'text',
-          textMessage: 'This is a tooltip',
-          tooltipPosition: 'top',
-          arrowPosition: 'none',
-          openOn: 'hover'
-        )
+        -- TODO(grammar): Tooltip requires its `TRIGGER` child slot to be
+        -- filled (CE0642). The slot keyword is not in the grammar yet,
+        -- so the widget is omitted here. The primitive-properties pattern
+        -- is still demonstrated by the VideoPlayer below.
+        --
+        -- pluggablewidget 'com.mendix.widget.web.tooltip.Tooltip' tooltip1 (
+        --   renderMethod: 'text',
+        --   textMessage: 'This is a tooltip',
+        --   tooltipPosition: 'top',
+        --   arrowPosition: 'none',
+        --   openOn: 'hover'
+        -- ) { trigger { actionbutton btnTip (caption: 'Hover', action: close_page) } }
+        dynamictext placeholder1 (content: 'Tooltip example pending TRIGGER keyword')
       }
     }
     row r2 {
@@ -342,6 +350,10 @@ create page PW.P_PW09_Nested (
 -- Test PW10: Inline trigger pattern — widget with child trigger content
 -- ============================================================================
 
+-- TODO(grammar): both widgets below require slot keywords not in
+-- MDLPage.g4 widgetTypeV3 yet: Tooltip needs `TRIGGER`, PopupMenu needs
+-- `MENUTRIGGER` (and at least one `ITEM`). When those keywords land, the
+-- commented blocks below should round-trip cleanly via describe + exec.
 create page PW.P_PW10_Trigger (
   title: 'PW10 Trigger',
   layout: Atlas_Core.Atlas_Default
@@ -349,26 +361,28 @@ create page PW.P_PW10_Trigger (
   layoutgrid lg1 {
     row r1 {
       column c1 (desktopwidth: 6) {
-        -- Tooltip wrapping a trigger button
-        pluggablewidget 'com.mendix.widget.web.tooltip.Tooltip' tooltipTrigger (
-          renderMethod: 'text',
-          textMessage: 'Click for more info',
-          tooltipPosition: 'bottom',
-          arrowPosition: 'center',
-          openOn: 'click'
-        ) {
-          container triggerWrap {
-            actionbutton btnTrigger (caption: 'More Info', action: close_page, buttonstyle: info)
-          }
-        }
+        -- pluggablewidget 'com.mendix.widget.web.tooltip.Tooltip' tooltipTrigger (
+        --   renderMethod: 'text',
+        --   textMessage: 'Click for more info',
+        --   tooltipPosition: 'bottom',
+        --   arrowPosition: 'center',
+        --   openOn: 'click'
+        -- ) {
+        --   trigger {
+        --     actionbutton btnTrigger (caption: 'More Info', action: close_page, buttonstyle: info)
+        --   }
+        -- }
+        dynamictext placeholderTip (content: 'Tooltip-trigger pattern pending TRIGGER keyword')
       }
       column c2 (desktopwidth: 6) {
-        -- PopupMenu wrapping a trigger button
-        pluggablewidget 'com.mendix.widget.web.popupmenu.PopupMenu' popupMenu1 {
-          container menuTrigger {
-            actionbutton btnMenu (caption: 'Open Menu', action: close_page, buttonstyle: default)
-          }
-        }
+        -- pluggablewidget 'com.mendix.widget.web.popupmenu.PopupMenu' popupMenu1 {
+        --   menutrigger {
+        --     actionbutton btnMenu (caption: 'Open Menu', action: close_page, buttonstyle: default)
+        --   }
+        --   item itemOpen (caption: 'Open', action: close_page)
+        --   item itemClose (caption: 'Close', action: close_page)
+        -- }
+        dynamictext placeholderMenu (content: 'PopupMenu pattern pending MENUTRIGGER keyword')
       }
     }
   }
