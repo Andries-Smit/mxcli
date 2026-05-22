@@ -1,8 +1,15 @@
 # Proposal: Normalize Catalog Tables
 
-**Status:** Draft
+**Status:** Implemented (2026-05-22, commits `31987c71` + `c6607446`, issue #576)
 **Date:** 2026-05-20
 **Author:** Generated with Claude Code
+
+## Outcome notes
+
+- Underlying-table suffix landed as `_data` (e.g. `entities_data`), matching the proposal.
+- Schema migration triggered by a new `CatalogSchemaVersion` key in `catalog_meta`; on mismatch every domain table/view/index is dropped and the cache-info keys (`MprPath`, `MprModTime`, `BuildMode`, …) are cleared so upstream `isCacheValid` triggers a rebuild instead of "loading" an empty cache.
+- FTS5 virtual tables (`strings`, `source`) are intentionally preserved across migrations — modernc.org/sqlite has trouble dropping them across reconnections and their schema is stable. They get repopulated by the next `REFRESH CATALOG`.
+- Open question on `objects` UNION view performance is still open — not benchmarked on a large fixture.
 
 ## Problem
 
