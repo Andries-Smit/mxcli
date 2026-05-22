@@ -366,6 +366,19 @@ func (c *Catalog) migrateIfSchemaMismatch() error {
 		}
 	}
 
+	// Clear cache-info metadata so upstream isCacheValid() (in mdl/executor)
+	// sees this as an unbuilt cache and triggers a rebuild on next access.
+	// Without this, the file still claims a valid MprPath / MprModTime /
+	// BuildMode and callers happily "load" an empty catalog.
+	for _, key := range []string{
+		MetaMprPath, MetaMprModTime, MetaMendixVersion,
+		MetaBuildMode, MetaBuildTime, MetaBuildDuration,
+	} {
+		if _, err := c.db.Exec(`DELETE FROM catalog_meta WHERE Key = ?`, key); err != nil {
+			return fmt.Errorf("clearing cache-info key %s: %w", key, err)
+		}
+	}
+
 	return nil
 }
 

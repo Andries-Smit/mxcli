@@ -484,17 +484,22 @@ func TestNormalizedViewsExposeSnapshotColumns(t *testing.T) {
 }
 
 // TestCatalogSchemaVersionForcesRebuild checks that opening a cache that was
-// written against an older schema version drops the old tables/views so the
-// next REFRESH CATALOG produces clean rows in the new shape.
+// written against an older schema version drops the old tables/views and also
+// clears the cache-info metadata so upstream isCacheValid() / GetCacheInfo()
+// callers don't mistake the empty cache for a valid one.
 func TestCatalogSchemaVersionForcesRebuild(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/cache.sqlite"
 
-	// Save a cache to disk with the current schema, then tamper with the
+	// Save a cache to disk with the current schema and realistic cache-info
+	// metadata (the kind that isCacheValid checks), then tamper with the
 	// stored schema version in-place to simulate an old cache.
 	cat, err := New()
 	if err != nil {
 		t.Fatalf("New: %v", err)
+	}
+	if err := cat.SetCacheInfo("/tmp/app.mpr", time.Unix(1700000000, 0), "11.8.0", "full", time.Second); err != nil {
+		t.Fatalf("SetCacheInfo: %v", err)
 	}
 	if _, err := cat.CatalogDB().Exec(
 		`INSERT INTO modules_data (Id, Name, QualifiedName, ProjectId, SnapshotId)
@@ -553,5 +558,101 @@ func TestCatalogSchemaVersionForcesRebuild(t *testing.T) {
 	}
 	if stored != CatalogSchemaVersion {
 		t.Errorf("schema version not bumped after migration: got %q, want %q", stored, CatalogSchemaVersion)
+	}
+
+	// Cache-info keys must be cleared so callers re-build instead of
+	// "loading" the now-empty cache. This is what mdl/executor's
+	// isCacheValid relies on to detect the wiped state.
+	info, err := cat2.GetCacheInfo()
+	if err != nil {
+		t.Fatalf("GetCacheInfo: %v", err)
+	}
+	if info.MprPath != "" {
+		t.Errorf("MprPath should be cleared after migration, got %q", info.MprPath)
+	}
+	if !info.MprModTime.IsZero() {
+		t.Errorf("MprModTime should be zero after migration, got %v", info.MprModTime)
+	}
+	if info.BuildMode != "" {
+		t.Errorf("BuildMode should be cleared after migration, got %q", info.BuildMode)
+	}
+	if !info.BuildTime.IsZero() {
+		t.Errorf("BuildTime should be zero after migration, got %v", info.BuildTime)
+	}
+}
+
+// TestPartialViewsExposeSnapshotColumns checks the two partial-denormalization
+// view helpers — viewWithSnapshotDateSource (used by rest_operations, etc.)
+// and viewWithProjectNameAndSnapshotDateSource (used by external_entities,
+// constants, etc.) — surface exactly the historical columns from their
+// pre-refactor shape, not more and not less.
+func TestPartialViewsExposeSnapshotColumns(t *testing.T) {
+	cat, err := New()
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer cat.Close()
+
+	_, err = cat.CatalogDB().Exec(`
+		INSERT INTO snapshots (SnapshotId, SnapshotName, ProjectId, ProjectName,
+			SnapshotDate, SnapshotSource, SourceBranch, SourceRevision)
+		VALUES ('snap-1', 'Initial', 'proj-1', 'MyApp',
+			'2026-05-22 10:00:00', 'GIT', 'main', 'abc123')`)
+	if err != nil {
+		t.Fatalf("seed snapshots: %v", err)
+	}
+
+	// viewWithSnapshotDateSource — business_events historically had only
+	// SnapshotDate + SnapshotSource (no ProjectName, no Source*).
+	_, err = cat.CatalogDB().Exec(`
+		INSERT INTO business_events_data (Id, ServiceId, ChannelName, MessageName,
+			ProjectId, SnapshotId)
+		VALUES ('ev-1', 'svc-1', 'ch', 'msg', 'proj-1', 'snap-1')`)
+	if err != nil {
+		t.Fatalf("seed business_events_data: %v", err)
+	}
+
+	row := cat.CatalogDB().QueryRow(
+		`SELECT SnapshotDate, SnapshotSource FROM business_events WHERE Id = 'ev-1'`)
+	var snapshotDate, snapshotSource string
+	if err := row.Scan(&snapshotDate, &snapshotSource); err != nil {
+		t.Fatalf("scan business_events view: %v", err)
+	}
+	if snapshotSource != "GIT" || snapshotDate == "" {
+		t.Errorf("business_events view did not expose snapshot columns: (%q, %q)", snapshotDate, snapshotSource)
+	}
+
+	// The pre-refactor business_events table did not have ProjectName or
+	// Source*. Confirm the view honors that — querying them should fail.
+	if _, err := cat.CatalogDB().Exec(`SELECT ProjectName FROM business_events`); err == nil {
+		t.Errorf("business_events view unexpectedly exposes ProjectName (drift from original schema)")
+	}
+	if _, err := cat.CatalogDB().Exec(`SELECT SourceBranch FROM business_events`); err == nil {
+		t.Errorf("business_events view unexpectedly exposes SourceBranch (drift from original schema)")
+	}
+
+	// viewWithProjectNameAndSnapshotDateSource — external_entities
+	// historically had ProjectName + SnapshotDate + SnapshotSource but no
+	// Source*.
+	_, err = cat.CatalogDB().Exec(`
+		INSERT INTO external_entities_data (Id, Name, ServiceName, ProjectId, SnapshotId)
+		VALUES ('ext-1', 'Customer', 'CRM', 'proj-1', 'snap-1')`)
+	if err != nil {
+		t.Fatalf("seed external_entities_data: %v", err)
+	}
+
+	row = cat.CatalogDB().QueryRow(
+		`SELECT ProjectName, SnapshotDate, SnapshotSource FROM external_entities WHERE Id = 'ext-1'`)
+	var projectName string
+	if err := row.Scan(&projectName, &snapshotDate, &snapshotSource); err != nil {
+		t.Fatalf("scan external_entities view: %v", err)
+	}
+	if projectName != "MyApp" || snapshotSource != "GIT" {
+		t.Errorf("external_entities view did not expose snapshot columns: (%q, %q, %q)",
+			projectName, snapshotDate, snapshotSource)
+	}
+
+	if _, err := cat.CatalogDB().Exec(`SELECT SourceBranch FROM external_entities`); err == nil {
+		t.Errorf("external_entities view unexpectedly exposes SourceBranch (drift from original schema)")
 	}
 }
