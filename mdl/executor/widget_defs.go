@@ -166,10 +166,7 @@ func GenerateDefJSON(mpkDef *mpk.WidgetDefinition, mdlName string) *WidgetDefini
 		}
 		switch p.Type {
 		case "widgets":
-			container := strings.ToUpper(p.Key)
-			if p.Key == "content" {
-				container = "TEMPLATE"
-			}
+			container := mdlContainerForWidgetSlot(mpkDef.ID, p.Key)
 			def.ChildSlots = append(def.ChildSlots, ChildSlotMapping{
 				PropertyKey:  p.Key,
 				MDLContainer: container,
@@ -219,6 +216,45 @@ func GenerateDefJSON(mpkDef *mpk.WidgetDefinition, mdlName string) *WidgetDefini
 	def.PropertyMappings = append(def.PropertyMappings, assocMappings...)
 
 	return def
+}
+
+// widgetSlotKeywordOverrides maps (widgetID, propertyKey) pairs to the MDL
+// keyword used in a widget body to fill that property. Most widgets[]-typed
+// properties use the uppercase property key as their MDL keyword; entries
+// here cover the cases where the keyword is a different conventional word.
+//
+// Background: a widget's .mpk declares property keys (e.g. filtersPlaceholder)
+// but not the MDL keyword users type for that slot. Studio Pro authors think
+// of `controlbar { ... }` (DataGrid) and `filter { ... }` (Gallery) rather
+// than `filtersplaceholder { ... }`. The keyword paths (datagrid_builder.go
+// etc.) encode this convention today; this table makes the same mapping
+// visible to the registry-driven engine.
+//
+// Keys are (widgetID, propertyKey). When v0.12.0 collapses the keyword paths
+// into the engine, this table is the single source of truth for the convention.
+var widgetSlotKeywordOverrides = map[string]map[string]string{
+	"com.mendix.widget.web.datagrid.Datagrid": {
+		"filtersPlaceholder": "CONTROLBAR",
+	},
+	"com.mendix.widget.web.gallery.Gallery": {
+		"filtersPlaceholder": "FILTER",
+	},
+}
+
+// mdlContainerForWidgetSlot returns the MDL keyword for a widgets-typed
+// property. Defaults to the uppercase property key; recognized special cases
+// override that default. Widget-specific entries in widgetSlotKeywordOverrides
+// win over the global `content` → `TEMPLATE` convention.
+func mdlContainerForWidgetSlot(widgetID, propertyKey string) string {
+	if widgetSpecific, ok := widgetSlotKeywordOverrides[widgetID]; ok {
+		if kw, ok := widgetSpecific[propertyKey]; ok {
+			return kw
+		}
+	}
+	if propertyKey == "content" {
+		return "TEMPLATE"
+	}
+	return strings.ToUpper(propertyKey)
 }
 
 // makeObjectListMapping converts an MPK object-list PropertyDef (e.g. Accordion

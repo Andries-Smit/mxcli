@@ -384,3 +384,62 @@ func TestGenerateDefJSON_ObjectListPrimitiveDefaults(t *testing.T) {
 		}
 	}
 }
+
+// TestMdlContainerForWidgetSlot covers the editorial override table that
+// maps (widgetID, propertyKey) pairs to the MDL keyword users type to fill
+// a widgets-typed property.
+//
+// The override exists because Studio Pro users (and the historical keyword
+// path) think of `controlbar { ... }` for DataGrid and `filter { ... }`
+// for Gallery, not `filtersplaceholder { ... }`. Without the override the
+// auto-derived keyword would be the uppercase property key, which doesn't
+// match the MDL grammar tokens.
+func TestMdlContainerForWidgetSlot(t *testing.T) {
+	tests := []struct {
+		name        string
+		widgetID    string
+		propertyKey string
+		want        string
+	}{
+		{
+			name:        "DataGrid filtersPlaceholder → CONTROLBAR",
+			widgetID:    "com.mendix.widget.web.datagrid.Datagrid",
+			propertyKey: "filtersPlaceholder",
+			want:        "CONTROLBAR",
+		},
+		{
+			name:        "Gallery filtersPlaceholder → FILTER",
+			widgetID:    "com.mendix.widget.web.gallery.Gallery",
+			propertyKey: "filtersPlaceholder",
+			want:        "FILTER",
+		},
+		{
+			name:        "content property → TEMPLATE (global convention)",
+			widgetID:    "com.example.AnyWidget",
+			propertyKey: "content",
+			want:        "TEMPLATE",
+		},
+		{
+			name:        "unmapped property → uppercase key",
+			widgetID:    "com.mendix.widget.web.datagrid.Datagrid",
+			propertyKey: "emptyPlaceholder",
+			want:        "EMPTYPLACEHOLDER",
+		},
+		{
+			name:        "unmapped widget, unmapped property → uppercase key",
+			widgetID:    "com.example.UnknownWidget",
+			propertyKey: "myslot",
+			want:        "MYSLOT",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mdlContainerForWidgetSlot(tc.widgetID, tc.propertyKey)
+			if got != tc.want {
+				t.Errorf("mdlContainerForWidgetSlot(%q, %q) = %q, want %q",
+					tc.widgetID, tc.propertyKey, got, tc.want)
+			}
+		})
+	}
+}
