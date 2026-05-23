@@ -432,7 +432,16 @@ func overlayItemValue(value bson.D, entry pages.PropertyTypeIDEntry, spec backen
 		// CE0463 on object-list items where the field is conditionally
 		// unset (e.g., Accordion headerText when HeaderRenderMode is custom).
 		if spec.TextTemplate != "" {
-			tmpl := createClientTemplateBSONWithParams(spec.TextTemplate, spec.EntityContext)
+			var tmpl bson.D
+			if len(spec.Parameters) > 0 {
+				// Caller resolved CaptionParams / ContentParams into
+				// ClientTemplateParameter[] — serialize them alongside the
+				// text. Mirrors the keyword path's
+				// buildClientTemplateWithTextAndParams output.
+				tmpl = buildClientTemplateWithTextAndParams(spec.TextTemplate, spec.Parameters)
+			} else {
+				tmpl = createClientTemplateBSONWithParams(spec.TextTemplate, spec.EntityContext)
+			}
 			value = setBSONField(value, "TextTemplate", tmpl)
 		}
 	case "datasource":

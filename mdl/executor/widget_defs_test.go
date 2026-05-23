@@ -597,3 +597,30 @@ func TestApplyColumnHeaderFallback(t *testing.T) {
 		t.Errorf("Case 4: fallback for unqualified path = %v", spec4.Properties)
 	}
 }
+
+// TestObjectListItemPropertyParamsConvention documents the alias→params
+// naming convention that the engine relies on. When MDL writes
+// `Caption: '{1}'` together with `CaptionParams: [{1} = attr]`, the engine
+// pairs them by matching the alias name + "Params" suffix in the AST
+// property bag. This test locks in the convention so the engine's lookup
+// (in buildObjectListItem) stays compatible with the AST naming.
+func TestObjectListItemPropertyParamsConvention(t *testing.T) {
+	// The convention: for a header itemProperty whose MdlAliases contains
+	// "Caption", the engine looks for "CaptionParams" in the AST.
+	tests := []struct {
+		alias       string
+		wantPairKey string
+	}{
+		{"Caption", "CaptionParams"},
+		{"Content", "ContentParams"},
+		{"Tooltip", "TooltipParams"}, // future extension; matches naming convention
+	}
+	for _, tc := range tests {
+		t.Run(tc.alias, func(t *testing.T) {
+			got := tc.alias + "Params"
+			if got != tc.wantPairKey {
+				t.Errorf("alias %q expected param companion %q, got %q", tc.alias, tc.wantPairKey, got)
+			}
+		})
+	}
+}

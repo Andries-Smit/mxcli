@@ -346,7 +346,8 @@ type ObjectListItemProperty struct {
 	TextTemplate  string
 	Expression    string
 	Action        pages.ClientAction
-	EntityContext string // for texttemplate operations needing param resolution
+	EntityContext string                            // for texttemplate operations needing param resolution
+	Parameters    []*pages.ClientTemplateParameter  // resolved CaptionParams / ContentParams for texttemplate operations
 }
 
 // DataGridColumnSpec carries pre-resolved column data for DataGrid2 construction.

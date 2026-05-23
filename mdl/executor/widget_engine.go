@@ -614,10 +614,14 @@ func (e *PluggableWidgetEngine) buildObjectListItem(mapping *ObjectListMapping, 
 	for _, ip := range mapping.ItemProperties {
 		// Property names in MDL are case-insensitive — find a match by lower-cased key.
 		// Try the schema name first, then fall back to MDL aliases (e.g. Caption → header).
+		// matchedAlias tracks which name actually hit, so we can find the matching
+		// `<name>Params` companion (e.g. Caption → CaptionParams).
 		raw, ok := lookupProperty(child.Properties, ip.PropertyKey)
+		matchedAlias := ip.PropertyKey
 		if !ok {
 			for _, alias := range ip.MdlAliases {
 				if raw, ok = lookupProperty(child.Properties, alias); ok {
+					matchedAlias = alias
 					break
 				}
 			}
@@ -651,6 +655,15 @@ func (e *PluggableWidgetEngine) buildObjectListItem(mapping *ObjectListMapping, 
 		case "texttemplate":
 			prop.TextTemplate = strVal
 			prop.EntityContext = e.pageBuilder.entityContext
+			// Look up the matching params companion in the AST. Convention:
+			// when MDL writes `Caption: '{1}'` it pairs with `CaptionParams:
+			// [{1} = attr]`. The companion key is the matched name (alias or
+			// schema name) + "Params".
+			if paramsRaw, ok := child.Properties[matchedAlias+"Params"]; ok {
+				if astParams, ok := paramsRaw.([]ast.ParamAssignmentV3); ok && len(astParams) > 0 {
+					prop.Parameters = e.pageBuilder.buildClientTemplateParams(astParams)
+				}
+			}
 		case "attribute":
 			if e.pageBuilder.entityContext != "" {
 				prop.AttributePath = e.pageBuilder.resolveAttributePath(strVal)
