@@ -2167,3 +2167,49 @@ func TestRenameModule_ObjectTypeIsLowercase(t *testing.T) {
 		t.Errorf("Expected new name NewMod, got %s", stmt.NewName)
 	}
 }
+
+func TestCreateEnumeration_DocCommentCarriedToAST(t *testing.T) {
+	input := `/**
+ * Priority levels for tasks.
+ */
+create enumeration DmTest.Priority (
+  LOW 'Low',
+  HIGH 'High'
+);`
+
+	prog, errs := Build(input)
+	if len(errs) > 0 {
+		t.Fatalf("Parse errors: %v", errs)
+	}
+	if len(prog.Statements) != 1 {
+		t.Fatalf("Expected 1 statement, got %d", len(prog.Statements))
+	}
+	stmt, ok := prog.Statements[0].(*ast.CreateEnumerationStmt)
+	if !ok {
+		t.Fatalf("Expected *ast.CreateEnumerationStmt, got %T", prog.Statements[0])
+	}
+	if stmt.Documentation != "Priority levels for tasks." {
+		t.Errorf("Documentation = %q, want %q — enum-level JavaDoc must reach the AST so the writer can persist it", stmt.Documentation, "Priority levels for tasks.")
+	}
+}
+
+func TestCreateOrReplaceEnumeration_FlagsCreateOrModify(t *testing.T) {
+	input := `create or replace enumeration DmTest.Priority (
+  LOW 'Low'
+);`
+
+	prog, errs := Build(input)
+	if len(errs) > 0 {
+		t.Fatalf("Parse errors: %v", errs)
+	}
+	if len(prog.Statements) != 1 {
+		t.Fatalf("Expected 1 statement, got %d", len(prog.Statements))
+	}
+	stmt, ok := prog.Statements[0].(*ast.CreateEnumerationStmt)
+	if !ok {
+		t.Fatalf("Expected *ast.CreateEnumerationStmt, got %T", prog.Statements[0])
+	}
+	if !stmt.CreateOrModify {
+		t.Error("CREATE OR REPLACE should set CreateOrModify=true so the executor takes the update path")
+	}
+}

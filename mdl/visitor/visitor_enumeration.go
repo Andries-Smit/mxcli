@@ -24,13 +24,14 @@ func (b *Builder) ExitCreateEnumerationStatement(ctx *parser.CreateEnumerationSt
 		}
 	}
 
-	// Check for CREATE OR MODIFY
+	// Check for CREATE OR MODIFY / CREATE OR REPLACE
 	createStmt := findParentCreateStatement(ctx)
 	if createStmt != nil {
-		if createStmt.OR() != nil && createStmt.MODIFY() != nil {
+		if createStmt.OR() != nil && (createStmt.MODIFY() != nil || createStmt.REPLACE() != nil) {
 			stmt.CreateOrModify = true
 		}
 	}
+	stmt.Documentation = findDocCommentText(ctx)
 
 	b.statements = append(b.statements, stmt)
 }

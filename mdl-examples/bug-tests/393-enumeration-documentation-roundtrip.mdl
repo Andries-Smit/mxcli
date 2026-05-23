@@ -1,0 +1,26 @@
+-- Issue #393 — DESCRIBE ENUMERATION drops documentation comments
+--
+-- Before the fix, the visitor never copied the doc-comment into
+-- CreateEnumerationStmt.Documentation, so the value never reached the BSON
+-- writer. Persisting roundtripped to an enum with empty Documentation, and
+-- DESCRIBE produced no /** */ block.
+--
+-- This script creates an enumeration with a doc-comment, then describes it.
+-- DESCRIBE output must contain the original JavaDoc text.
+--
+-- Per-value /** */ comments are accepted by the parser but intentionally not
+-- persisted: Mendix Studio Pro itself has no UI for documenting individual
+-- enum values.
+
+/**
+ * Priority levels for tasks.
+ */
+create or replace enumeration MyFirstModule.PriorityDoc (
+  LOW 'Low',
+  MEDIUM 'Medium',
+  HIGH 'High'
+);
+
+describe enumeration MyFirstModule.PriorityDoc;
+
+drop enumeration MyFirstModule.PriorityDoc;
