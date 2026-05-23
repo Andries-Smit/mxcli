@@ -1,24 +1,73 @@
--- Nanoflow examples — client-side flows
--- Nanoflows share microflow body syntax but restrict server-side actions.
+-- Nanoflow examples — representative real-world patterns.
+-- Patterns are distilled from the example projects:
+--   EnquiriesManagement, LatoProductInventory, Evora-FactoryManagement
+--
+-- Naming conventions used in those projects (kept here for familiarity):
+--   ACT_*  user-triggered action nanoflows (button onClick)
+--   DS_*   data source nanoflows for page data sources
+--   SUB_*  reusable sub-nanoflows called from other (nano)flows
+--   OCh_*  on-change nanoflows wired to widget onChange events
+--   VAL_*  validation nanoflows returning Boolean
+--
+-- /** ... */ doc-comments on a nanoflow are persisted as the nanoflow's
+-- Documentation in the .mpr. Plain `-- ...` comments are stripped at parse time.
 
+-- ============================================================
 -- Setup
+-- ============================================================
 create module NanoflowExamples;
+
 create entity NanoflowExamples.Product (
     Name : String(200),
     Price : Decimal,
-    IsValid : Boolean
+    IsValid : Boolean,
+    Featured : Boolean
 );
 
--- Minimal nanoflow (empty body)
+create entity NanoflowExamples.ProductImage (
+    Caption : String(200)
+);
+create association NanoflowExamples.ProductImage_Product
+    from NanoflowExamples.ProductImage
+    to NanoflowExamples.Product;
+
+create entity NanoflowExamples.Notification (
+    Message : String(500),
+    Displayed : Boolean
+);
+
+create non-persistent entity NanoflowExamples.LoginContext (
+    Username : String(200),
+    Password : String(200),
+    ValidationMessage : String(500)
+);
+
+-- ============================================================
+-- Pattern 1: Empty nanoflow (placeholder)
+-- ============================================================
+
+/** Placeholder nanoflow. Useful as the initial onClick target of a new button
+ *  until the real implementation is written. Renaming it later updates every
+ *  widget reference automatically.
+ */
 create nanoflow NanoflowExamples.NF_Empty () begin end;
 
--- Nanoflow with parameters and return type
-create nanoflow NanoflowExamples.NF_ValidateProduct
+-- ============================================================
+-- Pattern 2: VAL_ validation nanoflow (returns Boolean)
+-- Source: FeedbackModule.VAL_Feedback in the example projects.
+-- ============================================================
+
+/** Validate a Product and surface validation messages on the form.
+ *  Returns false when any field is invalid; true when all pass.
+ *  The caller decides whether to abort or proceed — VAL_ nanoflows are
+ *  side-effect-free apart from the validation feedback they emit.
+ */
+create nanoflow NanoflowExamples.VAL_Product
     ($Product : NanoflowExamples.Product)
     returns Boolean
     folder 'Validation'
 begin
-    if $Product/Name = '' then
+    if $Product/Name = '' or $Product/Name = empty then
         validation feedback $Product/Name message 'Name is required';
         return false;
     end if;
@@ -29,21 +78,195 @@ begin
     return true;
 end;
 
--- Nanoflow calling another nanoflow
-create nanoflow NanoflowExamples.NF_SaveProduct
+-- ============================================================
+-- Pattern 3: ACT_ submit pattern (validate → change → close page)
+-- Source: FeedbackModule.ACT_SubmitFeedback
+-- ============================================================
+
+/** Submit a Product. Calls VAL_Product first; if invalid the nanoflow returns
+ *  immediately and the page stays open so the validation feedback is visible.
+ *  On success the IsValid flag is set, the change is logged and the page closes.
+ */
+create nanoflow NanoflowExamples.ACT_SubmitProduct
     ($Product : NanoflowExamples.Product)
     folder 'Actions'
 begin
-    $IsValid = call nanoflow NanoflowExamples.NF_ValidateProduct(Product = $Product);
+    $IsValid = call nanoflow NanoflowExamples.VAL_Product(Product = $Product);
     if not($IsValid) then
         return;
     end if;
-    change $Product (IsValid = true);
+    change $Product (IsValid = true) refresh;
     log info 'Product validated and saved';
+    close page;
 end;
 
--- Nanoflow with multiple parameters
-create nanoflow NanoflowExamples.NF_FormatPrice
+-- ============================================================
+-- Pattern 4: Cascading if/else for status code handling
+-- Source: Atlas_Web_Content.ACT_Login, LatoBikesUI.ACT_LoginQuick
+-- ============================================================
+
+/** Apply a sign-in response code to the LoginContext shown on the login page.
+ *  The status code is produced by an upstream sign-in helper (a JavaScript
+ *  action in a real app, e.g. NanoflowCommons.SignIn). 200 clears the
+ *  message; 0 indicates a network failure; 401 indicates bad credentials;
+ *  anything else is treated as an unknown error. Password is wiped on
+ *  failure so the user retypes it.
+ */
+create nanoflow NanoflowExamples.ACT_ApplyLoginResult
+    ($LoginContext : NanoflowExamples.LoginContext, $StatusCode : Integer)
+    folder 'Login'
+begin
+    if $StatusCode = 200 then
+        change $LoginContext (ValidationMessage = '') refresh;
+        return;
+    end if;
+    if $StatusCode = 0 then
+        change $LoginContext (
+            ValidationMessage = 'No connection, please try again later.',
+            Password = ''
+        ) refresh;
+        return;
+    end if;
+    if $StatusCode = 401 then
+        change $LoginContext (
+            ValidationMessage = 'The username or password you entered is incorrect.',
+            Password = ''
+        ) refresh;
+        return;
+    end if;
+    change $LoginContext (
+        ValidationMessage = 'Unknown error occurred.',
+        Password = ''
+    ) refresh;
+end;
+
+-- ============================================================
+-- Pattern 5: SUB_ GetOrCreate (retrieve, if empty create, return)
+-- Source: FeedbackModule.SUB_Feedback_GetOrCreate
+-- ============================================================
+
+/** Return the first non-displayed Notification, creating a placeholder when
+ *  none exist. Used as a building block for data sources that always need a
+ *  non-empty object to bind a page or data view to.
+ */
+create nanoflow NanoflowExamples.SUB_Notification_GetOrCreate ()
+    returns NanoflowExamples.Notification
+    folder 'Helpers'
+begin
+    retrieve $Existing from NanoflowExamples.Notification
+        where Displayed = false()
+        limit 1;
+    if $Existing != empty then
+        return $Existing;
+    end if;
+    $New = create NanoflowExamples.Notification (Message = '', Displayed = false);
+    return $New;
+end;
+
+-- ============================================================
+-- Pattern 6: DS_ data source returning an object
+-- Source: Main.Get_User, FeedbackModule.DS_Feedback_Populate
+-- ============================================================
+
+/** Page data source: returns the next pending Notification.
+ *  Wire this to the data view's data source set to "Nanoflow" so the page
+ *  re-runs the nanoflow on each open.
+ */
+create nanoflow NanoflowExamples.DS_NextNotification ()
+    returns NanoflowExamples.Notification
+    folder 'Data Sources'
+begin
+    $Notification = call nanoflow NanoflowExamples.SUB_Notification_GetOrCreate();
+    return $Notification;
+end;
+
+-- ============================================================
+-- Pattern 7: DS_ Boolean for conditional visibility
+-- Source: Main.Nano_CheckNotifications
+-- ============================================================
+
+/** Returns true when at least one undisplayed Notification exists.
+ *  Bind to a container's "Visible" property to hide the notification area
+ *  when there is nothing to show.
+ */
+create nanoflow NanoflowExamples.DS_HasPendingNotification ()
+    returns Boolean
+    folder 'Data Sources'
+begin
+    retrieve $Pending from NanoflowExamples.Notification
+        where Displayed = false()
+        limit 1;
+    if $Pending != empty then
+        return true;
+    else
+        return false;
+    end if;
+end;
+
+-- ============================================================
+-- Pattern 8: Retrieve over an association
+-- Source: WorkflowCommons.DS_WorkflowUserTask_AssigneeHelper
+-- ============================================================
+
+/** Returns the Product that owns a given ProductImage by following the
+ *  ProductImage_Product association. Use as a navigation helper from
+ *  image-detail pages to surface the parent Product.
+ */
+create nanoflow NanoflowExamples.DS_ProductOfImage
+    ($Image : NanoflowExamples.ProductImage)
+    returns NanoflowExamples.Product
+    folder 'Data Sources'
+begin
+    retrieve $Product from $Image/NanoflowExamples.ProductImage_Product;
+    return $Product;
+end;
+
+-- ============================================================
+-- Pattern 9: Loop over a retrieved list and mutate each item
+-- Source: AgentCommons.Version_UpdateVariables (loop + change pattern)
+-- ============================================================
+
+/** Mark every undisplayed Notification as Displayed in a single pass.
+ *  Demonstrates the most common nanoflow loop shape — retrieve a list,
+ *  loop, mutate. The change is in-memory; commit is the caller's job.
+ */
+create nanoflow NanoflowExamples.ACT_MarkAllNotificationsRead ()
+    folder 'Actions'
+begin
+    retrieve $Pending from NanoflowExamples.Notification
+        where Displayed = false();
+    loop $Notification in $Pending
+    begin
+        change $Notification (Displayed = true);
+    end loop;
+end;
+
+-- ============================================================
+-- Pattern 10: OCh_ on-change nanoflow (toggle + refresh)
+-- Source: AgentCommons.PageHelper_ToggleIsRunning, WorkflowCommons.OCh_*
+-- ============================================================
+
+/** Toggle the Featured flag on a Product. Wired to a switch widget's onChange.
+ *  refresh flushes the change to other widgets bound to the same object so the
+ *  UI updates without a server round-trip.
+ */
+create nanoflow NanoflowExamples.OCh_Product_ToggleFeatured
+    ($Product : NanoflowExamples.Product)
+    folder 'Events'
+begin
+    change $Product (Featured = not($Product/Featured)) refresh;
+end;
+
+-- ============================================================
+-- Pattern 11: SUB_ helper with multiple parameters returning a String
+-- Source: utility helpers across the example projects
+-- ============================================================
+
+/** Format an amount with a currency prefix. Useful as a sub-nanoflow called
+ *  from list-rendering nanoflows that build display strings (see
+ *  DS_ProductSummaries above for the surrounding pattern).
+ */
+create nanoflow NanoflowExamples.SUB_FormatPrice
     ($Amount : Decimal, $Currency : String)
     returns String
     folder 'Helpers'
@@ -51,29 +274,36 @@ begin
     return $Currency + ' ' + toString($Amount);
 end;
 
+-- ============================================================
 -- Security
-grant execute on nanoflow NanoflowExamples.NF_ValidateProduct to NanoflowExamples.User;
-grant execute on nanoflow NanoflowExamples.NF_SaveProduct to NanoflowExamples.User;
-grant execute on nanoflow NanoflowExamples.NF_FormatPrice to NanoflowExamples.User;
+-- ============================================================
 
--- Show nanoflows
+grant execute on nanoflow NanoflowExamples.VAL_Product to NanoflowExamples.User;
+grant execute on nanoflow NanoflowExamples.ACT_SubmitProduct to NanoflowExamples.User;
+grant execute on nanoflow NanoflowExamples.ACT_ApplyLoginResult to NanoflowExamples.User;
+grant execute on nanoflow NanoflowExamples.SUB_Notification_GetOrCreate to NanoflowExamples.User;
+grant execute on nanoflow NanoflowExamples.DS_NextNotification to NanoflowExamples.User;
+grant execute on nanoflow NanoflowExamples.DS_HasPendingNotification to NanoflowExamples.User;
+grant execute on nanoflow NanoflowExamples.DS_ProductOfImage to NanoflowExamples.User;
+grant execute on nanoflow NanoflowExamples.ACT_MarkAllNotificationsRead to NanoflowExamples.User;
+grant execute on nanoflow NanoflowExamples.OCh_Product_ToggleFeatured to NanoflowExamples.User;
+grant execute on nanoflow NanoflowExamples.SUB_FormatPrice to NanoflowExamples.User;
+
+-- ============================================================
+-- Management commands
+-- ============================================================
+
 show nanoflows;
 show nanoflows in NanoflowExamples;
 
--- Describe
-describe nanoflow NanoflowExamples.NF_ValidateProduct;
+describe nanoflow NanoflowExamples.VAL_Product;
+describe nanoflow NanoflowExamples.ACT_SubmitProduct;
+describe nanoflow NanoflowExamples.ACT_MarkAllNotificationsRead;
 
--- Rename
 rename nanoflow NanoflowExamples.NF_Empty to NF_Placeholder;
-
--- Move
 move nanoflow NanoflowExamples.NF_Placeholder to NanoflowExamples;
 
--- Drop
+show access on nanoflow NanoflowExamples.VAL_Product;
+revoke execute on nanoflow NanoflowExamples.VAL_Product from NanoflowExamples.User;
+
 drop nanoflow NanoflowExamples.NF_Placeholder;
-
--- Show access
-show access on nanoflow NanoflowExamples.NF_ValidateProduct;
-
--- Revoke
-revoke execute on nanoflow NanoflowExamples.NF_ValidateProduct from NanoflowExamples.User;
