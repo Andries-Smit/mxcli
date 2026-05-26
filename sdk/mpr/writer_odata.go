@@ -229,8 +229,13 @@ func (w *Writer) serializePublishedODataService(svc *model.PublishedODataService
 	// by ExposedName made the lookup return "" and EntityTypePointer was
 	// never written. Studio Pro's EntitySet.Check then NREs dereferencing
 	// the missing pointer and aborts the whole project checker.
+	//
+	// Versioned BSON arrays in Mendix start with an int32 storage marker
+	// (typically 3). Without it Mendix treats the array as malformed and
+	// silently drops elements after the first — observed in CE6585 firing
+	// on the second entity in a multi-entity service.
 	entityTypeIDMap := make(map[string]string) // qualified entity name -> entity type ID
-	entityTypes := bson.A{}
+	entityTypes := bson.A{int32(3)}
 	for _, et := range svc.EntityTypes {
 		etID := string(et.ID)
 		if etID == "" {
@@ -242,7 +247,7 @@ func (w *Writer) serializePublishedODataService(svc *model.PublishedODataService
 	}
 
 	// Serialize entity sets with BY_ID pointers to entity types
-	entitySets := bson.A{}
+	entitySets := bson.A{int32(3)}
 	for _, es := range svc.EntitySets {
 		esID := string(es.ID)
 		if esID == "" {
@@ -273,16 +278,31 @@ func (w *Writer) serializePublishedODataService(svc *model.PublishedODataService
 		"EntityTypes":             entityTypes,
 		"EntitySets":              entitySets,
 		"Excluded":                svc.Excluded,
+		// Empty collection markers required by Studio Pro 11.10. Without
+		// these fields Mendix can resolve the first entity's key but fails
+		// to resolve the second's (CE6585) — observed when comparing a
+		// Studio Pro-authored multi-entity service against ours.
+		"Enumerations":             bson.A{int32(3)},
+		"Microflows":               bson.A{int32(3)},
+		"IncludeMetadataByDefault": true,
+		"ReplaceIllegalChars":      false,
+		"SupportsGraphQL":          false,
 	}
 	return bson.Marshal(doc)
 }
 
 // serializePublishedEntityType converts a PublishedEntityType to a BSON map.
 func serializePublishedEntityType(et *model.PublishedEntityType) bson.M {
-	// Serialize child members
-	members := bson.A{}
+	// Serialize child members. Pass the owning entity's qualified name so
+	// the writer can emit fully-qualified Attribute / Association BSON
+	// references (Module.Entity.AttributeName) — Studio Pro and mx check
+	// require these to be qualified, and using bare names made the second
+	// entity's members silently fail to link in a multi-entity service.
+	// Like EntityTypes / EntitySets, ChildMembers is a Mendix versioned
+	// array and must start with the int32(3) storage marker.
+	members := bson.A{int32(3)}
 	for _, m := range et.Members {
-		members = append(members, serializePublishedMember(m))
+		members = append(members, serializePublishedMember(m, et.Entity))
 	}
 
 	return bson.M{
@@ -299,11 +319,23 @@ func serializePublishedEntityType(et *model.PublishedEntityType) bson.M {
 // serializePublishedEntitySet converts a PublishedEntitySet to a BSON map.
 func serializePublishedEntitySet(es *model.PublishedEntitySet, entityTypeID string) bson.M {
 	doc := bson.M{
-		"$ID":         idToBsonBinary(string(es.ID)),
-		"$Type":       "ODataPublish$EntitySet",
-		"ExposedName": es.ExposedName,
-		"UsePaging":   es.UsePaging,
-		"PageSize":    int64(es.PageSize),
+		"$ID":                    idToBsonBinary(string(es.ID)),
+		"$Type":                  "ODataPublish$EntitySet",
+		"ExposedName":            es.ExposedName,
+		"AlternativeExposedName": "",
+		"UsePaging":              es.UsePaging,
+		"PageSize":               int64(es.PageSize),
+		// QueryOptions is required by Studio Pro's BSON shape for the
+		// entity set to be considered valid. Without it the second
+		// published entity in a multi-entity service fails to resolve
+		// its key (CE6585) — see Studio Pro reference dump.
+		"QueryOptions": bson.M{
+			"$ID":           idToBsonBinary(generateUUID()),
+			"$Type":         "ODataPublish$QueryOptions",
+			"Countable":     true,
+			"SkipSupported": true,
+			"TopSupported":  true,
+		},
 	}
 
 	// EntityTypePointer is a BY_ID reference
@@ -329,37 +361,91 @@ func serializePublishedEntitySet(es *model.PublishedEntitySet, entityTypeID stri
 }
 
 // serializePublishedMember converts a PublishedMember to a BSON map.
-func serializePublishedMember(m *model.PublishedMember) bson.M {
+// `ownerQN` is the qualified name (Module.Entity) of the EntityType this
+// member belongs to. Mendix expects PublishedAttribute.Attribute and
+// PublishedAssociationEnd.Association BSON values to be fully qualified —
+// "Module.Entity.AttributeName" for attributes and "Module.AssociationName"
+// for associations. If the AST already supplied a qualified name (contains
+// a dot), it's used as-is; otherwise the owner is prepended.
+func serializePublishedMember(m *model.PublishedMember, ownerQN string) bson.M {
 	memberID := string(m.ID)
 	if memberID == "" {
 		memberID = generateUUID()
 	}
 
+	// Base fields written by Studio Pro for both attribute and association
+	// members. Description/Summary stay empty in this writer; CanBeEmpty
+	// defaults to !IsPartOfKey (keys are required to have a value) which
+	// matches Studio Pro's convention and is required for Mendix to
+	// recognise the attribute as a valid OData key (CE6585).
 	doc := bson.M{
 		"$ID":         idToBsonBinary(memberID),
 		"ExposedName": m.ExposedName,
-		"Filterable":  m.Filterable,
-		"Sortable":    m.Sortable,
-		"IsPartOfKey": m.IsPartOfKey,
+		"CanBeEmpty":  !m.IsPartOfKey,
+		"Description": "",
+		"Summary":     "",
 	}
 
 	switch m.Kind {
 	case "attribute":
 		doc["$Type"] = "ODataPublish$PublishedAttribute"
-		doc["Attribute"] = m.Name
+		doc["Attribute"] = qualifyMemberName(m.Name, ownerQN)
+		doc["Filterable"] = m.Filterable
+		doc["Sortable"] = m.Sortable
+		doc["IsPartOfKey"] = m.IsPartOfKey
+		doc["EnumerationAsString"] = false
+		doc["StringAsGuid"] = false
 	case "association":
 		doc["$Type"] = "ODataPublish$PublishedAssociationEnd"
-		doc["Association"] = m.Name
+		// Associations live at module scope (Module.AssocName), so prepend
+		// only the module portion of the owner.
+		doc["Association"] = qualifyAssociationName(m.Name, ownerQN)
+		// AssociationEnd carries the target entity and a separate
+		// ExposedAssociationName (typically the bare assoc name). Both
+		// are required by Studio Pro's BSON shape.
+		doc["Entity"] = m.AssociationTargetEntity
+		doc["ExposedAssociationName"] = m.ExposedAssociationName
 	case "id":
 		doc["$Type"] = "ODataPublish$PublishedId"
-		doc["Attribute"] = m.Name
+		doc["Attribute"] = qualifyMemberName(m.Name, ownerQN)
+		doc["Filterable"] = m.Filterable
+		doc["Sortable"] = m.Sortable
+		doc["IsPartOfKey"] = m.IsPartOfKey
 	default:
 		// Default to attribute for unknown kinds
 		doc["$Type"] = "ODataPublish$PublishedAttribute"
-		doc["Attribute"] = m.Name
+		doc["Attribute"] = qualifyMemberName(m.Name, ownerQN)
+		doc["Filterable"] = m.Filterable
+		doc["Sortable"] = m.Sortable
+		doc["IsPartOfKey"] = m.IsPartOfKey
+		doc["EnumerationAsString"] = false
+		doc["StringAsGuid"] = false
 	}
 
 	return doc
+}
+
+// qualifyMemberName prepends the owning entity's qualified name (Module.Entity)
+// to a bare attribute name. If `name` already contains a dot (already qualified)
+// or `ownerQN` is empty, the original is returned unchanged.
+func qualifyMemberName(name, ownerQN string) string {
+	if name == "" || ownerQN == "" || strings.Contains(name, ".") {
+		return name
+	}
+	return ownerQN + "." + name
+}
+
+// qualifyAssociationName prepends the owning entity's module to a bare
+// association name. Associations live at module scope, so only the module
+// portion of `ownerQN` is used.
+func qualifyAssociationName(name, ownerQN string) string {
+	if name == "" || ownerQN == "" || strings.Contains(name, ".") {
+		return name
+	}
+	if idx := strings.IndexByte(ownerQN, '.'); idx > 0 {
+		return ownerQN[:idx] + "." + name
+	}
+	return name
 }
 
 // serializeReadMode converts a read mode string to a BSON mode object.

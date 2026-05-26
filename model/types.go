@@ -441,6 +441,13 @@ type PublishedMember struct {
 	Filterable  bool   `json:"filterable,omitempty"`
 	Sortable    bool   `json:"sortable,omitempty"`
 	IsPartOfKey bool   `json:"isPartOfKey,omitempty"`
+
+	// Association-specific fields (Kind == "association"). Studio Pro's
+	// ODataPublish$PublishedAssociationEnd records both the association
+	// target entity (qualified name) and the bare association name
+	// alongside ExposedName (the navigation property name).
+	AssociationTargetEntity string `json:"associationTargetEntity,omitempty"`
+	ExposedAssociationName  string `json:"exposedAssociationName,omitempty"`
 }
 
 // ============================================================================

@@ -263,7 +263,10 @@ func TestSerializePublishedODataService(t *testing.T) {
 		t.Fatalf("ChildMembers[0]: expected map, got %T", members[0])
 	}
 	assertField(t, m0, "$Type", "ODataPublish$PublishedAttribute")
-	assertField(t, m0, "Attribute", "Name")
+	// Attribute is the fully-qualified Module.Entity.AttributeName — Studio
+	// Pro requires qualified references, and using bare names made the
+	// second entity in a multi-entity service silently fail to resolve.
+	assertField(t, m0, "Attribute", "MyModule.Customer.Name")
 	assertField(t, m0, "ExposedName", "CustomerName")
 	if v, ok := m0["Filterable"].(bool); !ok || !v {
 		t.Errorf("Member Filterable: expected true, got %v", m0["Filterable"])

@@ -1549,15 +1549,20 @@ func extractMicroflowRef(ref string) string {
 // and PublishedEntitySet. Each PUBLISH ENTITY block maps to both a type (schema) and
 // a set (runtime endpoint with CRUD modes).
 func astEntityDefToModel(def *ast.PublishedEntityDef) (*model.PublishedEntityType, *model.PublishedEntitySet) {
-	exposedName := def.ExposedName
-	if exposedName == "" {
-		// Default exposed name from the entity name
-		exposedName = def.Entity.Name
+	// EntitySet ExposedName comes from the user's `AS 'X'` (typically plural,
+	// e.g. 'Customers'). EntityType ExposedName must differ — Studio Pro
+	// convention is the singular form (the entity's local name, e.g.
+	// 'Customer'). Sharing one name for both causes Mendix to fail
+	// resolving the second entity's key in a multi-entity service (CE6585).
+	entitySetExposedName := def.ExposedName
+	if entitySetExposedName == "" {
+		entitySetExposedName = def.Entity.Name
 	}
+	entityTypeExposedName := def.Entity.Name
 
 	entityType := &model.PublishedEntityType{
 		Entity:      def.Entity.String(),
-		ExposedName: exposedName,
+		ExposedName: entityTypeExposedName,
 	}
 
 	// Map AST members to model members
@@ -1577,7 +1582,7 @@ func astEntityDefToModel(def *ast.PublishedEntityDef) (*model.PublishedEntityTyp
 	}
 
 	entitySet := &model.PublishedEntitySet{
-		ExposedName:    exposedName,
+		ExposedName:    entitySetExposedName,
 		EntityTypeName: def.Entity.String(),
 		ReadMode:       def.ReadMode,
 		InsertMode:     def.InsertMode,

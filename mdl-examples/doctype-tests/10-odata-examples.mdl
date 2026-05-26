@@ -16,15 +16,19 @@ create module OdTest;
 -- Best-practice: never publish the system `Id` as the OData key — it leaks
 -- internal storage IDs. Use a business attribute with a UNIQUE constraint
 -- so it can serve as a stable public key.
+-- The business key attribute (Email / OrderNumber) gets both UNIQUE and
+-- REQUIRED validation rules. Mendix's OData publish demands that the
+-- attribute exposed as KEY always has a value — a missing key value
+-- would yield a row Mendix can't address via /Service/Entity('key').
 create persistent entity OdTest.Customer (
   Name: string(200),
-  Email: string(200) unique error 'Email must be unique',
+  Email: string(200) unique error 'Email must be unique' required error 'Email is required',
   Phone: string(50),
   IsActive: boolean default true
 );
 
 create persistent entity OdTest.Order (
-  OrderNumber: string(50) unique error 'OrderNumber must be unique',
+  OrderNumber: string(50) unique error 'OrderNumber must be unique' required error 'OrderNumber is required',
   OrderDate: datetime,
   TotalAmount: decimal,
   Status: string(50)
@@ -201,12 +205,6 @@ create odata service OdTest.CustomerAPI (
 )
 authentication basic, session
 {
-  -- TODO(mxcli writer): publishing more than one entity in a single OData
-  -- service triggers either a load NRE or CE6585 on the second entity
-  -- (likely a writer bug where the second entity's PublishedAttribute IDs
-  -- collide or its ChildMembers don't get linked back to the EntityType
-  -- correctly). For now the example publishes one entity. Add Order again
-  -- once the writer bug is fixed.
   publish entity OdTest.Customer as 'Customers' (
     ReadMode: source,
     InsertMode: source,
@@ -220,6 +218,19 @@ authentication basic, session
     Name (Filterable, Sortable),
     Phone,
     IsActive
+  );
+
+  publish entity OdTest.Order as 'Orders' (
+    ReadMode: source,
+    InsertMode: not_supported,
+    UpdateMode: not_supported,
+    DeleteMode: not_supported
+  )
+  expose (
+    OrderNumber as 'orderId' (KEY, Filterable, Sortable),
+    OrderDate (Sortable),
+    TotalAmount (Sortable),
+    Status (Filterable)
   );
 };
 /
