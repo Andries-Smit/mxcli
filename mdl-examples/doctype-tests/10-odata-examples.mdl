@@ -44,14 +44,14 @@ owner default;
  * Lists all consumed OData services across all modules.
  * Output columns: Module, QualifiedName, Version, OData, MetadataUrl, Validated
  */
-show odata clients;
+list odata clients;
 /
 
 /**
  * Level 1.2: Show OData clients in a specific module
  * Lists only consumed OData services in the specified module.
  */
-show odata clients in OdTest;
+list odata clients in OdTest;
 /
 
 -- ############################################################################
@@ -73,14 +73,14 @@ show odata clients in OdTest;
  * Lists all published OData services across all modules.
  * Output columns: Module, QualifiedName, Path, Version, OData, EntitySets, AuthTypes
  */
-show odata services;
+list odata services;
 /
 
 /**
  * Level 3.2: Show OData services in a specific module
  * Lists only published OData services in the specified module.
  */
-show odata services in OdTest;
+list odata services in OdTest;
 /
 
 -- ############################################################################
@@ -104,14 +104,14 @@ show odata services in OdTest;
  * Lists all entities backed by OData remote sources across all modules.
  * Output columns: Module, QualifiedName, Service, EntitySet, RemoteName, Countable
  */
-show external entities;
+list external entities;
 /
 
 /**
  * Level 5.2: Show external entities in a specific module
  * Lists only external entities in the specified module.
  */
-show external entities in OdTest;
+list external entities in OdTest;
 /
 
 -- ############################################################################
@@ -160,21 +160,28 @@ select * from catalog.entities where IsExternal = 1;
  * Level 8.1: Create a consumed OData service (client)
  * Registers an external OData API that the application can consume.
  *
+ * Uses the public TripPin reference service (services.odata.org) so that
+ * the $metadata is actually reachable — Mendix validates entity/action
+ * references against the cached schema, so a service with an unreachable
+ * MetadataUrl makes downstream `call external action` activities and
+ * external entities trigger CE6611/CE6612/CE7251 noise (and sometimes
+ * crash Studio Pro outright — see mxcli#590).
+ *
  * ServiceUrl is required (CE5111) and must reference a constant (CE6825),
  * so we declare the constant inline before the service.
  */
-create constant OdTest.SalesforceAPIServiceUrl
+create constant OdTest.TripPinAPIServiceUrl
   type string
-  default 'https://api.salesforce.com/odata/v4';
+  default 'https://services.odata.org/TripPinRESTierService/';
 
-create odata client OdTest.SalesforceAPI (
+create odata client OdTest.TripPinAPI (
   version: '1.0',
   ODataVersion: OData4,
-  MetadataUrl: 'https://api.salesforce.com/odata/v4/$metadata',
+  MetadataUrl: 'https://services.odata.org/TripPinRESTierService/$metadata',
   timeout: 300,
-  ServiceUrl: @OdTest.SalesforceAPIServiceUrl,
+  ServiceUrl: @OdTest.TripPinAPIServiceUrl,
   ProxyType: DefaultProxy,
-  folder: 'Integration/Salesforce'
+  folder: 'Integration/TripPin'
 );
 /
 
@@ -317,10 +324,10 @@ create odata client OdTest.HeadersConfigAPI (
 /**
  * Level 8.3: Create or modify (idempotent) - updates if it already exists
  */
-create or modify odata client OdTest.SalesforceAPI (
+create or modify odata client OdTest.TripPinAPI (
   version: '2.0',
   ODataVersion: OData4,
-  MetadataUrl: 'https://api.salesforce.com/odata/v4/$metadata',
+  MetadataUrl: 'https://services.odata.org/TripPinRESTierService/$metadata',
   timeout: 600
 );
 /
@@ -328,7 +335,7 @@ create or modify odata client OdTest.SalesforceAPI (
 /**
  * Level 8.4: Alter an OData client property
  */
-alter odata client OdTest.SalesforceAPI
+alter odata client OdTest.TripPinAPI
   set timeout = 600;
 /
 
@@ -377,13 +384,11 @@ revoke access on odata service OdTest.CustomerAPI from OdTest.user;
 
 -- Level 9.1: Call an external action — see Level 10.4.1 below.
 --
--- The microflow is created after Level 10.1 because Studio Pro resolves
--- `call external action` Name fields against the cached $metadata schema of
--- the ConsumedODataService. SalesforceAPI's MetadataUrl is a placeholder
--- that doesn't actually return $metadata, so its cache is empty and any
--- action call against it would crash Studio Pro's project checker with a
--- NullReferenceException in CallExternalAction.SchemaAction (see mxcli#590).
--- TripPin has reachable metadata, so its actions resolve correctly.
+-- All consumed-service examples in this file use TripPin (a real OData
+-- reference service with reachable $metadata), so Studio Pro's project
+-- checker can resolve `call external action` Name fields against the
+-- cached schema. Using a service with an unreachable MetadataUrl makes
+-- the cache empty and crashes the checker (see mxcli#590).
 
 /**
  * Level 9.2: Show external actions discovered from microflow usage
@@ -497,7 +502,7 @@ drop microflow OdTest.ACT_CallExternalAction;
  */
 drop odata client OdTest.FullConfigAPI;
 drop odata client OdTest.HeadersConfigAPI;
-drop odata client OdTest.SalesforceAPI;
+drop odata client OdTest.TripPinAPI;
 /
 
 /**
