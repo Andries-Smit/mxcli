@@ -107,7 +107,11 @@ func TestSerializeConsumedODataServiceWithHttpConfig(t *testing.T) {
 	// names — Studio Pro renamed the dropdown's storage fields somewhere
 	// before 11.10 (issue #573 / #587 follow-up).
 	assertField(t, raw, "ConfigurationEntityMicroflow", "MyModule.ConfigureMF")
-	assertField(t, raw, "HeaderListMicroflow", "MyModule.SetHeadersMF")
+	// BSON storage name for HeadersMicroflow per Mendix 9.x+ reflection
+	// data — `HeadersMicroflow`, not the earlier `HeaderListMicroflow`
+	// which Studio Pro 11.9 doesn't recognise (the dropdown falls back
+	// to "Constants only" if we write the wrong key).
+	assertField(t, raw, "HeadersMicroflow", "MyModule.SetHeadersMF")
 	assertField(t, raw, "ErrorHandlingMicroflow", "MyModule.HandleErrorMF")
 	assertField(t, raw, "ProxyHost", "MyModule.ProxyHostConst")
 	if _, exists := raw["ConfigurationMicroflow"]; exists {

@@ -82,13 +82,16 @@ func (w *Writer) serializeConsumedODataService(svc *model.ConsumedODataService) 
 	// `ConfigurationMicroflow` for backwards compatibility; only the BSON
 	// storage name is the new one. See issue #587 (follow-up to #573).
 	//
-	// `HeaderListMicroflow` is the BSON name for the third dropdown option
-	// "Headers microflow"; MDL exposes it as `HeadersMicroflow`.
+	// `HeadersMicroflow` is the BSON name for the third dropdown option
+	// "Headers microflow" — per the Mendix 9.x reflection-data
+	// storageName. A prior fix wrote it as `HeaderListMicroflow` but
+	// Studio Pro 11.9 doesn't recognise that key and the dropdown
+	// silently falls back to "Constants only".
 	if svc.ConfigurationMicroflow != "" {
 		doc["ConfigurationEntityMicroflow"] = svc.ConfigurationMicroflow
 	}
 	if svc.HeadersMicroflow != "" {
-		doc["HeaderListMicroflow"] = svc.HeadersMicroflow
+		doc["HeadersMicroflow"] = svc.HeadersMicroflow
 	}
 	if svc.ErrorHandlingMicroflow != "" {
 		doc["ErrorHandlingMicroflow"] = svc.ErrorHandlingMicroflow
