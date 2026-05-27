@@ -49,10 +49,17 @@ func (b *Builder) ExitCreateODataClientStatement(ctx *parser.CreateODataClientSt
 			stmt.HttpPassword = value
 		case "clientcertificate":
 			stmt.ClientCertificate = value
-		case "configurationmicroflow":
+		case "configurationmicroflow", "headersmicroflow":
+			// Both MDL property names map to the same BSON field
+			// `ConfigurationMicroflow`. Studio Pro distinguishes the
+			// "Configuration microflow" and "Headers microflow"
+			// dropdown options by the microflow's return type:
+			//   - returns System.ConsumedODataConfiguration -> Config
+			//   - returns list of System.HttpHeader         -> Headers
+			// The `HeadersMicroflow` keyword stays for ergonomic MDL
+			// (so the example MDL can self-document which signature
+			// the referenced microflow is expected to have).
 			stmt.ConfigurationMicroflow = value
-		case "headersmicroflow":
-			stmt.HeadersMicroflow = value
 		case "errorhandlingmicroflow":
 			stmt.ErrorHandlingMicroflow = value
 		case "proxyhost":

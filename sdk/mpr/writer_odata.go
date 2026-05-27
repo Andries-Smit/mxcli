@@ -72,18 +72,16 @@ func (w *Writer) serializeConsumedODataService(svc *model.ConsumedODataService) 
 		"RecommendedMxVersion": "",
 	}
 
-	// Microflow references (BY_NAME). BSON storage names verified by
-	// diffing Studio Pro-saved samples for both dropdown options:
-	//   - "Configuration microflow" -> ConfigurationMicroflow
-	//   - "Headers microflow"       -> HeadersMicroflow
-	// Earlier mxcli attempts used `ConfigurationEntityMicroflow` and
-	// `HeaderListMicroflow`; Studio Pro doesn't recognise either, and
-	// the dropdown silently falls back to "Constants only".
+	// Microflow reference (BY_NAME). Both the "Configuration microflow"
+	// and "Headers microflow" dropdown options in Studio Pro write to a
+	// single BSON field, `ConfigurationMicroflow` — Studio Pro picks the
+	// dropdown label by the microflow's return type, not by which field
+	// the reference lives in. Earlier mxcli attempts used separate
+	// `ConfigurationEntityMicroflow` / `HeaderListMicroflow` keys; Studio
+	// Pro doesn't recognise either and the dropdown silently falls back
+	// to "Constants only".
 	if svc.ConfigurationMicroflow != "" {
 		doc["ConfigurationMicroflow"] = svc.ConfigurationMicroflow
-	}
-	if svc.HeadersMicroflow != "" {
-		doc["HeadersMicroflow"] = svc.HeadersMicroflow
 	}
 	if svc.ErrorHandlingMicroflow != "" {
 		doc["ErrorHandlingMicroflow"] = svc.ErrorHandlingMicroflow

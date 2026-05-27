@@ -174,14 +174,13 @@ func outputConsumedODataServiceMDL(ctx *ExecContext, svc *model.ConsumedODataSer
 		}
 	}
 
-	// Microflow references. At most one of ConfigurationMicroflow and
-	// HeadersMicroflow should be set on a given service (mutually exclusive
-	// in Studio Pro). DESCRIBE round-trips whichever is populated.
+	// Microflow reference. Both the "Configuration microflow" and
+	// "Headers microflow" Studio Pro dropdown options share a single
+	// BSON field — DESCRIBE outputs `ConfigurationMicroflow` for both;
+	// the source MDL keyword (`ConfigurationMicroflow` /
+	// `HeadersMicroflow`) is purely a hint to the reader.
 	if svc.ConfigurationMicroflow != "" {
 		props = append(props, fmt.Sprintf("  ConfigurationMicroflow: microflow %s", svc.ConfigurationMicroflow))
-	}
-	if svc.HeadersMicroflow != "" {
-		props = append(props, fmt.Sprintf("  HeadersMicroflow: microflow %s", svc.HeadersMicroflow))
 	}
 	if svc.ErrorHandlingMicroflow != "" {
 		props = append(props, fmt.Sprintf("  ErrorHandlingMicroflow: microflow %s", svc.ErrorHandlingMicroflow))
@@ -954,9 +953,6 @@ func createODataClient(ctx *ExecContext, stmt *ast.CreateODataClientStmt) error 
 					if stmt.ConfigurationMicroflow != "" {
 						svc.ConfigurationMicroflow = extractMicroflowRef(stmt.ConfigurationMicroflow)
 					}
-					if stmt.HeadersMicroflow != "" {
-						svc.HeadersMicroflow = extractMicroflowRef(stmt.HeadersMicroflow)
-					}
 					if stmt.ErrorHandlingMicroflow != "" {
 						svc.ErrorHandlingMicroflow = extractMicroflowRef(stmt.ErrorHandlingMicroflow)
 					}
@@ -1044,7 +1040,6 @@ func createODataClient(ctx *ExecContext, stmt *ast.CreateODataClientStmt) error 
 		ProxyType:              stmt.ProxyType,
 		Description:            stmt.Description,
 		ConfigurationMicroflow: extractMicroflowRef(stmt.ConfigurationMicroflow),
-		HeadersMicroflow:       extractMicroflowRef(stmt.HeadersMicroflow),
 		ErrorHandlingMicroflow: extractMicroflowRef(stmt.ErrorHandlingMicroflow),
 		ProxyHost:              stmt.ProxyHost,
 		ProxyPort:              stmt.ProxyPort,
@@ -1194,10 +1189,9 @@ func alterODataClient(ctx *ExecContext, stmt *ast.AlterODataClientStmt) error {
 						svc.HttpConfiguration = &model.HttpConfiguration{}
 					}
 					svc.HttpConfiguration.ClientCertificate = strVal
-				case "configurationmicroflow":
+				case "configurationmicroflow", "headersmicroflow":
+					// Both MDL keywords write to the same BSON field.
 					svc.ConfigurationMicroflow = extractMicroflowRef(strVal)
-				case "headersmicroflow":
-					svc.HeadersMicroflow = extractMicroflowRef(strVal)
 				case "errorhandlingmicroflow":
 					svc.ErrorHandlingMicroflow = extractMicroflowRef(strVal)
 				case "proxyhost":

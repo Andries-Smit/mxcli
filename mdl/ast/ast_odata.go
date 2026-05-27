@@ -26,10 +26,11 @@ type CreateODataClientStmt struct {
 	HttpPassword      string // Mendix expression for password
 	ClientCertificate string
 
-	// Microflow references. ConfigurationMicroflow and HeadersMicroflow are
-	// mutually exclusive in Studio Pro — they map to the same dropdown.
-	ConfigurationMicroflow string // microflow Module.ConfigureMF
-	HeadersMicroflow       string // microflow Module.SetHeadersMF
+	// Microflow reference. Both `ConfigurationMicroflow` and the legacy
+	// `HeadersMicroflow` MDL keywords write to this same field; Studio
+	// Pro distinguishes the two dropdown options by the microflow's
+	// return type, not by BSON field.
+	ConfigurationMicroflow string // microflow Module.ConfigureMF or Module.SetHeadersMF
 	ErrorHandlingMicroflow string // microflow Module.HandleErrorMF
 
 	// Proxy constant references

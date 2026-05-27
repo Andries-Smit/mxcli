@@ -325,14 +325,21 @@ headers (
  *
  * Mendix 11.9's "Configuration source" dropdown has three options:
  *   - Constants only            (the default — set ServiceUrl as a constant)
- *   - Configuration microflow   (BSON: ConfigurationMicroflow)
- *   - Headers microflow         (BSON: HeadersMicroflow)
+ *   - Configuration microflow
+ *   - Headers microflow
  *
- * The microflow paths are mutually exclusive with constants-based
- * ServiceUrl / proxy fields (Mendix raises CE0783/CE1135), so each
- * variant lives in its own service. HeadersMicroflow returns a list
- * of System.HttpHeader; the call site provides the service URL itself
- * via the constant ServiceUrl above.
+ * Both microflow options share a single BSON field — `ConfigurationMicroflow` —
+ * and Studio Pro picks the dropdown label from the microflow's return type:
+ *   - returns System.ConsumedODataConfiguration -> "Configuration microflow"
+ *   - returns list of System.HttpHeader         -> "Headers microflow"
+ *
+ * The MDL keyword `HeadersMicroflow` is a self-documenting alias for
+ * `ConfigurationMicroflow`; both write the same BSON. The microflow
+ * paths are mutually exclusive with constants-based ServiceUrl / proxy
+ * fields (Mendix raises CE0783/CE1135), so each variant lives in its
+ * own service. HeadersConfigAPI's SetHeaders returns a list of
+ * System.HttpHeader; the call site provides the service URL itself via
+ * the constant ServiceUrl above.
  */
 create odata client OdTest.HeadersConfigAPI (
   version: '3.0',

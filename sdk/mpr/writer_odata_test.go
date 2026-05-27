@@ -68,7 +68,6 @@ func TestSerializeConsumedODataServiceWithHttpConfig(t *testing.T) {
 		MetadataUrl:            "https://api.example.com/odata/$metadata",
 		TimeoutExpression:      "300",
 		ConfigurationMicroflow: "MyModule.ConfigureMF",
-		HeadersMicroflow:       "MyModule.SetHeadersMF",
 		ErrorHandlingMicroflow: "MyModule.HandleErrorMF",
 		ProxyHost:              "MyModule.ProxyHostConst",
 		HttpConfiguration: &model.HttpConfiguration{
@@ -103,26 +102,20 @@ func TestSerializeConsumedODataServiceWithHttpConfig(t *testing.T) {
 		t.Fatalf("unmarshal failed: %v", err)
 	}
 
-	// Microflow references. BSON storage names differ from the Go field
-	// names — Studio Pro renamed the dropdown's storage fields somewhere
-	// before 11.10 (issue #573 / #587 follow-up).
-	// BSON storage name per Studio Pro samples — `ConfigurationMicroflow`,
-	// not the speculative `ConfigurationEntityMicroflow` from an earlier
-	// fix which Studio Pro doesn't recognise.
+	// Microflow reference. Studio Pro stores both the "Configuration
+	// microflow" and "Headers microflow" dropdown options in the single
+	// `ConfigurationMicroflow` BSON field — it picks the dropdown label
+	// from the microflow's return type, not from which field carries the
+	// reference. Older mxcli fixes tried `ConfigurationEntityMicroflow` /
+	// `HeaderListMicroflow` / a separate `HeadersMicroflow`; Studio Pro
+	// silently ignores all three, leaving the dropdown stuck on
+	// "Constants only".
 	assertField(t, raw, "ConfigurationMicroflow", "MyModule.ConfigureMF")
-	// BSON storage name for HeadersMicroflow per Mendix 9.x+ reflection
-	// data — `HeadersMicroflow`, not the earlier `HeaderListMicroflow`
-	// which Studio Pro 11.9 doesn't recognise (the dropdown falls back
-	// to "Constants only" if we write the wrong key).
-	assertField(t, raw, "HeadersMicroflow", "MyModule.SetHeadersMF")
 	assertField(t, raw, "ErrorHandlingMicroflow", "MyModule.HandleErrorMF")
 	assertField(t, raw, "ProxyHost", "MyModule.ProxyHostConst")
-	// Both microflow paths are written under the names Studio Pro uses:
-	// `HeadersMicroflow` and `ConfigurationMicroflow`. An older fix
-	// guarded against a `ConfigurationMicroflow` "leak" — that was when
-	// we wrongly thought the correct key was `ConfigurationEntityMicroflow`.
-	// Studio Pro samples actually carry `ConfigurationMicroflow`, so the
-	// negative assertion is dropped.
+	if _, exists := raw["HeadersMicroflow"]; exists {
+		t.Errorf("HeadersMicroflow leaked into BSON — Studio Pro stores both microflow dropdown options under ConfigurationMicroflow")
+	}
 
 	// HTTP Configuration
 	httpCfg, ok := raw["HttpConfiguration"].(map[string]any)

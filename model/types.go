@@ -319,14 +319,15 @@ type ConsumedODataService struct {
 	// HTTP configuration (nested Microflows$HttpConfiguration part)
 	HttpConfiguration *HttpConfiguration `json:"httpConfiguration,omitempty"`
 
-	// Microflow references (BY_NAME). At most one of ConfigurationMicroflow
-	// and HeadersMicroflow is meaningful at a time — they map to the same
-	// "Configuration source" dropdown in Studio Pro and are mutually
-	// exclusive in the UI (a third state, "Constants only", is both empty).
-	// Studio Pro's BSON storage names differ from the MDL property names;
-	// see sdk/mpr/writer_odata.go for the mapping.
-	ConfigurationMicroflow string `json:"configurationMicroflow,omitempty"` // BSON: ConfigurationEntityMicroflow
-	HeadersMicroflow       string `json:"headersMicroflow,omitempty"`       // BSON: HeaderListMicroflow
+	// Microflow reference (BY_NAME). Studio Pro's "Configuration source"
+	// dropdown has three options: Constants only, Configuration microflow,
+	// Headers microflow. Both microflow options write to the same BSON
+	// field `ConfigurationMicroflow`; Studio Pro picks the dropdown label
+	// based on the microflow's return type
+	// (System.ConsumedODataConfiguration vs list of System.HttpHeader).
+	// The MDL `HeadersMicroflow` keyword is an alias that writes to this
+	// same field.
+	ConfigurationMicroflow string `json:"configurationMicroflow,omitempty"` // BSON: ConfigurationMicroflow
 	ErrorHandlingMicroflow string `json:"errorHandlingMicroflow,omitempty"` // BSON: ErrorHandlingMicroflow
 
 	// Proxy constant references (BY_NAME to Constants$Constant)

@@ -41,8 +41,9 @@ func (r *Reader) parseConsumedODataService(unitID, containerID string, contents 
 
 	// Microflow references (BY_NAME). Storage names differ from the MDL
 	// property names — see writer_odata.go for the why.
+	// Both "Configuration microflow" and "Headers microflow" dropdown
+	// options are stored in the same BSON field.
 	svc.ConfigurationMicroflow = extractString(raw["ConfigurationMicroflow"])
-	svc.HeadersMicroflow = extractString(raw["HeadersMicroflow"])
 	svc.ErrorHandlingMicroflow = extractString(raw["ErrorHandlingMicroflow"])
 
 	// Proxy constant references (BY_NAME)

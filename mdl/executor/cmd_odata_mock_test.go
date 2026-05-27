@@ -661,10 +661,11 @@ func TestCreateODataClient_HeadersMicroflow(t *testing.T) {
 	if captured == nil {
 		t.Fatal("CreateConsumedODataService was not called")
 	}
-	if captured.HeadersMicroflow != "MyModule.SetHeaders" {
-		t.Errorf("HeadersMicroflow = %q, want %q", captured.HeadersMicroflow, "MyModule.SetHeaders")
-	}
-	if captured.ConfigurationMicroflow != "" {
-		t.Errorf("ConfigurationMicroflow should be empty when HeadersMicroflow is set, got %q", captured.ConfigurationMicroflow)
+	// Both `HeadersMicroflow` and `ConfigurationMicroflow` MDL keywords
+	// now map to the same model field (and the same Studio Pro BSON
+	// field). Studio Pro picks the dropdown label by the microflow's
+	// return type, not by which field carries the reference.
+	if captured.ConfigurationMicroflow != "MyModule.SetHeaders" {
+		t.Errorf("ConfigurationMicroflow = %q, want %q", captured.ConfigurationMicroflow, "MyModule.SetHeaders")
 	}
 }
