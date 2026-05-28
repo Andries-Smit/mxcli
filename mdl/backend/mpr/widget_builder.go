@@ -565,6 +565,111 @@ func (ob *mprWidgetObjectBuilder) EnsureRequiredObjectLists() {
 }
 
 // ---------------------------------------------------------------------------
+// Property visibility (#574)
+// ---------------------------------------------------------------------------
+
+// ApplyPropertyVisibility nulls the TextTemplate of any TextTemplate-typed
+// property the rules mark as hidden under the widget's current configuration.
+// Non-TextTemplate properties are left untouched: only the populated-vs-null
+// ClientTemplate choice triggers CE0463, so Phase 1 scopes the action to
+// TextTemplate. The widget's current primitive values (read from the assembled
+// object) drive rule evaluation, so a rule keyed on e.g. `type` sees the value
+// just set from MDL.
+func (ob *mprWidgetObjectBuilder) ApplyPropertyVisibility(rules []types.WidgetVisibilityRule) {
+	if len(rules) == 0 {
+		return
+	}
+	values := ob.currentPrimitiveValues()
+	for _, rule := range rules {
+		if !rule.HiddenWhen.Hidden(values) {
+			continue
+		}
+		entry, ok := ob.propertyTypeIDs[rule.PropertyKey]
+		if !ok || entry.ValueType != "TextTemplate" {
+			continue
+		}
+		ob.object = updateWidgetPropertyValue(ob.object, ob.propertyTypeIDs, rule.PropertyKey, func(val bson.D) bson.D {
+			return setBSONField(val, "TextTemplate", nil)
+		})
+	}
+}
+
+// currentPrimitiveValues maps each known property key to its current
+// PrimitiveValue string in the assembled object (e.g. type → "expression",
+// customVisualization → "true"). Properties absent from the object map to "".
+func (ob *mprWidgetObjectBuilder) currentPrimitiveValues() map[string]string {
+	byID := make(map[string]string)
+	for _, elem := range ob.object {
+		if elem.Key != "Properties" {
+			continue
+		}
+		arr, ok := elem.Value.(bson.A)
+		if !ok {
+			continue
+		}
+		for _, item := range arr {
+			prop, ok := item.(bson.D)
+			if !ok {
+				continue
+			}
+			id := propertyTypePointerID(prop)
+			if id == "" {
+				continue
+			}
+			byID[id] = primitiveValueOfProperty(prop)
+		}
+	}
+
+	out := make(map[string]string, len(ob.propertyTypeIDs))
+	for key, entry := range ob.propertyTypeIDs {
+		if v, ok := byID[strings.ReplaceAll(entry.PropertyTypeID, "-", "")]; ok {
+			out[key] = v
+		}
+	}
+	return out
+}
+
+// propertyTypePointerID returns a WidgetProperty's TypePointer as a normalized
+// (dash-stripped) UUID hex string, or "" when absent.
+func propertyTypePointerID(prop bson.D) string {
+	for _, elem := range prop {
+		if elem.Key != "TypePointer" {
+			continue
+		}
+		switch v := elem.Value.(type) {
+		case primitive.Binary:
+			return strings.ReplaceAll(types.BlobToUUID(v.Data), "-", "")
+		case []byte:
+			return strings.ReplaceAll(types.BlobToUUID(v), "-", "")
+		}
+	}
+	return ""
+}
+
+// primitiveValueOfProperty reads Value.PrimitiveValue from a WidgetProperty as
+// a string, or "" when missing/non-string.
+func primitiveValueOfProperty(prop bson.D) string {
+	for _, elem := range prop {
+		if elem.Key != "Value" {
+			continue
+		}
+		val, ok := elem.Value.(bson.D)
+		if !ok {
+			return ""
+		}
+		for _, ve := range val {
+			if ve.Key == "PrimitiveValue" {
+				if s, ok := ve.Value.(string); ok {
+					return s
+				}
+				return ""
+			}
+		}
+	}
+	return ""
+}
+
+// ---------------------------------------------------------------------------
 // Gallery-specific
 // ---------------------------------------------------------------------------
 

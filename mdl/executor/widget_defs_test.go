@@ -701,6 +701,50 @@ func TestRefreshStaleWidgetDefinitions(t *testing.T) {
 	})
 }
 
+// TestGenerateDefJSONPropertyVisibility verifies GenerateDefJSON stamps the
+// hand-authored visibility rules for VideoPlayer and Timeline (#574) and emits
+// none for widgets without rules.
+func TestGenerateDefJSONPropertyVisibility(t *testing.T) {
+	t.Run("VideoPlayer gets type=expression rules", func(t *testing.T) {
+		def := GenerateDefJSON(&mpk.WidgetDefinition{ID: "com.mendix.widget.web.videoplayer.VideoPlayer", IsPluggable: true}, "VIDEOPLAYER")
+		keys := map[string]string{}
+		for _, r := range def.PropertyVisibility {
+			if r.HiddenWhen == nil {
+				t.Fatalf("rule for %q has nil HiddenWhen", r.PropertyKey)
+			}
+			keys[r.PropertyKey] = r.HiddenWhen.PropertyKey + " " + r.HiddenWhen.Operator + " " + r.HiddenWhen.Value
+		}
+		for _, want := range []string{"videoUrl", "posterUrl"} {
+			if keys[want] != "type eq expression" {
+				t.Errorf("visibility[%q] = %q, want %q", want, keys[want], "type eq expression")
+			}
+		}
+	})
+
+	t.Run("Timeline gets customVisualization truthy rules", func(t *testing.T) {
+		def := GenerateDefJSON(&mpk.WidgetDefinition{ID: "com.mendix.widget.web.timeline.Timeline", IsPluggable: true}, "TIMELINE")
+		found := map[string]bool{}
+		for _, r := range def.PropertyVisibility {
+			if r.HiddenWhen == nil || r.HiddenWhen.PropertyKey != "customVisualization" || r.HiddenWhen.Operator != "truthy" {
+				t.Errorf("rule %q = %+v, want customVisualization truthy", r.PropertyKey, r.HiddenWhen)
+			}
+			found[r.PropertyKey] = true
+		}
+		for _, want := range []string{"title", "description", "timeIndication"} {
+			if !found[want] {
+				t.Errorf("missing visibility rule for %q", want)
+			}
+		}
+	})
+
+	t.Run("widget without rules has no propertyVisibility", func(t *testing.T) {
+		def := GenerateDefJSON(&mpk.WidgetDefinition{ID: "com.mendix.widget.web.combobox.Combobox", IsPluggable: true}, "COMBOBOX")
+		if len(def.PropertyVisibility) != 0 {
+			t.Errorf("PropertyVisibility = %+v, want empty for a widget with no rules", def.PropertyVisibility)
+		}
+	})
+}
+
 func writeDef(t *testing.T, dir, name string, genVersion int) {
 	t.Helper()
 	def := WidgetDefinition{

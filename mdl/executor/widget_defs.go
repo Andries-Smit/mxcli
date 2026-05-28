@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mendixlabs/mxcli/mdl/types"
 	"github.com/mendixlabs/mxcli/sdk/widgets/mpk"
 )
 
@@ -267,7 +268,34 @@ func GenerateDefJSON(mpkDef *mpk.WidgetDefinition, mdlName string) *WidgetDefini
 	}
 	def.PropertyMappings = append(def.PropertyMappings, assocMappings...)
 
+	def.PropertyVisibility = widgetVisibilityRules[mpkDef.ID]
+
 	return def
+}
+
+// widgetVisibilityRules holds hand-authored property-visibility rules for
+// widgets whose editorConfig.js hides TextTemplate properties under certain
+// configurations. Until the JS extractor lands (#574 Phase 2), these are
+// transcribed by hand from each widget's compiled editorConfig.js.
+//
+// Only TextTemplate-typed hidden properties need entries: the populated-vs-null
+// ClientTemplate choice is what triggers CE0463. Properties hidden as
+// Expression/enum/Widgets slots don't carry a ClientTemplate and are omitted.
+//
+//	VideoPlayer (editorConfig.js):
+//	  "expression"===e.type && hidePropertiesIn(["videoUrl","posterUrl"])
+//	Timeline (editorConfig.js):
+//	  e.customVisualization ? hidePropertiesIn(["title","description","icon","timeIndication",...]) : ...
+var widgetVisibilityRules = map[string][]types.WidgetVisibilityRule{
+	"com.mendix.widget.web.videoplayer.VideoPlayer": {
+		{PropertyKey: "videoUrl", HiddenWhen: &types.WidgetVisibilityCondition{PropertyKey: "type", Operator: "eq", Value: "expression"}},
+		{PropertyKey: "posterUrl", HiddenWhen: &types.WidgetVisibilityCondition{PropertyKey: "type", Operator: "eq", Value: "expression"}},
+	},
+	"com.mendix.widget.web.timeline.Timeline": {
+		{PropertyKey: "title", HiddenWhen: &types.WidgetVisibilityCondition{PropertyKey: "customVisualization", Operator: "truthy"}},
+		{PropertyKey: "description", HiddenWhen: &types.WidgetVisibilityCondition{PropertyKey: "customVisualization", Operator: "truthy"}},
+		{PropertyKey: "timeIndication", HiddenWhen: &types.WidgetVisibilityCondition{PropertyKey: "customVisualization", Operator: "truthy"}},
+	},
 }
 
 // widgetSlotKeywordOverrides maps (widgetID, propertyKey) pairs to the MDL

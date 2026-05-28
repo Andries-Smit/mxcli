@@ -3,6 +3,7 @@
 package backend
 
 import (
+	"github.com/mendixlabs/mxcli/mdl/types"
 	"github.com/mendixlabs/mxcli/model"
 	"github.com/mendixlabs/mxcli/sdk/pages"
 	"github.com/mendixlabs/mxcli/sdk/workflows"
@@ -304,6 +305,13 @@ type WidgetObjectBuilder interface {
 
 	// EnsureRequiredObjectLists auto-populates required empty object lists.
 	EnsureRequiredObjectLists()
+
+	// --- Property visibility ---
+
+	// ApplyPropertyVisibility nulls the TextTemplate of any TextTemplate-typed
+	// property the rules mark as hidden under the widget's current property
+	// values, matching Studio Pro's editorConfig.js-driven behavior (#574).
+	ApplyPropertyVisibility(rules []types.WidgetVisibilityRule)
 
 	// --- Gallery-specific ---
 

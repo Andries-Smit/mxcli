@@ -1,0 +1,69 @@
+-- @version: 11.0+
+-- ============================================================================
+-- Bug #574 — pluggable widget property conditional visibility.
+--
+-- A TextTemplate property that the widget's editorConfig.js HIDES under the
+-- current configuration must emit `TextTemplate: null`, not the embedded
+-- template's populated empty ClientTemplate. Emitting the populated default
+-- made Studio Pro / mx flag CE0463 ("the definition of this widget has
+-- changed") until the user ran right-click → Update widget.
+--
+-- Two cases, both "hidden TextTemplate property → null":
+--   * VideoPlayer with type='expression' hides videoUrl + posterUrl
+--     (editorConfig: "expression"===e.type && hidePropertiesIn(["videoUrl","posterUrl"]))
+--   * Timeline with customVisualization=true hides title/description/timeIndication
+--     (editorConfig: e.customVisualization ? hidePropertiesIn(["title","description",..,"timeIndication",..]) : ...)
+--
+-- Fix: widgetVisibilityRules (mdl/executor/widget_defs.go) → propertyVisibility[]
+-- in each .def.json → ApplyPropertyVisibility (mdl/backend/mpr/widget_builder.go)
+-- nulls hidden TextTemplate-typed properties at build time.
+--
+-- Verify in Studio Pro / mx check: both pages must pass with zero CE0463 on
+-- Mendix 11.9 without running Update widget first.
+-- ============================================================================
+
+create module Issue574;
+create module role Issue574.User;
+
+@position(100, 100)
+create persistent entity Issue574.Event (
+  Title: string(200),
+  Description: string(500),
+  DateCreated: datetime
+);
+
+-- VideoPlayer in expression mode: videoUrl + posterUrl are hidden, so they
+-- must serialize as TextTemplate: null.
+create or replace page Issue574.VideoExpression (
+  Title: 'Issue574 Video (expression)',
+  Layout: Atlas_Core.Atlas_Default
+) {
+  pluggablewidget 'com.mendix.widget.web.videoplayer.VideoPlayer' video1 (
+    type: 'expression',
+    urlExpression: '''https://example.com/demo.mp4'''
+  )
+}
+
+-- Timeline with custom visualization: title/description/timeIndication are
+-- hidden in favour of the customTitle/customDescription slots, so they must
+-- serialize as TextTemplate: null.
+create or replace page Issue574.TimelineCustom (
+  Title: 'Issue574 Timeline (custom)',
+  Layout: Atlas_Core.Atlas_Default
+) {
+  pluggablewidget 'com.mendix.widget.web.timeline.Timeline' timelineCustom1 (
+    datasource: database from Issue574.Event sort by DateCreated desc,
+    groupEvents: false,
+    customVisualization: true
+  ) {
+    container customTitle {
+      dynamictext tlTitle (content: '{1}', rendermode: H4, contentparams: [{1} = Title])
+    }
+    container customDescription {
+      dynamictext tlDesc (content: '{1}', contentparams: [{1} = Description])
+    }
+  }
+}
+
+grant view on page Issue574.VideoExpression to Issue574.User;
+grant view on page Issue574.TimelineCustom to Issue574.User;

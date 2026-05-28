@@ -1,11 +1,24 @@
 ---
 title: Widget Property Conditional Visibility
-status: draft
+status: phase-1-implemented
 ---
 
 # Widget Property Conditional Visibility
 
-Status: Draft
+Status: Phase 1 implemented (#574) — VideoPlayer + Timeline rules hand-authored
+and wired through the engine. Phases 2 (JS extractor) and 3 (nested/object-list
+rules) remain.
+
+> **Correction (Phase 1 implementation):** the original draft below described
+> Timeline as *under*-populating (emitting `null` where Studio Pro wanted a
+> populated `ClientTemplate`, "always visible"). That was based on a stale
+> embedded template. The current `mendix-11.6/timeline.json` template ships
+> `title`/`description`/`timeIndication` **populated**, and Timeline's
+> `editorConfig.js` in fact **hides** them when `customVisualization` is truthy
+> (`e.customVisualization ? hidePropertiesIn(["title","description","icon","timeIndication",...]) : ...`).
+> So Timeline's CE0463 is the *same* direction as VideoPlayer: a hidden
+> TextTemplate property must be nulled. Phase 1 handles both via one mechanism —
+> hidden TextTemplate property → `TextTemplate: null`.
 
 ## Summary
 
@@ -229,9 +242,15 @@ properties. The same proposal addresses both directions:
 
 ## Phasing
 
-1. **Phase 1 — Datapath (no extractor)**: hand-author
-   `propertyVisibility[]` for VideoPlayer + Timeline as a proof-of-concept.
-   Wire serializer through. Verify CE0463 eliminated on `test5-app`.
+1. **Phase 1 — Datapath (no extractor)** ✅ *implemented (#574)*: hand-authored
+   `widgetVisibilityRules` (Go table in `mdl/executor/widget_defs.go`) for
+   VideoPlayer + Timeline; `GenerateDefJSON` stamps them into each `.def.json`
+   as `propertyVisibility[]`. The engine evaluates them in
+   `mprWidgetObjectBuilder.ApplyPropertyVisibility` (`mdl/backend/mpr/widget_builder.go`),
+   nulling the `TextTemplate` of hidden TextTemplate-typed properties.
+   `WidgetDefGeneratorVersion` bumped to 3 so stale project defs auto-refresh.
+   Verified: `mx check` on `test5-app` (11.9) clears the `video1` + `timelineCustom1`
+   CE0463 cases. Types live in `mdl/types/widget_visibility.go`.
 2. **Phase 2 — Extractor**: build JS AST walker. Regenerate
    `propertyVisibility[]` for all `sdk/widgets/definitions/*.def.json` from
    their bundled `.mpk` `editorConfig.js`. Add the

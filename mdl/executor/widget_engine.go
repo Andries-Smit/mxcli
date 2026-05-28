@@ -35,21 +35,24 @@ const defaultSlotContainer = "template"
 //	1 — pre-v0.12.0 (unstamped; treated as 0)
 //	2 — v0.12.0: mdlAliases, acceptedChildTypes, attrChoice=auto, column
 //	    convention fallbacks
-const WidgetDefGeneratorVersion = 2
+//	3 — v0.12.0: propertyVisibility (VideoPlayer/Timeline hidden-property
+//	    TextTemplate nulling, #574)
+const WidgetDefGeneratorVersion = 3
 
 // WidgetDefinition describes how to construct a pluggable widget from MDL syntax.
 // Loaded from embedded JSON definition files (*.def.json).
 type WidgetDefinition struct {
-	WidgetID         string              `json:"widgetId"`
-	MDLName          string              `json:"mdlName"`
-	WidgetKind       string              `json:"widgetKind,omitempty"` // "pluggable" (React) or "custom" (legacy Dojo)
-	TemplateFile     string              `json:"templateFile"`
-	DefaultEditable  string              `json:"defaultEditable"`
-	GeneratorVersion int                 `json:"generatorVersion,omitempty"` // WidgetDefGeneratorVersion at generation time; 0/absent = pre-stamp
-	PropertyMappings []PropertyMapping   `json:"propertyMappings,omitempty"`
-	ChildSlots       []ChildSlotMapping  `json:"childSlots,omitempty"`
-	ObjectLists      []ObjectListMapping `json:"objectLists,omitempty"`
-	Modes            []WidgetMode        `json:"modes,omitempty"`
+	WidgetID           string                       `json:"widgetId"`
+	MDLName            string                       `json:"mdlName"`
+	WidgetKind         string                       `json:"widgetKind,omitempty"` // "pluggable" (React) or "custom" (legacy Dojo)
+	TemplateFile       string                       `json:"templateFile"`
+	DefaultEditable    string                       `json:"defaultEditable"`
+	GeneratorVersion   int                          `json:"generatorVersion,omitempty"` // WidgetDefGeneratorVersion at generation time; 0/absent = pre-stamp
+	PropertyMappings   []PropertyMapping            `json:"propertyMappings,omitempty"`
+	ChildSlots         []ChildSlotMapping           `json:"childSlots,omitempty"`
+	ObjectLists        []ObjectListMapping          `json:"objectLists,omitempty"`
+	PropertyVisibility []types.WidgetVisibilityRule `json:"propertyVisibility,omitempty"`
+	Modes              []WidgetMode                 `json:"modes,omitempty"`
 }
 
 // PropertyMapping maps an MDL source (attribute, association, literal, etc.)
@@ -396,6 +399,13 @@ func (e *PluggableWidgetEngine) Build(def *WidgetDefinition, w *ast.WidgetV3) (*
 
 	// 4.9 Auto-populate required empty object lists
 	builder.EnsureRequiredObjectLists()
+
+	// 4.10 Apply property-visibility rules: a TextTemplate property that the
+	// widget's editorConfig.js hides under the current configuration must emit
+	// TextTemplate: null, not the template's populated default (CE0463, #574).
+	if len(def.PropertyVisibility) > 0 {
+		builder.ApplyPropertyVisibility(def.PropertyVisibility)
+	}
 
 	// 5. Build CustomWidget
 	widgetID := model.ID(types.GenerateID())
