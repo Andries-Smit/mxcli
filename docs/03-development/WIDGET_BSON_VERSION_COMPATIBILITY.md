@@ -166,18 +166,57 @@ counter per entry. Caught by the integration test
 `TestMxCheck_DoctypeScripts`, fixed in commit
 [`8ead1cff`](https://github.com/mendixlabs/mxcli/commit/8ead1cff).
 
-## Cross-version validation (proposed, not yet implemented)
+## 11.10 onboarding result: no envelope drift
 
-A `make test-mx-versions` target should:
+Running the v0.10 acceptance fixtures (`31-…`, `32-…`) and the broader
+`30-pluggable-widget-examples.mdl` through `exec` + `mx check` on **both**
+Mendix 11.9 (`test5-app`) and 11.10 (`test6-app`) produces **identical**
+CE0463 sets:
 
-1. Iterate over a curated list of embedded Mendix versions (LTS + MTS:
-   10.18, 10.24, 11.6, 11.9, future 11.x as they land)
-2. For each: create a blank `.mpr`, run the v0.10 fixture, `mx check` with
-   that version's `mx` binary
-3. Assert zero CE0463 / CE0642 / CE0091 errors
+| Fixture | 11.9 | 11.10 |
+|---|---|---|
+| `30-pluggable-widget-examples` | `tf1` (#605) | `tf1` (#605) |
+| `31-…datagrid-gallery-v010` | `dgDyn` | `dgDyn` |
+| `32-…object-lists-v010` | none | none |
 
-This catches version drift the moment it happens, rather than at user-report
-time. Tracked under the unified schema registry effort
+So the 11.6-based envelope is **stable across 11.9 → 11.10** — no field was
+added to `WidgetValueType`, no ordering changed, no `Appearance`/`TextTemplate`
+convention shifted. The two residual CE0463s appear on *both* versions, so they
+are **version-independent widget bugs** (tracked separately: `tf1` = #605,
+`dgDyn` = a `datagrid` keyword-form regression), not envelope drift.
+
+Practically: v0.12.0 Stream A's planned per-version conditionals (threading
+`MendixVersion` into the serializer, gating `AllowUpload`/`Appearance` shape)
+turned out **unnecessary for 11.9 ↔ 11.10** — there is nothing to conditionalize.
+The conditionals would only become necessary if a future minor introduces a
+delta, and the gate below is what would surface that.
+
+## Cross-version validation gate
+
+`make check-widget-versions` (script: `scripts/check-widget-versions.sh`) runs
+a widget fixture through `exec` + `mx check` against several Mendix versions and
+**fails if the CE0463 set differs between them** — i.e. it detects envelope
+drift specifically, ignoring version-independent bugs (which appear on every
+version). It does *not* require zero CE0463.
+
+```bash
+# Defaults to test5-app (11.9) + test6-app (11.10); override the project paths:
+make check-widget-versions \
+  MX_PROJECT_119=/path/to/app-11.9.mpr \
+  MX_PROJECT_1110=/path/to/app-11.10.mpr
+
+# Or run the script directly against any fixture + version set:
+scripts/check-widget-versions.sh mdl-examples/doctype-tests/31-pluggable-datagrid-gallery-v010-examples.mdl \
+  11.9.0:../ModelSDKGo/mx-test-projects/test5-app/test5.mpr \
+  11.10.0:../ModelSDKGo/mx-test-projects/test6-app/test6.mpr
+```
+
+Each version needs its mxbuild installed (`~/.mxcli/mxbuild/<ver>/`) and a
+reference project with the fixture's widgets (`.mpk`) installed. The 11.10
+`mx` binary's libSkiaSharp crash is handled automatically (the script checks
+via `scripts/mx-check.sh`). This catches version drift the moment it happens,
+rather than at user-report time. The long-term replacement (build-time
+templates per version) is tracked under the unified schema registry effort
 ([#529](https://github.com/mendixlabs/mxcli/issues/529), Phase 5).
 
 ## The long-term answer

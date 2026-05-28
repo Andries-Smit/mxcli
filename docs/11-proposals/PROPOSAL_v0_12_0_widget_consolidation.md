@@ -1,6 +1,6 @@
 # v0.12.0 Implementation Plan: Widget Path Consolidation
 
-**Status:** Stream B (engine consolidation) complete; Streams A + C in progress
+**Status:** Stream B (engine consolidation) complete; Stream A complete (no envelope drift found — A1/A2 unnecessary, A3 gate landed); Stream C in progress
 **Milestone:** [v0.12.0](https://github.com/mendixlabs/mxcli/milestone/5)
 **Builds on:** [UNIFIED_SCHEMA_REGISTRY.md](UNIFIED_SCHEMA_REGISTRY.md) (Phase 4 — Native/pluggable dispatch)
 **Closes (in part):** #529 (Phase 4), #574, #541, #566, #568, #569, #570
@@ -164,27 +164,31 @@ ALTER PAGE column insert/replace path (`page_mutator.go`'s
 engine. That would let `DataGridColumnSpec` + the remaining `buildColumn*`
 helpers go, finishing the `datagrid_builder.go` cleanup.
 
-### Stream A — Per-Mendix-version envelope conditionals
+### Stream A — Per-Mendix-version envelope conditionals ✅ COMPLETE
 
-Only after Stream B is the engine the single point that needs version
-awareness. Today `serializeWidgetValueForRawType` hardcodes 11.9
-conventions.
+**Finding: there is no 11.9 → 11.10 envelope drift.** Running fixtures 30/31/32
+through `exec` + `mx check` on Mendix 11.9 (`test5-app`) and 11.10 (`test6-app`)
+yields **identical** CE0463 sets (`30`→`tf1`, `31`→`dgDyn`, `32`→none on both).
+The 11.6-based envelope is stable across these minors, so the planned per-version
+conditionals were unnecessary.
 
-**A1. Thread `MendixVersion` through the engine**
-Already available via project metadata; pass it into the serializer.
+**A1. Thread `MendixVersion` through the engine** — ❌ not needed. No envelope
+field differs between 11.9 and 11.10, so there is nothing to gate on version.
 
-**A2. Conditionalize envelope fields where they differ across versions**
-Examples (from `WIDGET_BSON_VERSION_COMPATIBILITY.md`):
-- `AllowUpload` exists in 11.9+ only — gate emission on version
-- Filter widget envelope (`Forms$Appearance`, etc.) shape evolved
-- `TextTemplate` default `Translations` conventions
+**A2. Conditionalize envelope fields** — ❌ not needed. `AllowUpload`,
+`Forms$Appearance` shape, and `TextTemplate` `Translations` conventions are
+identical across 11.9/11.10 (confirmed by zero cross-version CE0463 delta).
+Would only become necessary if a future minor introduces a delta — A3 surfaces
+that automatically.
 
-Each becomes a conditional in Go rather than a per-version JSON snapshot.
-
-**A3. Validation gate**
-Doctype fixtures pass `mx check` on **both** Mendix 11.9 and 11.10 with
-zero CE0463. Use `mx-test-projects/test5-app` (CE0463 reference) and a
-fresh 11.10 project for the matrix.
+**A3. Validation gate** — ✅ implemented as `make check-widget-versions`
+(`scripts/check-widget-versions.sh`). Runs a fixture on multiple versions and
+fails on any cross-version CE0463 **difference** (envelope drift), tolerating
+version-independent bugs that appear on every version. The 11.10 libSkiaSharp
+crash is handled via `scripts/mx-check.sh`. See
+`docs/03-development/WIDGET_BSON_VERSION_COMPATIBILITY.md` → "Cross-version
+validation gate". The two residual version-independent CE0463s (`tf1` #605,
+`dgDyn`) are tracked separately, not envelope drift.
 
 ### Stream C — Issue-queue cleanups (parallel with B)
 

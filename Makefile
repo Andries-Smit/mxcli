@@ -29,7 +29,7 @@ LDFLAGS = -ldflags "-X main.Version=$(VERSION) -X main.BuildTime=$(BUILD_TIME)"
 # Clean version for VS Code extension (must be valid semver: major.minor.patch)
 VSCE_VERSION = $(shell echo "$(VERSION)" | sed 's/^v//; s/-.*//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$$' || echo "0.0.0")
 
-.PHONY: build build-debug release clean test test-mdl grammar completions sync-skills sync-commands sync-lint-rules sync-changelog sync-all docs documentation docs-site docs-serve vscode-ext vscode-install source-tree sbom sbom-report lint lint-go lint-ts fmt vet
+.PHONY: build build-debug release clean test test-mdl check-widget-versions grammar completions sync-skills sync-commands sync-lint-rules sync-changelog sync-all docs documentation docs-site docs-serve vscode-ext vscode-install source-tree sbom sbom-report lint lint-go lint-ts fmt vet
 
 # Helper: copy file only if content differs (avoids mtime updates that invalidate go build cache)
 # Usage: $(call copy-if-changed,src,dst)
@@ -191,6 +191,20 @@ test-integration:
 MPR ?= app.mpr
 test-mdl: build
 	./scripts/run-mdl-tests.sh "$(abspath $(MPR))" "$(abspath $(BUILD_DIR)/$(BINARY_NAME))"
+
+# Cross-version widget-envelope drift gate (v0.12.0 Stream A / A3).
+# Runs the v0.10 widget fixtures through exec + mx check on multiple Mendix
+# versions and fails if the CE0463 set differs between them (envelope drift).
+# Requires the matching mxbuilds (~/.mxcli/mxbuild/<ver>/) and reference
+# projects with the fixtures' widgets installed (override the vars below).
+MX_PROJECT_119 ?= ../ModelSDKGo/mx-test-projects/test5-app/test5.mpr
+MX_PROJECT_1110 ?= ../ModelSDKGo/mx-test-projects/test6-app/test6.mpr
+check-widget-versions: build
+	@for fix in 31-pluggable-datagrid-gallery-v010-examples 32-pluggable-widget-object-lists-v010; do \
+		echo "== $$fix =="; \
+		./scripts/check-widget-versions.sh "mdl-examples/doctype-tests/$$fix.mdl" \
+			"11.9.0:$(MX_PROJECT_119)" "11.10.0:$(MX_PROJECT_1110)" || exit 1; \
+	done
 
 # Lint all code (Go + TypeScript)
 lint: lint-go lint-ts
