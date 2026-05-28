@@ -66,6 +66,14 @@ mxcli setup mxbuild -p app.mpr
 mxcli docker check -p app.mpr
 ```
 
+**Devcontainer gotcha — libSkiaSharp crash on some mxbuild releases.** Certain bundled `mx` binaries (observed on 11.10.0) abort with `symbol lookup error: .../libSkiaSharp.so: undefined symbol: FT_Get_BDF_Property` against the system libfreetype. `mx check` doesn't need Skia, so use the guarded wrapper which moves the library aside, runs the check, and always restores it (even on Ctrl-C):
+
+```bash
+scripts/mx-check.sh -p /path/to/app.mpr --version 11.10.0
+```
+
+Never leave `libSkiaSharp.so` moved aside manually — other `mx` commands (build, etc.) need it.
+
 ## Project Architecture
 
 ```
