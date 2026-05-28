@@ -104,86 +104,6 @@ func (pb *pageBuilder) buildDataViewV3(w *ast.WidgetV3) (*pages.DataView, error)
 	return dv, nil
 }
 
-func (pb *pageBuilder) buildDataGridV3(w *ast.WidgetV3) (*pages.CustomWidget, error) {
-	widgetID := model.ID(types.GenerateID())
-
-	// Build datasource from V3 DataSource property
-	var datasource pages.DataSource
-	if ds := w.GetDataSource(); ds != nil {
-		dataSource, entityName, err := pb.buildDataSourceV3(ds)
-		if err != nil {
-			return nil, mdlerrors.NewBackend("build datasource", err)
-		}
-		datasource = dataSource
-
-		// Save and restore entity context so nested containers work correctly
-		oldContext := pb.entityContext
-		pb.entityContext = entityName
-		defer func() { pb.entityContext = oldContext }()
-	}
-
-	// Extract column definitions and CONTROLBAR widgets from children
-	var columns []backend.DataGridColumnSpec
-	var headerWidgets []pages.Widget
-	for _, child := range w.Children {
-		switch strings.ToLower(child.Type) {
-		case "column":
-			col, err := pb.buildColumnSpecFromAST(child)
-			if err != nil {
-				return nil, err
-			}
-			columns = append(columns, *col)
-		case "controlbar":
-			for _, controlBarChild := range child.Children {
-				childWidget, err := pb.buildWidgetV3(controlBarChild)
-				if err != nil {
-					return nil, mdlerrors.NewBackend("build controlbar widget", err)
-				}
-				if childWidget != nil {
-					headerWidgets = append(headerWidgets, childWidget)
-				}
-			}
-		}
-	}
-
-	// Collect paging overrides from AST properties
-	pagingOverrides := make(map[string]string)
-	for mdlKey, widgetKey := range dataGridPagingPropMap {
-		if v := w.GetStringProp(mdlKey); v != "" {
-			pagingOverrides[widgetKey] = v
-		} else if iv := w.GetIntProp(mdlKey); iv > 0 {
-			pagingOverrides[widgetKey] = fmt.Sprintf("%d", iv)
-		} else if bv, ok := w.Properties[mdlKey]; ok {
-			if boolVal, isBool := bv.(bool); isBool {
-				if boolVal {
-					pagingOverrides[widgetKey] = "yes"
-				} else {
-					pagingOverrides[widgetKey] = "no"
-				}
-			}
-		}
-	}
-
-	spec := backend.DataGridSpec{
-		DataSource:      datasource,
-		Columns:         columns,
-		HeaderWidgets:   headerWidgets,
-		PagingOverrides: pagingOverrides,
-		SelectionMode:   w.GetSelection(),
-	}
-
-	grid, err := pb.widgetBackend.BuildDataGrid2Widget(widgetID, w.Name, spec, pb.backend.Path())
-	if err != nil {
-		return nil, err
-	}
-
-	if err := pb.registerWidgetName(w.Name, grid.ID); err != nil {
-		return nil, err
-	}
-
-	return grid, nil
-}
-
 // buildClientTemplateParams converts AST template parameters (e.g. from
 // CaptionParams / ContentParams) into pages.ClientTemplateParameter values
 // with attribute paths resolved against the current entity context.
@@ -1024,14 +944,4 @@ func dataGridFilterWidgetID(widgetType string) string {
 		return pages.WidgetIDDataGridDropdownFilter
 	}
 	return ""
-}
-
-// dataGridPagingPropMap maps PascalCase MDL property names to camelCase widget property keys.
-var dataGridPagingPropMap = map[string]string{
-	"PageSize":          "pageSize",
-	"Pagination":        "pagination",
-	"PagingPosition":    "pagingPosition",
-	"ShowPagingButtons": "showPagingButtons",
-	// "ShowNumberOfRows" is defined in DataGrid2 type but not yet fully supported;
-	// setting it to a non-default value causes CE0463 "widget definition changed".
 }

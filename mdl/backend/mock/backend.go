@@ -289,7 +289,6 @@ type MockBackend struct {
 	SerializeWidgetToOpaqueFunc     func(w pages.Widget) any
 	SerializeDataSourceToOpaqueFunc func(ds pages.DataSource) any
 	BuildCreateAttributeObjectFunc  func(attributePath string, objectTypeID, propertyTypeID, valueTypeID string) (any, error)
-	BuildDataGrid2WidgetFunc        func(id model.ID, name string, spec backend.DataGridSpec, projectPath string) (*pages.CustomWidget, error)
 	BuildFilterWidgetFunc           func(spec backend.FilterWidgetSpec, projectPath string) (pages.Widget, error)
 
 	// AgentEditorBackend
