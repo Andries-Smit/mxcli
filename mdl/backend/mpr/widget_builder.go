@@ -546,6 +546,18 @@ func (ob *mprWidgetObjectBuilder) SetAttributeObjects(propertyKey string, attrib
 		}
 		return result
 	})
+
+	// A filter widget (DatagridTextFilter etc.) with an explicit `attributes`
+	// list must select attrChoice="linked" ("Custom"). The "auto" default fits
+	// only column-bound filters that carry no attributes and bind to the grid
+	// column; Studio Pro 11.10+ flags attrChoice="auto" alongside a populated
+	// attributes list as definition drift (CE0463). The two enum values are
+	// "auto" and "linked".
+	if _, ok := ob.propertyTypeIDs["attrChoice"]; ok {
+		ob.object = updateWidgetPropertyValue(ob.object, ob.propertyTypeIDs, "attrChoice", func(val bson.D) bson.D {
+			return setPrimitiveValue(val, "linked")
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------
