@@ -1,5 +1,9 @@
 -- Bug #607: `declare` of a list variable must be rejected by mxcli check
 --
+-- NEGATIVE TEST (.fail.mdl) — this script is EXPECTED to fail `mxcli check`.
+-- `make check-mdl` inverts the exit code for .fail.mdl files: an unexpected
+-- pass would be reported as a regression of the MDL040 rule.
+--
 -- Symptom: `declare $x list of T = empty;` parsed and PASSED `mxcli check`, but
 -- Studio Pro rejected the project with CE0053 ("type not allowed") and CE0038
 -- ("value required") — `declare` maps to a Create Variable activity, which
@@ -7,8 +11,7 @@
 --
 -- Fix: mxcli check now flags any list-typed declare as MDL040 (error).
 --
--- Expected: `mxcli check mdl-examples/bug-tests/607-declare-list-rejected.mdl`
--- fails with MDL040 on $Items, and exits non-zero.
+-- Expected: `mxcli check` exits non-zero with MDL040 on $Items.
 --
 -- Correct alternatives (do NOT declare a list):
 --   * parameter:    create microflow M.Process ($Items: list of BugTest.Item) ...

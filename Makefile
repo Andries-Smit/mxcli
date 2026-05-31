@@ -151,9 +151,14 @@ test: grammar
 # mxcli-test inputs, not mxcli-check inputs.
 #
 # Nine bug-test fixtures are pre-existing failures (varied causes: some
-# demonstrate intentionally-broken syntax, others are negative tests
-# asserting validation fires, some need project context). Tracked
-# separately; the SKIP list keeps CI green until each is triaged.
+# demonstrate intentionally-broken syntax, others need project context).
+# Tracked separately (issue #571); the SKIP list keeps CI green until each
+# is triaged.
+#
+# Files ending in .fail.mdl are explicit negative tests — they MUST fail
+# `mxcli check` (the script reproduces a symptom that a new validation
+# rule rejects). The runner inverts the exit code for these: an unexpected
+# pass is treated as a regression of the rule.
 check-mdl: build
 	@FAILED=0; \
 	for f in mdl-examples/doctype-tests/*.mdl mdl-examples/bug-tests/*.mdl; do \
@@ -172,6 +177,15 @@ check-mdl: build
 				continue ;; \
 		esac; \
 		NAME=$$(basename "$$f"); \
+		case "$$f" in *.fail.mdl) \
+			if ./$(BUILD_DIR)/$(BINARY_NAME) check "$$f" > /dev/null 2>&1; then \
+				echo "FAIL (negative test unexpectedly passed): $$NAME"; \
+				FAILED=1; \
+			else \
+				echo "PASS (negative test, expected error): $$NAME"; \
+			fi; \
+			continue ;; \
+		esac; \
 		if ./$(BUILD_DIR)/$(BINARY_NAME) check "$$f" > /dev/null 2>&1; then \
 			echo "PASS: $$NAME"; \
 		else \
