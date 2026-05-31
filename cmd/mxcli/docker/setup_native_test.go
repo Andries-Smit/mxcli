@@ -22,17 +22,28 @@ func TestNativeMxBuildForSetup_Linux(t *testing.T) {
 	}
 }
 
-// TestNativeMxBuildForSetup_WindowsNoStudioPro guards issue #608: on Windows with
-// no Studio Pro installed for the version, `setup mxbuild` must refuse to download
-// the Linux CDN binary (which would later fail with "Exec format error") and
-// instead return actionable guidance pointing at Studio Pro's bundled mx.exe.
-func TestNativeMxBuildForSetup_WindowsNoStudioPro(t *testing.T) {
-	// Redirect Windows Program Files lookup at a temp dir with no Mendix install.
+// isolateHostStudioPro points both the Windows Program Files lookup AND the
+// macOS Applications scan at empty temp dirs. NativeMxBuildForSetup's `goos`
+// argument controls its decision branch, but the ResolveStudioProDir it calls
+// dispatches on runtime.GOOS — so a "windows" test running on a macOS host
+// would otherwise scan /Applications and find a real Studio Pro install.
+// Isolating both makes the tests host-independent.
+func isolateHostStudioPro(t *testing.T) {
+	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("PROGRAMFILES", dir)
 	t.Setenv("PROGRAMW6432", dir)
 	t.Setenv("PROGRAMFILES(X86)", dir)
 	t.Setenv("SystemDrive", dir)
+	setTestApplicationsDir(t, t.TempDir())
+}
+
+// TestNativeMxBuildForSetup_WindowsNoStudioPro guards issue #608: on Windows with
+// no Studio Pro installed for the version, `setup mxbuild` must refuse to download
+// the Linux CDN binary (which would later fail with "Exec format error") and
+// instead return actionable guidance pointing at Studio Pro's bundled mx.exe.
+func TestNativeMxBuildForSetup_WindowsNoStudioPro(t *testing.T) {
+	isolateHostStudioPro(t)
 
 	path, guidance, err := NativeMxBuildForSetup("windows", "11.10.0")
 	if err == nil {
@@ -54,7 +65,7 @@ func TestNativeMxBuildForSetup_WindowsNoStudioPro(t *testing.T) {
 
 // TestNativeMxBuildForSetup_DarwinNoStudioPro mirrors the Windows case for macOS.
 func TestNativeMxBuildForSetup_DarwinNoStudioPro(t *testing.T) {
-	setTestApplicationsDir(t, t.TempDir())
+	isolateHostStudioPro(t)
 
 	_, guidance, err := NativeMxBuildForSetup("darwin", "11.10.0")
 	if err == nil {
