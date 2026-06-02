@@ -1820,7 +1820,9 @@ func clearDesignPropertiesMut(widget bson.D) error {
 }
 
 // buildDesignPropertyValueDoc builds the typed Value sub-document for a design
-// property entry. existingType preserves a custom value kind on option updates.
+// property entry. valueType is "toggle", "option", or "custom"
+// (ToggleButtonGroup/ColorPicker). existingType preserves a custom value kind on
+// an option-typed update when the caller could not resolve the theme type.
 func buildDesignPropertyValueDoc(valueType, option, existingType string) bson.D {
 	switch {
 	case valueType == "toggle":
@@ -1828,7 +1830,7 @@ func buildDesignPropertyValueDoc(valueType, option, existingType string) bson.D 
 			{Key: "$ID", Value: bsonutil.NewIDBsonBinary()},
 			{Key: "$Type", Value: toggleDesignPropertyType},
 		}
-	case existingType == customDesignPropertyType:
+	case valueType == "custom" || existingType == customDesignPropertyType:
 		return bson.D{
 			{Key: "$ID", Value: bsonutil.NewIDBsonBinary()},
 			{Key: "$Type", Value: customDesignPropertyType},

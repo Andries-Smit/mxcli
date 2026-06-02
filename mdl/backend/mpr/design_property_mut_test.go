@@ -94,6 +94,24 @@ func TestSetDesignProperty_Option_Appends(t *testing.T) {
 	}
 }
 
+func TestSetDesignProperty_Custom_Appends(t *testing.T) {
+	rawData := makeRawPage(makeStyleableWidget("ctn1"))
+	m := &mprPageMutator{rawData: rawData, widgetFinder: findBsonWidget}
+
+	// ToggleButtonGroup/ColorPicker values use the "custom" value-type.
+	if err := m.SetDesignProperty("ctn1", "Flex container", "custom", "Horizontal (row)"); err != nil {
+		t.Fatalf("SetDesignProperty failed: %v", err)
+	}
+
+	val := dGetDoc(findEntry(designPropEntries(t, rawData, "ctn1"), "Flex container"), "Value")
+	if val == nil || dGetString(val, "$Type") != customDesignPropertyType {
+		t.Fatalf("expected custom value type, got %#v", dGet(findEntry(designPropEntries(t, rawData, "ctn1"), "Flex container"), "Value"))
+	}
+	if dGetString(val, "Value") != "Horizontal (row)" {
+		t.Errorf("expected custom Value='Horizontal (row)', got %q", dGetString(val, "Value"))
+	}
+}
+
 func TestSetDesignProperty_UpdatesExistingKeyInPlace(t *testing.T) {
 	rawData := makeRawPage(makeStyleableWidget("ctn1"))
 	m := &mprPageMutator{rawData: rawData, widgetFinder: findBsonWidget}

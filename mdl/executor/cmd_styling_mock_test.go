@@ -125,7 +125,7 @@ func TestAlterStyling_UppercaseContainerType_SetClass_Issue631(t *testing.T) {
 		ContainerName: ast.QualifiedName{Module: "MyModule", Name: "Home"},
 		WidgetName:    "ctnHeader",
 		Assignments: []ast.StylingAssignment{
-			{Property: "Class", Value: "card card-bordered"},
+			{Property: "Class", Value: "card card-bordered", IsCSS: true},
 		},
 	}))
 
@@ -215,6 +215,60 @@ func TestAlterStyling_ClearDesignProperties(t *testing.T) {
 
 	if !cleared {
 		t.Error("expected ClearDesignProperties to be called")
+	}
+}
+
+// Issue #631 follow-up: a quoted design-property key named 'Style' must be
+// treated as a design property (e.g. Button Style = 'Icon button'), NOT routed
+// to the CSS Style widget property. IsCSS is false for quoted keys.
+func TestAlterStyling_QuotedStyleIsDesignProperty(t *testing.T) {
+	var dpKey, dpVal string
+	cssCalled := false
+	mut := &mock.MockPageMutator{
+		FindWidgetFunc:        func(name string) bool { return true },
+		SetWidgetPropertyFunc: func(widgetRef, prop string, value any) error { cssCalled = true; return nil },
+		SetDesignPropertyFunc: func(widgetRef, key, valueType, option string) error { dpKey = key; dpVal = option; return nil },
+		SaveFunc:              func() error { return nil },
+	}
+	ctx, _, _ := stylingMutatorBackend(t, mut)
+
+	assertNoError(t, execAlterStyling(ctx, &ast.AlterStylingStmt{
+		ContainerType: "PAGE",
+		ContainerName: ast.QualifiedName{Module: "MyModule", Name: "Home"},
+		WidgetName:    "btnSave",
+		Assignments: []ast.StylingAssignment{
+			{Property: "Style", Value: "Icon button", IsCSS: false}, // quoted 'Style' design property
+		},
+	}))
+
+	if cssCalled {
+		t.Error("quoted 'Style' must NOT be routed to the CSS Style property")
+	}
+	if dpKey != "Style" || dpVal != "Icon button" {
+		t.Errorf("expected design property Style='Icon button', got %s=%q", dpKey, dpVal)
+	}
+}
+
+func TestResolveStylingValueType(t *testing.T) {
+	reg := &ThemeRegistry{WidgetProperties: map[string][]ThemeProperty{
+		"DivContainer": {{Name: "Flex container", Type: "ToggleButtonGroup"}, {Name: "Align content", Type: "Dropdown"}},
+		"Button":       {{Name: "Style", Type: "ToggleButtonGroup"}},
+		"DataView":     {{Name: "Background color", Type: "ColorPicker"}},
+	}}
+	cases := map[string]string{
+		"Flex container":   "custom",
+		"Style":            "custom",
+		"Background color": "custom",
+		"Align content":    "option",
+		"Unknown prop":     "option",
+	}
+	for key, want := range cases {
+		if got := resolveStylingValueType(reg, key); got != want {
+			t.Errorf("resolveStylingValueType(%q) = %q, want %q", key, got, want)
+		}
+	}
+	if got := resolveStylingValueType(nil, "anything"); got != "option" {
+		t.Errorf("nil registry should default to option, got %q", got)
 	}
 }
 
