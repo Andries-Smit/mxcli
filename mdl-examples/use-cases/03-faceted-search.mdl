@@ -1,0 +1,344 @@
+-- =============================================================================
+-- Faceted Search — Mendix Cloud Portal style (per-user, multi-value)
+--
+-- Scenario:
+--   A "Cloud Portal" lists every Environment of every Project, grouped by the
+--   Company that owns them. Each user keeps their own set of selected category
+--   values; the result grid shows one row per Project / Environment that
+--   matches ANY of the current user's selected values — and the matching is
+--   done entirely in the database, inside the view entity's OQL.
+--
+-- This example focuses on the OQL (the UI is deliberately minimal):
+--   * Per-user selection: the facet values are scoped with [%CurrentUser%], so
+--     every user sees a grid filtered to their own selection.
+--   * Multiple values: the selection is a ReferenceSet, matched with `in (...)`.
+--   * A category value can tag BOTH a Project and an Environment; a row matches
+--     if a selected value is on the project OR on the environment.
+--   * One row per Project / Environment (GROUP BY collapses the value joins).
+--
+-- Usage:
+--   ./bin/mxcli check mdl-examples/use-cases/03-faceted-search.mdl
+--   ./bin/mxcli exec  mdl-examples/use-cases/03-faceted-search.mdl -p <app.mpr>
+--
+-- Requires Mendix 10.18+ (VIEW ENTITY / OQL source).
+-- =============================================================================
+
+create module CloudPortal;
+create module role CloudPortal.User;
+
+-- -----------------------------------------------------------------------------
+-- Step 1: Enumerations
+-- -----------------------------------------------------------------------------
+
+create enumeration CloudPortal.ENUM_EnvironmentType (
+  Production  'Production',
+  Acceptance  'Acceptance',
+  Test        'Test',
+  Sandbox     'Sandbox'
+);
+
+-- -----------------------------------------------------------------------------
+-- Step 2: Domain model — Company / Project / Environment
+--
+-- A Company owns many Projects; a Project has many Environments.
+-- -----------------------------------------------------------------------------
+
+/** A customer/company tenant in the cloud portal. */
+@position(100, 100)
+create persistent entity CloudPortal.Company (
+  Name: string(200) not null error 'Company name is required'
+);
+
+/** A Mendix app project, owned by a Company. */
+@position(100, 300)
+create persistent entity CloudPortal.Project (
+  Name: string(200) not null error 'Project name is required'
+);
+
+/** A deployment environment that belongs to a Project. */
+@position(100, 500)
+create persistent entity CloudPortal.Environment (
+  Name: string(200) not null error 'Environment name is required',
+  EnvironmentType: enumeration(CloudPortal.ENUM_EnvironmentType)
+    default CloudPortal.ENUM_EnvironmentType.Test,
+  Url: string(500)
+);
+
+create association CloudPortal.Project_Company
+  from CloudPortal.Project to CloudPortal.Company
+  type reference
+  owner default
+  delete_behavior DELETE_BUT_KEEP_REFERENCES;
+
+create association CloudPortal.Environment_Project
+  from CloudPortal.Environment to CloudPortal.Project
+  type reference
+  owner default
+  delete_behavior DELETE_BUT_KEEP_REFERENCES;
+
+-- -----------------------------------------------------------------------------
+-- Step 3: Category facets — Category + Value
+--
+-- Categories are stored in two persistent entities: a Category (the facet,
+-- e.g. "Region", "Compliance") and its Values (the options, e.g. "EU", "GDPR").
+-- A Value can tag BOTH Projects and Environments (the SAME value object can be
+-- linked from a project and from an environment), so each gets its own
+-- many-to-many ReferenceSet to Value.
+-- -----------------------------------------------------------------------------
+
+/** A facet, e.g. "Region" or "Compliance". */
+@position(400, 100)
+create persistent entity CloudPortal.Category (
+  Name: string(200) not null error 'Category name is required'
+);
+
+/** A facet option within a Category, e.g. "EU" within "Region". */
+@position(400, 300)
+create persistent entity CloudPortal.Value (
+  Name: string(200) not null error 'Value name is required'
+);
+
+create association CloudPortal.Value_Category
+  from CloudPortal.Value to CloudPortal.Category
+  type reference
+  owner default
+  delete_behavior DELETE_BUT_KEEP_REFERENCES;
+
+create association CloudPortal.Project_Value
+  from CloudPortal.Project to CloudPortal.Value
+  type ReferenceSet
+  owner default;
+
+create association CloudPortal.Environment_Value
+  from CloudPortal.Environment to CloudPortal.Value
+  type ReferenceSet
+  owner default;
+
+-- -----------------------------------------------------------------------------
+-- Step 4: Per-user selection — UserFacet
+--
+-- Each user owns one UserFacet, linked to System.User. The values they have
+-- selected are a ReferenceSet (UserFacet_Value), so a user can pick MANY values
+-- across MANY categories. Scoping by user is what lets the view entity below
+-- filter per [%CurrentUser%].
+-- -----------------------------------------------------------------------------
+
+/** A single user's saved facet selection (their chosen category values). */
+@position(700, 300)
+create persistent entity CloudPortal.UserFacet (
+  CreatedOn: datetime
+);
+
+create association CloudPortal.UserFacet_User
+  from CloudPortal.UserFacet to System.User
+  type reference
+  owner default
+  delete_behavior DELETE_BUT_KEEP_REFERENCES;
+
+create association CloudPortal.UserFacet_Value
+  from CloudPortal.UserFacet to CloudPortal.Value
+  type ReferenceSet
+  owner default;
+
+-- -----------------------------------------------------------------------------
+-- Step 5: View entity — flattened Project / Environment rows, FILTERED in OQL
+--         by the CURRENT USER's selected values.
+--
+-- The whole faceted search runs in the database. The view:
+--   1. Joins Environment -> Project -> Company so each row carries a Company.
+--   2. LEFT joins the Environment's values (ev) and the Project's values (pv) —
+--      LEFT so an environment/project with no tags still survives the join and
+--      is simply filtered out by the WHERE.
+--   3. Keeps a row when one of the current user's selected values appears on the
+--      environment OR on the project. Each side is an `in (subquery)` membership
+--      test; the subquery pulls the values from the UserFacet whose owner is
+--      [%CurrentUser%]. Matching is by Value identity (`.ID`), so the same value
+--      object tagged on both a project and an environment matches correctly.
+--   4. GROUP BY collapses the (potentially many) value joins back to exactly one
+--      row per Project / Environment.
+--
+-- Multi-user: [%CurrentUser%] is evaluated per request, so each user sees only
+-- the rows matching their own UserFacet — no per-user copies of the view needed.
+--
+-- Multi-value: UserFacet_Value is a ReferenceSet, so any number of selected
+-- values participate in the `in (...)` tests.
+--
+-- Note: with an empty selection both subqueries are empty, so the grid shows no
+-- rows until the user selects at least one value.
+-- -----------------------------------------------------------------------------
+
+@position(700, 100)
+create view entity CloudPortal.ProjectEnvironmentView (
+  CompanyName:     string(200),
+  ProjectName:     string(200),
+  EnvironmentName: string(200),
+  EnvironmentType: enumeration(CloudPortal.ENUM_EnvironmentType)
+) as (
+  select
+    c.Name            as CompanyName,
+    p.Name            as ProjectName,
+    e.Name            as EnvironmentName,
+    e.EnvironmentType as EnvironmentType
+  from CloudPortal.Environment as e
+  inner join e/CloudPortal.Environment_Project/CloudPortal.Project as p
+  inner join p/CloudPortal.Project_Company/CloudPortal.Company as c
+  left  join e/CloudPortal.Environment_Value/CloudPortal.Value as ev
+  left  join p/CloudPortal.Project_Value/CloudPortal.Value as pv
+  where ev.ID in (
+          select distinct sv.ID
+          from CloudPortal.UserFacet as uf
+          inner join uf/CloudPortal.UserFacet_Value/CloudPortal.Value as sv
+          where uf/CloudPortal.UserFacet_User = '[%CurrentUser%]'
+        )
+     or pv.ID in (
+          select distinct sv2.ID
+          from CloudPortal.UserFacet as uf2
+          inner join uf2/CloudPortal.UserFacet_Value/CloudPortal.Value as sv2
+          where uf2/CloudPortal.UserFacet_User = '[%CurrentUser%]'
+        )
+  group by c.Name, p.Name, e.Name, e.EnvironmentType
+);
+
+-- -----------------------------------------------------------------------------
+-- Step 5b: View entity — "no selection = show everything" variant.
+--
+-- Identical to Step 5, plus a third WHERE disjunct: when the current user has
+-- ZERO selected values, show ALL Project / Environment rows instead of an empty
+-- grid. The guard is a scalar COUNT subquery over the current user's selected
+-- values compared to 0 — true both when the user has no UserFacet at all and
+-- when they have one with an empty value set. Because that disjunct does not
+-- depend on the row, it lets every row through (the LEFT joins keep untagged
+-- environments too), and GROUP BY still yields one row per Project / Environment.
+--
+-- Once the user selects at least one value the count is > 0, the guard turns
+-- off, and the first two disjuncts narrow the grid exactly as in Step 5.
+-- -----------------------------------------------------------------------------
+
+@position(700, 500)
+create view entity CloudPortal.ProjectEnvironmentViewAll (
+  CompanyName:     string(200),
+  ProjectName:     string(200),
+  EnvironmentName: string(200),
+  EnvironmentType: enumeration(CloudPortal.ENUM_EnvironmentType)
+) as (
+  select
+    c.Name            as CompanyName,
+    p.Name            as ProjectName,
+    e.Name            as EnvironmentName,
+    e.EnvironmentType as EnvironmentType
+  from CloudPortal.Environment as e
+  inner join e/CloudPortal.Environment_Project/CloudPortal.Project as p
+  inner join p/CloudPortal.Project_Company/CloudPortal.Company as c
+  left  join e/CloudPortal.Environment_Value/CloudPortal.Value as ev
+  left  join p/CloudPortal.Project_Value/CloudPortal.Value as pv
+  where ev.ID in (
+          select distinct sv.ID
+          from CloudPortal.UserFacet as uf
+          inner join uf/CloudPortal.UserFacet_Value/CloudPortal.Value as sv
+          where uf/CloudPortal.UserFacet_User = '[%CurrentUser%]'
+        )
+     or pv.ID in (
+          select distinct sv2.ID
+          from CloudPortal.UserFacet as uf2
+          inner join uf2/CloudPortal.UserFacet_Value/CloudPortal.Value as sv2
+          where uf2/CloudPortal.UserFacet_User = '[%CurrentUser%]'
+        )
+     or (
+          select count(sv3.ID)
+          from CloudPortal.UserFacet as uf3
+          inner join uf3/CloudPortal.UserFacet_Value/CloudPortal.Value as sv3
+          where uf3/CloudPortal.UserFacet_User = '[%CurrentUser%]'
+        ) = 0
+  group by c.Name, p.Name, e.Name, e.EnvironmentType
+);
+
+-- -----------------------------------------------------------------------------
+-- Step 6: Microflow — load (or create) the CURRENT USER's UserFacet
+--
+-- The companion to the per-user filter: every user gets exactly one UserFacet,
+-- retrieved by [%CurrentUser%] and created (linked to the current user) on first
+-- use. This is the object a selection UI would add/remove values on; the view
+-- above then reflects those values for that user automatically.
+-- -----------------------------------------------------------------------------
+
+create microflow CloudPortal.DSO_GetUserFacet ()
+returns CloudPortal.UserFacet as $UserFacet
+begin
+  -- Each activity introduces a new variable name (reusing one across Retrieve
+  -- and Create trips CE0111), so the two paths use distinct names.
+  retrieve $Existing from CloudPortal.UserFacet
+    where CloudPortal.UserFacet_User = '[%CurrentUser%]'
+    limit 1;
+
+  if $Existing = empty then
+    $Created = create CloudPortal.UserFacet (
+      CreatedOn = [%CurrentDateTime%]);
+    change $Created (
+      CloudPortal.UserFacet_User = [%CurrentUser%]);
+    commit $Created;
+    return $Created;
+  end if;
+
+  return $Existing;
+end;
+/
+
+-- -----------------------------------------------------------------------------
+-- Step 7: Results grid (UI kept intentionally minimal)
+--
+-- A DataGrid over the view entity — already filtered to the current user's
+-- selection by the OQL. One row per Project / Environment, with a filterable
+-- Company column. Swap the datasource to ...ProjectEnvironmentViewAll (Step 5b)
+-- if you want an empty selection to show everything instead of nothing. Editing
+-- the facet selection (a ReferenceSet) is out of scope here; bind a Reference
+-- Set Selector to UserFacet_Value in Studio Pro.
+-- -----------------------------------------------------------------------------
+
+create page CloudPortal.FacetedSearch (
+  title: 'Cloud Portal — Faceted Search',
+  layout: Atlas_Core.Atlas_Default,
+  folder: 'Search'
+) {
+  datagrid dgResults (
+    datasource: database from CloudPortal.ProjectEnvironmentView
+      sort by CompanyName asc,
+    selection: Single,
+    PageSize: 20
+  ) {
+    column colCompany (attribute: CompanyName, caption: 'Company') {
+      textfilter tfCompany
+    }
+    column colProject (attribute: ProjectName, caption: 'Project') {
+      textfilter tfProject
+    }
+    column colEnv (attribute: EnvironmentName, caption: 'Environment') {
+      textfilter tfEnv
+    }
+    column colType (attribute: EnvironmentType, caption: 'Type') {
+      dropdownfilter ddfType
+    }
+  }
+}
+
+grant CloudPortal.User on CloudPortal.Company (read *);
+grant CloudPortal.User on CloudPortal.Project (read *);
+grant CloudPortal.User on CloudPortal.Environment (read *);
+grant CloudPortal.User on CloudPortal.Category (read *);
+grant CloudPortal.User on CloudPortal.Value (read *);
+grant CloudPortal.User on CloudPortal.UserFacet (create, read *, write *);
+
+-- Halt here so the example leaves a populated project for Studio Pro to inspect.
+-- Flip the drops below on if you want to re-run the script idempotently.
+exit;
+
+-- drop page CloudPortal.FacetedSearch;
+-- drop microflow CloudPortal.DSO_GetUserFacet;
+-- drop entity CloudPortal.ProjectEnvironmentViewAll;
+-- drop entity CloudPortal.ProjectEnvironmentView;
+-- drop entity CloudPortal.UserFacet;
+-- drop entity CloudPortal.Value;
+-- drop entity CloudPortal.Category;
+-- drop entity CloudPortal.Environment;
+-- drop entity CloudPortal.Project;
+-- drop entity CloudPortal.Company;
+-- drop module CloudPortal;
