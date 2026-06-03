@@ -1757,8 +1757,11 @@ const (
 
 // setDesignPropertyMut sets or updates a single design property in the widget's
 // Appearance.DesignProperties array. valueType is "toggle" (no value) or "option"
-// (carries option). An existing entry stored as a custom value
-// (ToggleButtonGroup/ColorPicker) is preserved as custom on an option-type update.
+// (carries option). An existing entry's Value is fully rewritten to the new
+// valueType — so an option-type set on a stale "custom" value
+// (ToggleButtonGroup/ColorPicker) overwrites it with an OptionDesignPropertyValue,
+// repairing the CE6084 that a Custom encoding triggers (see
+// buildDesignPropertyValueDoc and TestSetDesignProperty_OptionOverwritesCustom).
 func setDesignPropertyMut(widget bson.D, key, valueType, option string) error {
 	appearance := dGetDoc(widget, "Appearance")
 	if appearance == nil {

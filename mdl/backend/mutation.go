@@ -87,9 +87,10 @@ type PageMutator interface {
 
 	// SetDesignProperty sets or updates an Atlas design property on the named
 	// widget's Appearance. valueType is "toggle" (no value) or "option" (carries
-	// option). When the property already exists as a "custom" value
-	// (ToggleButtonGroup/ColorPicker), an option-type set updates it in place to
-	// preserve its kind.
+	// option). An existing entry's value is fully rewritten to the new valueType:
+	// an option-type set on a stale "custom" value (ToggleButtonGroup/ColorPicker)
+	// overwrites it with an option value, repairing the CE6084 a Custom encoding
+	// triggers.
 	SetDesignProperty(widgetRef string, key string, valueType string, option string) error
 
 	// RemoveDesignProperty removes a single design property by key from the named
