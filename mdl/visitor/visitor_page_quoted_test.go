@@ -105,6 +105,43 @@ func TestQuotedIdentifiersInPageWidgets(t *testing.T) {
 	}
 }
 
+// TestQuotedReservedWidgetNames covers issue #619: a widget whose name collides
+// with a reserved keyword (e.g. "List", "Column") must be expressible by quoting
+// it. DESCRIBE emits the quoted form (see executor.mdlIdent), and this asserts the
+// parser+visitor accept it and unquote back to the bare name.
+func TestQuotedReservedWidgetNames(t *testing.T) {
+	input := `CREATE PAGE MyModule.Home (
+		Layout: Atlas_Core.Atlas_Default
+	) {
+		CONTAINER "List" {
+			DYNAMICTEXT "Template" (Content: 'x')
+		}
+	};`
+
+	prog, errs := Build(input)
+	if len(errs) > 0 {
+		for _, err := range errs {
+			t.Errorf("Parse error: %v", err)
+		}
+		t.FailNow()
+	}
+
+	stmt, ok := prog.Statements[0].(*ast.CreatePageStmtV3)
+	if !ok {
+		t.Fatalf("Expected CreatePageStmtV3, got %T", prog.Statements[0])
+	}
+
+	// The reserved-word container name must be unquoted back to "List".
+	container := findChildByName2(stmt.Widgets, "List")
+	if container == nil {
+		t.Fatal(`container named "List" not found (quoted reserved name lost)`)
+	}
+	// And its reserved-word child "Template" likewise.
+	if findChildByName(container, "Template") == nil {
+		t.Error(`child dynamictext named "Template" not found`)
+	}
+}
+
 func findChildByName(parent *ast.WidgetV3, name string) *ast.WidgetV3 {
 	for _, c := range parent.Children {
 		if c.Name == name {

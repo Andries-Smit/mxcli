@@ -328,9 +328,12 @@ func buildWidgetV3(ctx parser.IWidgetV3Context, b *Builder) *ast.WidgetV3 {
 		widget.Type = strings.ToLower(typeCtx.GetText())
 	}
 
-	// Get required identifier
+	// Get required identifier. The name may be quoted (QUOTED_IDENTIFIER) when it
+	// collides with a reserved keyword, e.g. a widget named "List". See issue #619.
 	if id := wCtx.IDENTIFIER(); id != nil {
 		widget.Name = id.GetText()
+	} else if qid := wCtx.QUOTED_IDENTIFIER(); qid != nil {
+		widget.Name = unquoteIdentifier(qid.GetText())
 	}
 
 	// Parse properties

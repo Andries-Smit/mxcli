@@ -1,0 +1,37 @@
+-- ============================================================================
+-- Bug #619: DESCRIBE emits unquoted reserved-word identifiers that fail check
+-- ============================================================================
+--
+-- Symptom (before fix):
+--   A widget whose name collides with an MDL reserved keyword (e.g. "List",
+--   "Column", "Template") could not be expressed at all: the widget name
+--   position (widgetV3) accepted only a bare IDENTIFIER, so both
+--     container List   -> mismatched input 'List' expecting IDENTIFIER
+--     container "List" -> mismatched input '"List"' expecting IDENTIFIER
+--   failed. DESCRIBE PAGE therefore emitted non-re-parseable MDL for any
+--   Studio Pro page that named a widget after a keyword.
+--
+-- After fix:
+--   widgetV3 accepts (IDENTIFIER | QUOTED_IDENTIFIER), the visitor unquotes the
+--   name, and DESCRIBE emits the quoted form (executor.mdlIdent) for names that
+--   would not lex as a bare identifier. The result re-parses cleanly.
+--
+-- Usage:
+--   mxcli check mdl-examples/bug-tests/619-quoted-reserved-widget-names.mdl
+--   mxcli exec  mdl-examples/bug-tests/619-quoted-reserved-widget-names.mdl -p app.mpr
+-- ============================================================================
+
+create module BugTest619;
+
+create page BugTest619.P_ReservedNames
+(
+  title: 'Reserved widget names',
+  layout: Atlas_Core.Atlas_Default
+)
+{
+  container "List" {
+    container "Column" {
+      dynamictext "Template" (content: 'Reserved-word widget names, quoted')
+    }
+  }
+}

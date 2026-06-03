@@ -136,7 +136,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 
 	switch w.Type {
 	case "Forms$ScrollContainer", "Pages$ScrollContainer":
-		header := fmt.Sprintf("scrollcontainer %s", w.Name)
+		header := fmt.Sprintf("scrollcontainer %s", mdlIdent(w.Name))
 		props := appendAppearanceProps(nil, w)
 		if len(w.Children) > 0 {
 			formatWidgetProps(ctx.Output, prefix, header, props, " {\n")
@@ -149,7 +149,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		}
 
 	case "Forms$TabControl", "Pages$TabControl":
-		header := fmt.Sprintf("tabcontainer %s", w.Name)
+		header := fmt.Sprintf("tabcontainer %s", mdlIdent(w.Name))
 		props := appendAppearanceProps(nil, w)
 		if len(w.Children) > 0 {
 			formatWidgetProps(ctx.Output, prefix, header, props, " {\n")
@@ -162,7 +162,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		}
 
 	case "Pages$TabPage":
-		header := fmt.Sprintf("tabpage %s", w.Name)
+		header := fmt.Sprintf("tabpage %s", mdlIdent(w.Name))
 		var props []string
 		if w.TabCaption != "" {
 			props = append(props, fmt.Sprintf("Caption: %s", mdlQuote(w.TabCaption)))
@@ -178,7 +178,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		}
 
 	case "Forms$DivContainer", "Pages$DivContainer":
-		header := fmt.Sprintf("container %s", w.Name)
+		header := fmt.Sprintf("container %s", mdlIdent(w.Name))
 		props := appendAppearanceProps(nil, w)
 		if len(w.Children) > 0 {
 			formatWidgetProps(ctx.Output, prefix, header, props, " {\n")
@@ -191,7 +191,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		}
 
 	case "Forms$GroupBox", "Pages$GroupBox":
-		header := fmt.Sprintf("groupbox %s", w.Name)
+		header := fmt.Sprintf("groupbox %s", mdlIdent(w.Name))
 		props := []string{}
 		if w.Caption != "" {
 			props = append(props, fmt.Sprintf("Caption: %s", mdlQuote(w.Caption)))
@@ -223,7 +223,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 	case "Forms$LayoutGrid", "Pages$LayoutGrid":
 		header := "layoutgrid"
 		if w.Name != "" {
-			header += " " + w.Name
+			header += " " + mdlIdent(w.Name)
 		}
 		props := appendAppearanceProps(nil, w)
 		formatWidgetProps(ctx.Output, prefix, header, props, " {\n")
@@ -253,7 +253,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		fmt.Fprintf(ctx.Output, "%s}\n", prefix)
 
 	case "Forms$DynamicText", "Pages$DynamicText":
-		header := fmt.Sprintf("dynamictext %s", w.Name)
+		header := fmt.Sprintf("dynamictext %s", mdlIdent(w.Name))
 		props := []string{}
 		if w.Content != "" {
 			props = append(props, fmt.Sprintf("Content: %s", mdlQuote(w.Content)))
@@ -268,7 +268,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		formatWidgetProps(ctx.Output, prefix, header, props, "\n")
 
 	case "Forms$ActionButton", "Pages$ActionButton":
-		header := fmt.Sprintf("actionbutton %s", w.Name)
+		header := fmt.Sprintf("actionbutton %s", mdlIdent(w.Name))
 		props := []string{}
 		if w.Caption != "" {
 			props = append(props, fmt.Sprintf("Caption: %s", mdlQuote(w.Caption)))
@@ -294,7 +294,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		formatWidgetProps(ctx.Output, prefix, "statictext", props, "\n")
 
 	case "Forms$Title", "Pages$Title":
-		header := fmt.Sprintf("title %s", w.Name)
+		header := fmt.Sprintf("title %s", mdlIdent(w.Name))
 		props := []string{}
 		if w.Caption != "" {
 			props = append(props, fmt.Sprintf("Content: %s", mdlQuote(w.Caption)))
@@ -303,7 +303,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		formatWidgetProps(ctx.Output, prefix, header, props, "\n")
 
 	case "Forms$DataView", "Pages$DataView":
-		header := fmt.Sprintf("dataview %s", w.Name)
+		header := fmt.Sprintf("dataview %s", mdlIdent(w.Name))
 		props := []string{}
 		if w.DataSource != nil {
 			switch w.DataSource.Type {
@@ -332,7 +332,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		fmt.Fprintf(ctx.Output, "%s}\n", prefix)
 
 	case "Forms$TextBox", "Pages$TextBox":
-		header := fmt.Sprintf("textbox %s", w.Name)
+		header := fmt.Sprintf("textbox %s", mdlIdent(w.Name))
 		props := []string{}
 		if w.Caption != "" {
 			props = append(props, fmt.Sprintf("Label: %s", mdlQuote(w.Caption)))
@@ -344,7 +344,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		formatWidgetProps(ctx.Output, prefix, header, props, "\n")
 
 	case "Forms$TextArea", "Pages$TextArea":
-		header := fmt.Sprintf("textarea %s", w.Name)
+		header := fmt.Sprintf("textarea %s", mdlIdent(w.Name))
 		props := []string{}
 		if w.Caption != "" {
 			props = append(props, fmt.Sprintf("Label: %s", mdlQuote(w.Caption)))
@@ -356,7 +356,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		formatWidgetProps(ctx.Output, prefix, header, props, "\n")
 
 	case "Forms$DatePicker", "Pages$DatePicker":
-		header := fmt.Sprintf("datepicker %s", w.Name)
+		header := fmt.Sprintf("datepicker %s", mdlIdent(w.Name))
 		props := []string{}
 		if w.Caption != "" {
 			props = append(props, fmt.Sprintf("Label: %s", mdlQuote(w.Caption)))
@@ -368,7 +368,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		formatWidgetProps(ctx.Output, prefix, header, props, "\n")
 
 	case "Forms$RadioButtons", "Pages$RadioButtons":
-		header := fmt.Sprintf("radiobuttons %s", w.Name)
+		header := fmt.Sprintf("radiobuttons %s", mdlIdent(w.Name))
 		props := []string{}
 		if w.Caption != "" {
 			props = append(props, fmt.Sprintf("Label: %s", mdlQuote(w.Caption)))
@@ -380,7 +380,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		formatWidgetProps(ctx.Output, prefix, header, props, "\n")
 
 	case "Forms$CheckBox", "Pages$CheckBox":
-		header := fmt.Sprintf("checkbox %s", w.Name)
+		header := fmt.Sprintf("checkbox %s", mdlIdent(w.Name))
 		props := []string{}
 		if w.Caption != "" {
 			props = append(props, fmt.Sprintf("Label: %s", mdlQuote(w.Caption)))
@@ -410,7 +410,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		}
 		// Handle DataGrid2 specially with datasource and columns
 		if widgetType == "datagrid2" && (w.DataSource != nil || len(w.DataGridColumns) > 0) {
-			header := fmt.Sprintf("datagrid %s", w.Name)
+			header := fmt.Sprintf("datagrid %s", mdlIdent(w.Name))
 			props := []string{}
 			if w.DataSource != nil {
 				switch w.DataSource.Type {
@@ -468,7 +468,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 			}
 		} else if widgetType == "gallery" {
 			// Handle Gallery specially with datasource, selection, filter and content widgets
-			header := fmt.Sprintf("gallery %s", w.Name)
+			header := fmt.Sprintf("gallery %s", mdlIdent(w.Name))
 			props := []string{}
 			if w.DataSource != nil {
 				switch w.DataSource.Type {
@@ -535,7 +535,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 				formatWidgetProps(ctx.Output, prefix, header, props, "\n")
 			}
 		} else if widgetType == "image" {
-			header := fmt.Sprintf("image %s", w.Name)
+			header := fmt.Sprintf("image %s", mdlIdent(w.Name))
 			props := []string{}
 			if w.ImageType != "" && w.ImageType != "image" {
 				props = append(props, fmt.Sprintf("ImageType: %s", w.ImageType))
@@ -575,7 +575,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 			formatWidgetProps(ctx.Output, prefix, header, props, "\n")
 		} else if len(w.ExplicitProperties) > 0 && w.WidgetID != "" {
 			// Generic pluggable widget with explicit properties
-			header := fmt.Sprintf("pluggablewidget '%s' %s", w.WidgetID, w.Name)
+			header := fmt.Sprintf("pluggablewidget '%s' %s", w.WidgetID, mdlIdent(w.Name))
 			props := []string{}
 			if w.Caption != "" {
 				props = append(props, fmt.Sprintf("Label: %s", mdlQuote(w.Caption)))
@@ -586,7 +586,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 			props = appendAppearanceProps(props, w)
 			formatWidgetProps(ctx.Output, prefix, header, props, "\n")
 		} else {
-			header := fmt.Sprintf("%s %s", widgetType, w.Name)
+			header := fmt.Sprintf("%s %s", widgetType, mdlIdent(w.Name))
 			props := []string{}
 			if w.Caption != "" {
 				props = append(props, fmt.Sprintf("Label: %s", mdlQuote(w.Caption)))
@@ -619,7 +619,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		}
 
 	case "Forms$NavigationList", "Pages$NavigationList":
-		fmt.Fprintf(ctx.Output, "%snavigationlist %s {\n", prefix, w.Name)
+		fmt.Fprintf(ctx.Output, "%snavigationlist %s {\n", prefix, mdlIdent(w.Name))
 		for _, child := range w.Children {
 			itemHeader := fmt.Sprintf("item %s", child.Name)
 			props := []string{}
@@ -641,7 +641,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		fmt.Fprintf(ctx.Output, "%sstatictext (Content: %s)\n", prefix, mdlQuote(w.Content))
 
 	case "Forms$Gallery", "Pages$Gallery":
-		header := fmt.Sprintf("gallery %s", w.Name)
+		header := fmt.Sprintf("gallery %s", mdlIdent(w.Name))
 		props := []string{}
 		if w.DataSource != nil {
 			switch w.DataSource.Type {
@@ -681,7 +681,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		}
 
 	case "Forms$SnippetCallWidget", "Pages$SnippetCallWidget":
-		header := fmt.Sprintf("snippetcall %s", w.Name)
+		header := fmt.Sprintf("snippetcall %s", mdlIdent(w.Name))
 		props := []string{}
 		if w.Content != "" {
 			props = append(props, fmt.Sprintf("Snippet: %s", w.Content))
@@ -690,7 +690,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		formatWidgetProps(ctx.Output, prefix, header, props, "\n")
 
 	case "Footer":
-		fmt.Fprintf(ctx.Output, "%sfooter %s {\n", prefix, w.Name)
+		fmt.Fprintf(ctx.Output, "%sfooter %s {\n", prefix, mdlIdent(w.Name))
 		for _, child := range w.Children {
 			outputWidgetMDLV3(ctx, child, indent+1)
 		}
@@ -698,7 +698,7 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 
 	case "Forms$ListView", "Pages$ListView":
 		// ListView (also used for Gallery serialization)
-		header := fmt.Sprintf("listview %s", w.Name)
+		header := fmt.Sprintf("listview %s", mdlIdent(w.Name))
 		props := []string{}
 		if w.DataSource != nil {
 			switch w.DataSource.Type {
