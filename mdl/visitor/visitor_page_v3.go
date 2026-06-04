@@ -214,6 +214,9 @@ func buildSnippetParameterListAsPage(ctx parser.ISnippetParameterListContext) []
 		} else if v := spCtx.VARIABLE(); v != nil {
 			// VARIABLE token is $name, strip the $ prefix
 			param.Name = strings.TrimPrefix(v.GetText(), "$")
+		} else if qid := spCtx.QUOTED_IDENTIFIER(); qid != nil {
+			// Quoted name for reserved-keyword params, e.g. "List". See issue #114.
+			param.Name = unquoteIdentifier(qid.GetText())
 		}
 
 		if dt := spCtx.DataType(); dt != nil {

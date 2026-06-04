@@ -142,6 +142,47 @@ func TestQuotedReservedWidgetNames(t *testing.T) {
 	}
 }
 
+// TestQuotedReservedParamNames covers issue #114: a page or snippet parameter
+// named after a reserved keyword (e.g. "List") must be expressible by quoting it
+// in the Params block. The visitor unquotes it back to the bare name. (The $-form
+// $List already worked; this closes the bare-declaration gap for parity with #619.)
+func TestQuotedReservedParamNames(t *testing.T) {
+	t.Run("page", func(t *testing.T) {
+		input := `CREATE PAGE M.Home (
+			Layout: Atlas_Core.Atlas_Default,
+			Params: { "List": M.Order, "Template": M.Order }
+		) { CONTAINER c { DYNAMICTEXT t (Content: 'x') } };`
+
+		prog, errs := Build(input)
+		if len(errs) > 0 {
+			t.Fatalf("Parse errors: %v", errs)
+		}
+		stmt := prog.Statements[0].(*ast.CreatePageStmtV3)
+		got := map[string]bool{}
+		for _, p := range stmt.Parameters {
+			got[p.Name] = true
+		}
+		if !got["List"] || !got["Template"] {
+			t.Errorf("expected unquoted params List, Template; got %v", got)
+		}
+	})
+
+	t.Run("snippet", func(t *testing.T) {
+		input := `CREATE SNIPPET M.Snip (
+			Params: { "List": M.Order }
+		) { CONTAINER c { DYNAMICTEXT t (Content: 'x') } };`
+
+		prog, errs := Build(input)
+		if len(errs) > 0 {
+			t.Fatalf("Parse errors: %v", errs)
+		}
+		stmt := prog.Statements[0].(*ast.CreateSnippetStmtV3)
+		if len(stmt.Parameters) != 1 || stmt.Parameters[0].Name != "List" {
+			t.Errorf(`expected one param unquoted to "List", got %+v`, stmt.Parameters)
+		}
+	})
+}
+
 func findChildByName(parent *ast.WidgetV3, name string) *ast.WidgetV3 {
 	for _, c := range parent.Children {
 		if c.Name == name {

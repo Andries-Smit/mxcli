@@ -42,7 +42,7 @@ pageParameterList
     ;
 
 pageParameter
-    : (IDENTIFIER | VARIABLE) COLON dataType
+    : (IDENTIFIER | VARIABLE | QUOTED_IDENTIFIER) COLON dataType
     ;
 
 snippetParameterList
@@ -50,7 +50,7 @@ snippetParameterList
     ;
 
 snippetParameter
-    : (IDENTIFIER | VARIABLE) COLON dataType
+    : (IDENTIFIER | VARIABLE | QUOTED_IDENTIFIER) COLON dataType
     ;
 
 variableDeclarationList

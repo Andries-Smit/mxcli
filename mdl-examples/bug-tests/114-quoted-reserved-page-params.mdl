@@ -1,0 +1,54 @@
+-- ============================================================================
+-- Bug #114: Reserved words can't be used as page/snippet parameter names
+-- ============================================================================
+--
+-- The originally-reported case — SHOW_PAGE colon args with a reserved-word
+-- parameter name — already parses (showPageArg uses identifierOrKeyword, which
+-- accepts both bare keywords and quoted names):
+--   show page M.Operation_NewEdit (Operation: $obj);   -- OK
+--   show page M.Operation_NewEdit ("Operation": $obj); -- OK
+--
+-- The residual gap was the page/snippet parameter *declaration*: it accepted
+-- only (IDENTIFIER | VARIABLE), so a bare reserved-word name failed:
+--   Params: { List: M.Order }   -> extraneous input 'List' expecting ':'
+-- The $-prefixed form (Params: { $List: M.Order }) always worked, and DESCRIBE
+-- emits the $-form, so output was already roundtrip-safe. This fixture covers
+-- the quoted bare form now accepted for parity with widget names (#619).
+--
+-- Usage:
+--   mxcli check mdl-examples/bug-tests/114-quoted-reserved-page-params.mdl
+-- ============================================================================
+
+create module BugTest114;
+
+create entity BugTest114.Order ( Name : String );
+
+-- Page with a reserved-keyword parameter name, quoted.
+create page BugTest114.P_Edit
+(
+  title: 'Edit',
+  layout: Atlas_Core.Atlas_Default,
+  params: { "List": BugTest114.Order }
+)
+{
+  container c {
+    dynamictext t (content: 'x')
+  }
+}
+
+-- Snippet with a reserved-keyword parameter name, quoted.
+create snippet BugTest114.Snip
+(
+  params: { "Template": BugTest114.Order }
+)
+{
+  container c2 {
+    dynamictext t2 (content: 'y')
+  }
+}
+
+-- SHOW PAGE with a reserved-keyword argument name (already worked; pinned here).
+create microflow BugTest114.ACT_Open (Obj : BugTest114.Order) returns Nothing
+begin
+  show page BugTest114.P_Edit ("List": $Obj);
+end;

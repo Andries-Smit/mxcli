@@ -41,6 +41,9 @@ func buildPageParameters(ctx parser.IPageParameterListContext) []ast.PageParamet
 		} else if v := paramCtx.VARIABLE(); v != nil {
 			// VARIABLE token is $name, strip the $ prefix
 			name = strings.TrimPrefix(v.GetText(), "$")
+		} else if qid := paramCtx.QUOTED_IDENTIFIER(); qid != nil {
+			// Quoted name for reserved-keyword params, e.g. "List". See issue #114.
+			name = unquoteIdentifier(qid.GetText())
 		}
 		var entityType ast.QualifiedName
 		var dataType ast.DataType
@@ -77,6 +80,10 @@ func buildSnippetParameters(ctx parser.ISnippetParameterListContext) []ast.PageP
 		}
 		if v := paramCtx.VARIABLE(); v != nil {
 			name = strings.TrimPrefix(v.GetText(), "$")
+		}
+		if qid := paramCtx.QUOTED_IDENTIFIER(); qid != nil {
+			// Quoted name for reserved-keyword params, e.g. "List". See issue #114.
+			name = unquoteIdentifier(qid.GetText())
 		}
 		var entityType ast.QualifiedName
 		if dt := paramCtx.DataType(); dt != nil {
