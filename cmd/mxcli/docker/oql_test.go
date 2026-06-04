@@ -134,6 +134,12 @@ func TestFormatOQLJSONEmpty(t *testing.T) {
 func TestExecuteOQL_Success(t *testing.T) {
 	expectedAuth := m2eeAuthHeader("testpass")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Pre-11.11 runtime: no dev endpoint, so ExecuteOQL falls back to the
+		// legacy action API at "/", which this test exercises.
+		if r.URL.Path == devPreviewOQLPath {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		// Verify request
 		if r.Method != "POST" {
 			t.Errorf("expected POST, got %s", r.Method)
@@ -186,6 +192,10 @@ func TestExecuteOQL_Success(t *testing.T) {
 
 func TestExecuteOQL_OQLError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == devPreviewOQLPath {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		resp := map[string]any{
 			"result": 1,
 			"cause":  "Entity 'NonExistent.Foo' is unknown",
@@ -238,6 +248,10 @@ func TestExecuteOQL_AuthFailure(t *testing.T) {
 
 func TestExecuteOQL_EmptyResult(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == devPreviewOQLPath {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"result":0,"feedback":{"data":[]}}`))
 	}))
@@ -266,6 +280,10 @@ func TestExecuteOQL_EmptyResult(t *testing.T) {
 
 func TestExecuteOQL_ColumnOrder(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == devPreviewOQLPath {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		// Return JSON with specific key order — using raw JSON to preserve order
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"result":0,"feedback":{"data":[{"Zebra":"z","Alpha":"a","Middle":"m"}]}}`))
@@ -313,4 +331,131 @@ func parseTestServerAddr(t *testing.T, rawURL string) (string, int) {
 		t.Fatalf("parsing port from test server URL %s: %v", rawURL, err)
 	}
 	return host, port
+}
+
+// TestExecuteOQL_DevEndpoint verifies the Mendix 11.11+ path: ExecuteOQL POSTs
+// the params directly to /dev/preview_execute_oql and parses the {"data":[...]}
+// response (no action/params envelope, no feedback wrapper).
+func TestExecuteOQL_DevEndpoint(t *testing.T) {
+	var gotPath, gotAuth string
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("X-M2EE-Authentication")
+		json.NewDecoder(r.Body).Decode(&gotBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"data":[{"LanguageCode":"en_US"}]}`))
+	}))
+	defer server.Close()
+
+	host, port := parseTestServerAddr(t, server.URL)
+
+	result, err := ExecuteOQL(OQLOptions{
+		Host: host, Port: port, Token: "testpass", Direct: true,
+	}, "SELECT l.Code FROM System.Language l")
+	if err != nil {
+		t.Fatalf("ExecuteOQL: %v", err)
+	}
+
+	if gotPath != "/dev/preview_execute_oql" {
+		t.Errorf("path: got %q, want /dev/preview_execute_oql", gotPath)
+	}
+	// Body must be the params directly, NOT wrapped in {"action","params"}.
+	if _, wrapped := gotBody["action"]; wrapped {
+		t.Errorf("body should not contain an action envelope: %v", gotBody)
+	}
+	if gotBody["oql"] != "SELECT l.Code FROM System.Language l" {
+		t.Errorf("body.oql: got %v", gotBody["oql"])
+	}
+	if gotBody["numberHandling"] != "asString" {
+		t.Errorf("body.numberHandling: got %v", gotBody["numberHandling"])
+	}
+	if want := base64Encode("testpass"); gotAuth != want {
+		t.Errorf("auth header: got %q, want %q", gotAuth, want)
+	}
+	if len(result.Columns) != 1 || result.Columns[0] != "LanguageCode" {
+		t.Errorf("columns: got %v, want [LanguageCode]", result.Columns)
+	}
+	if len(result.Rows) != 1 || result.Rows[0][0] != "en_US" {
+		t.Errorf("rows: got %v, want [[en_US]]", result.Rows)
+	}
+}
+
+// TestExecuteOQL_FallbackToLegacy verifies that when the dev endpoint 404s
+// (pre-11.11 runtime), ExecuteOQL falls back to the legacy preview_execute_oql
+// action at POST / and still parses the feedback envelope.
+func TestExecuteOQL_FallbackToLegacy(t *testing.T) {
+	var legacyHit bool
+	var legacyBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/dev/preview_execute_oql" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		// Legacy action endpoint at "/".
+		legacyHit = true
+		json.NewDecoder(r.Body).Decode(&legacyBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"result":0,"feedback":{"data":[{"LanguageCode":"en_US"}]}}`))
+	}))
+	defer server.Close()
+
+	host, port := parseTestServerAddr(t, server.URL)
+
+	result, err := ExecuteOQL(OQLOptions{
+		Host: host, Port: port, Token: "testpass", Direct: true,
+	}, "SELECT 1")
+	if err != nil {
+		t.Fatalf("ExecuteOQL: %v", err)
+	}
+
+	if !legacyHit {
+		t.Fatal("expected fallback to legacy action endpoint")
+	}
+	if legacyBody["action"] != "preview_execute_oql" {
+		t.Errorf("legacy body.action: got %v, want preview_execute_oql", legacyBody["action"])
+	}
+	if len(result.Rows) != 1 || result.Rows[0][0] != "en_US" {
+		t.Errorf("rows: got %v, want [[en_US]]", result.Rows)
+	}
+}
+
+func TestSplitCurlStatus(t *testing.T) {
+	tests := []struct {
+		name       string
+		in         string
+		wantBody   string
+		wantStatus int
+		wantOK     bool
+	}{
+		{"body and status", "{\"data\":[]}\n200", "{\"data\":[]}", 200, true},
+		{"trailing newline", "{\"data\":[]}\n200\n", "{\"data\":[]}", 200, true},
+		{"404 empty body", "\n404", "", 404, true},
+		{"status only", "404", "", 404, true},
+		{"body with internal newline", "line1\nline2\n200", "line1\nline2", 200, true},
+		{"connection failure 000", "000", "", 0, true},
+		{"no numeric status", "not a number", "", 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, status, ok := splitCurlStatus([]byte(tt.in))
+			if ok != tt.wantOK {
+				t.Fatalf("ok: got %v, want %v", ok, tt.wantOK)
+			}
+			if !tt.wantOK {
+				return
+			}
+			if string(body) != tt.wantBody {
+				t.Errorf("body: got %q, want %q", body, tt.wantBody)
+			}
+			if status != tt.wantStatus {
+				t.Errorf("status: got %d, want %d", status, tt.wantStatus)
+			}
+		})
+	}
+}
+
+// base64Encode mirrors m2eeAuthHeader's encoding for test assertions.
+func base64Encode(s string) string {
+	return m2eeAuthHeader(s)
 }

@@ -35,6 +35,23 @@ The header value is `base64(password)` — NOT `base64(user:password)` (this is 
 
 ### OQL Query (Read-Only Preview)
 
+> **Mendix 11.11 changed the wire protocol.** OQL preview moved off the M2EE
+> action dispatch onto a dedicated REST endpoint `POST /dev/preview_execute_oql`,
+> where the request body is the params object **directly** and the response is
+> `{"data":[...]}` (no `action`/`params` wrapper, no `feedback` envelope). The
+> auth header is unchanged. `mxcli oql` tries this endpoint first and falls back
+> to the legacy action below on a 404 (older runtimes), so it works on both.
+
+**11.11+ (new endpoint):**
+```bash
+curl -sf -X post http://localhost:8090/dev/preview_execute_oql \
+  -H 'Content-Type: application/json' \
+  -H "X-M2EE-authentication: $(echo -n 'AdminPassword1!' | base64)" \
+  -d '{"oql":"SELECT Name FROM System.User","numberHandling":"asString"}'
+# -> {"data":[{"Name":"MxAdmin"}, ...]}
+```
+
+**Pre-11.11 (legacy action):**
 ```bash
 curl -sf -X post http://localhost:8090/ \
   -H 'Content-Type: application/json' \

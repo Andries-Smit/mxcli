@@ -5,6 +5,7 @@ package docker
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -64,16 +65,26 @@ func ExecuteOQL(opts OQLOptions, query string) (*OQLResult, error) {
 		"numberHandling": "asString",
 	}
 
-	resp, err := CallM2EE(m2eeOpts, "preview_execute_oql", params)
+	// Mendix 11.11+ serves OQL preview as a REST endpoint
+	// (POST /dev/preview_execute_oql with the params as the body, returning
+	// {"data":[...]} directly). Try it first; on older runtimes it 404s and we
+	// fall back to the legacy M2EE action (POST / with {"action","params"}).
+	raw, err := previewOQLDev(m2eeOpts, params)
+	if errors.Is(err, errDevEndpointNotFound) {
+		resp, lerr := CallM2EE(m2eeOpts, "preview_execute_oql", params)
+		if lerr != nil {
+			return nil, lerr
+		}
+		if errMsg := resp.M2EEError(); errMsg != "" {
+			return nil, fmt.Errorf("OQL error: %s", errMsg)
+		}
+		return parseOQLFeedback(resp.RawFeedback)
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	if errMsg := resp.M2EEError(); errMsg != "" {
-		return nil, fmt.Errorf("OQL error: %s", errMsg)
-	}
-
-	return parseOQLFeedback(resp.RawFeedback)
+	return parseOQLFeedback(raw)
 }
 
 // parseOQLFeedback extracts OQL results from the raw M2EE feedback JSON,

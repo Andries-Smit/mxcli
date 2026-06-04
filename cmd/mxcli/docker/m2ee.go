@@ -7,12 +7,14 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -187,6 +189,139 @@ func callM2EEViaDocker(opts M2EEOptions, dockerDir string, action string, params
 	}
 
 	return &m2eeResp, nil
+}
+
+// devPreviewOQLPath is the Mendix 11.11+ REST endpoint for OQL preview. It
+// replaced the legacy M2EE action dispatch (POST / with {"action","params"}):
+// the request body is the params object directly and the response is
+// {"data":[...]} with no feedback envelope. Auth is unchanged
+// (X-M2EE-Authentication: base64(password)).
+const devPreviewOQLPath = "/dev/preview_execute_oql"
+
+// errDevEndpointNotFound signals that the runtime does not expose the 11.11+
+// /dev/preview_execute_oql endpoint (HTTP 404), so the caller should fall back
+// to the legacy preview_execute_oql action.
+var errDevEndpointNotFound = errors.New("dev preview endpoint not found")
+
+// previewOQLDev calls the 11.11+ REST endpoint and returns the raw response body
+// (a {"data":[...]} object). It returns errDevEndpointNotFound when the runtime
+// responds 404, so the caller can fall back to the legacy action API. Transport
+// (direct HTTP vs docker-exec) mirrors CallM2EE.
+func previewOQLDev(opts M2EEOptions, params map[string]any) (json.RawMessage, error) {
+	if err := resolveM2EEDefaults(&opts); err != nil {
+		return nil, err
+	}
+
+	bodyBytes, err := json.Marshal(params)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling request: %w", err)
+	}
+
+	if !opts.Direct && opts.ProjectPath != "" {
+		dockerDir := filepath.Join(filepath.Dir(opts.ProjectPath), ".docker")
+		composePath := filepath.Join(dockerDir, "docker-compose.yml")
+		if _, err := os.Stat(composePath); err == nil {
+			return previewOQLDevDocker(opts, dockerDir, bodyBytes)
+		}
+	}
+
+	return previewOQLDevDirect(opts, bodyBytes)
+}
+
+// previewOQLDevDirect POSTs the raw params body to the dev endpoint over HTTP.
+func previewOQLDevDirect(opts M2EEOptions, bodyBytes []byte) (json.RawMessage, error) {
+	url := fmt.Sprintf("http://%s:%d%s", opts.Host, opts.Port, devPreviewOQLPath)
+
+	req, err := http.NewRequest("POST", url, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	req.Header.Set("X-M2EE-Authentication", m2eeAuthHeader(opts.Token))
+
+	timeout := opts.Timeout
+	if timeout == 0 {
+		timeout = 10 * time.Second
+	}
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("cannot connect to Mendix admin API at %s:%d -- is the app running? Start with 'mxcli docker up'", opts.Host, opts.Port)
+	}
+	defer resp.Body.Close()
+
+	switch {
+	case resp.StatusCode == http.StatusNotFound:
+		return nil, errDevEndpointNotFound
+	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		return nil, fmt.Errorf("authentication failed (HTTP %d) -- check the admin password (--token or M2EE_ADMIN_PASS)", resp.StatusCode)
+	case resp.StatusCode != http.StatusOK:
+		return nil, fmt.Errorf("unexpected HTTP %d from admin API", resp.StatusCode)
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+	return respBody, nil
+}
+
+// previewOQLDevDocker POSTs to the dev endpoint via "docker compose exec" + curl.
+// curl is run without -f and with -w so the trailing HTTP status survives, which
+// lets us detect 404 (pre-11.11) and fall back.
+func previewOQLDevDocker(opts M2EEOptions, dockerDir string, bodyBytes []byte) (json.RawMessage, error) {
+	authHeader := m2eeAuthHeader(opts.Token)
+
+	curlCmd := fmt.Sprintf(
+		"curl -s -w '\\n%%{http_code}' -X POST http://localhost:%d%s -H 'Content-Type: application/json' -H 'X-M2EE-Authentication: %s' -d '%s'",
+		containerAdminPort, devPreviewOQLPath, authHeader, strings.ReplaceAll(string(bodyBytes), "'", "'\\''"),
+	)
+
+	composePath := filepath.Join(dockerDir, "docker-compose.yml")
+	cmd := exec.Command(ContainerCLI(), "compose", "-f", composePath, "exec", "-T", "mendix", "sh", "-c", curlCmd)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil && stdout.Len() == 0 {
+		stderrStr := strings.TrimSpace(stderr.String())
+		if stderrStr != "" {
+			return nil, fmt.Errorf("docker compose exec failed: %s", stderrStr)
+		}
+		return nil, fmt.Errorf("cannot execute in Mendix container -- is the app running? Start with 'mxcli docker up'")
+	}
+
+	body, status, ok := splitCurlStatus(stdout.Bytes())
+	if !ok || status == 0 {
+		return nil, fmt.Errorf("cannot connect to Mendix admin API -- is the app running? Start with 'mxcli docker up'")
+	}
+	switch status {
+	case http.StatusNotFound:
+		return nil, errDevEndpointNotFound
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, fmt.Errorf("authentication failed (HTTP %d) -- check the admin password (--token or M2EE_ADMIN_PASS)", status)
+	case http.StatusOK:
+		return body, nil
+	default:
+		return nil, fmt.Errorf("unexpected HTTP %d from admin API", status)
+	}
+}
+
+// splitCurlStatus splits curl output produced with -w '\n%{http_code}' into the
+// response body and the trailing HTTP status code. ok is false when no numeric
+// status line is present (e.g. a connection failure produced no output).
+func splitCurlStatus(out []byte) (body []byte, status int, ok bool) {
+	out = bytes.TrimRight(out, "\n")
+	idx := bytes.LastIndexByte(out, '\n')
+	code, err := strconv.Atoi(strings.TrimSpace(string(out[idx+1:])))
+	if err != nil {
+		return nil, 0, false
+	}
+	if idx < 0 {
+		return nil, code, true
+	}
+	return out[:idx], code, true
 }
 
 // resolveM2EEDefaults fills missing M2EEOptions fields from env vars and .env file.
