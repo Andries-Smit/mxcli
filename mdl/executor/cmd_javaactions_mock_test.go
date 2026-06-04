@@ -58,6 +58,33 @@ func TestDescribeJavaAction_Mock(t *testing.T) {
 	assertContainsStr(t, out, "create java action")
 }
 
+// TestDescribeJavaAction_AlwaysEmitsBody is a regression test for issue #637:
+// the CREATE JAVA ACTION grammar requires an `as $$ ... $$;` body, but DESCRIBE
+// only emitted one when the .java source was readable. Add-on/Marketplace actions
+// ship without source on disk (here the mock MprPath resolves to nothing), so the
+// output must still include a placeholder body terminated by `$$;` to re-parse.
+func TestDescribeJavaAction_AlwaysEmitsBody(t *testing.T) {
+	mod := mkModule("MyModule")
+
+	mb := &mock.MockBackend{
+		IsConnectedFunc: func() bool { return true },
+		ReadJavaActionByNameFunc: func(qn string) (*javaactions.JavaAction, error) {
+			return &javaactions.JavaAction{
+				BaseElement: model.BaseElement{ID: nextID("ja")},
+				ContainerID: mod.ID,
+				Name:        "SourcelessAction",
+			}, nil
+		},
+	}
+
+	ctx, buf := newMockCtx(t, withBackend(mb))
+	assertNoError(t, describeJavaAction(ctx, ast.QualifiedName{Module: "MyModule", Name: "SourcelessAction"}))
+
+	out := buf.String()
+	assertContainsStr(t, out, "as $$")
+	assertContainsStr(t, out, "$$;")
+}
+
 // NOTE: listJavaActions has no explicit not-connected guard. It calls
 // getHierarchy (which returns nil when disconnected) and is intended to
 // be reached through execShow, which enforces a connected backend first.

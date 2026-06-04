@@ -159,15 +159,17 @@ func describeJavaAction(ctx *ExecContext, name ast.QualifiedName) error {
 		}
 	}
 
-	// Try to read and include Java source code
+	// The grammar requires an `as $$ ... $$` body for CREATE JAVA ACTION, so always
+	// emit one. When the .java source can't be read (e.g. add-on modules ship without
+	// source on disk), emit a placeholder body so DESCRIBE output still re-parses (#637).
 	javaCode := readJavaActionUserCode(ctx.MprPath, name.Module, name.Name)
+	sb.WriteString("\nas $$\n")
 	if javaCode != "" {
-		sb.WriteString("\nas $$\n")
 		sb.WriteString(javaCode)
-		sb.WriteString("\n$$")
+	} else {
+		sb.WriteString("// Java source not available from this project; body omitted by DESCRIBE.")
 	}
-
-	sb.WriteString(";")
+	sb.WriteString("\n$$;")
 
 	// Output the complete statement
 	fmt.Fprintln(ctx.Output, sb.String())
