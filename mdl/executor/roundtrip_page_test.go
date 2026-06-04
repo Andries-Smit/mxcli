@@ -549,9 +549,10 @@ func TestRoundtripPage_MicroflowButtonWithParams(t *testing.T) {
 		t.Fatalf("Failed to describe page: %v", err)
 	}
 
-	// Verify that the microflow call with parameter is in the output
-	if !strings.Contains(output, "call_microflow") {
-		t.Errorf("Expected call_microflow in describe output.\nOutput:\n%s", output)
+	// Verify that the microflow call with parameter is in the output, in the
+	// parser-accepted form (issue #634: no "call_" prefix on widget actions).
+	if !strings.Contains(output, "microflow") || strings.Contains(output, "call_microflow") {
+		t.Errorf("Expected re-parseable 'microflow' (not 'call_microflow') in describe output.\nOutput:\n%s", output)
 	}
 	if !strings.Contains(output, mfName) {
 		t.Errorf("Expected microflow name '%s' in describe output.\nOutput:\n%s", mfName, output)
@@ -622,9 +623,10 @@ func TestRoundtripPage_MicroflowButtonWithCurrentObject(t *testing.T) {
 		t.Fatalf("Failed to describe page: %v", err)
 	}
 
-	// Verify that the microflow call with $currentObject parameter is in the output
-	if !strings.Contains(output, "call_microflow") {
-		t.Errorf("Expected call_microflow in describe output.\nOutput:\n%s", output)
+	// Verify that the microflow call with $currentObject parameter is in the output,
+	// in the parser-accepted form (issue #634: no "call_" prefix on widget actions).
+	if !strings.Contains(output, "microflow") || strings.Contains(output, "call_microflow") {
+		t.Errorf("Expected re-parseable 'microflow' (not 'call_microflow') in describe output.\nOutput:\n%s", output)
 	}
 	if !strings.Contains(output, mfName) {
 		t.Errorf("Expected microflow name '%s' in describe output.\nOutput:\n%s", mfName, output)
