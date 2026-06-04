@@ -834,7 +834,10 @@ func outputDataGrid2ColumnV3(ctx *ExecContext, prefix, colName string, col rawDa
 	}
 
 	// Check if we have content widgets to display
-	header := fmt.Sprintf("column %s", colName)
+	// Quote the column name when it collides with a reserved keyword (e.g. a column
+	// named Title/Description), mirroring the general widget-name path so DESCRIBE
+	// output re-parses. #619 added mdlIdent for widgets but missed columns (#638).
+	header := fmt.Sprintf("column %s", mdlIdent(colName))
 	hasContent := len(col.ContentWidgets) > 0
 
 	if hasContent {

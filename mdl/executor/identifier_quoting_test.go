@@ -17,6 +17,9 @@ func TestMdlIdent(t *testing.T) {
 		{"Column", `"Column"`},
 		{"Template", `"Template"`},
 		{"Attribute", `"Attribute"`},
+		// Common datagrid column names that collide with keywords (issue #638).
+		{"Title", `"Title"`},
+		{"Description", `"Description"`},
 		// Case-insensitive keywords are still keywords.
 		{"list", `"list"`},
 		// Ordinary identifiers → bare.
