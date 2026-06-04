@@ -90,6 +90,14 @@ func resolveEntityMemberAccess(_ *ExecContext, rule *domainmodel.AccessRule, att
 			}
 		}
 
+		// BSON stores BY_NAME references fully qualified ("Module.Entity.Attr" for
+		// attributes, "Module.Assoc" for associations), but the grant grammar accepts
+		// a bare member IDENTIFIER only. Strip to the last segment so DESCRIBE output
+		// re-parses (issue #633).
+		if idx := strings.LastIndex(memberName, "."); idx >= 0 {
+			memberName = memberName[idx+1:]
+		}
+
 		switch ma.AccessRights {
 		case domainmodel.MemberAccessRightsReadWrite:
 			readWrite = append(readWrite, memberName)
