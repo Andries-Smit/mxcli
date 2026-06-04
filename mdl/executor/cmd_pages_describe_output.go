@@ -1163,7 +1163,9 @@ func extractMicroflowParameters(ctx *ExecContext, settings map[string]any) strin
 		}
 
 		if value != "" {
-			params = append(params, paramName+" = "+value)
+			// Canonical microflowArgV3 form is `Param: $value` (IDENTIFIER COLON expr);
+			// emitting `Param = $value` is IDENTIFIER EQUALS, which doesn't re-parse (#640).
+			params = append(params, paramName+": "+value)
 		}
 	}
 
@@ -1224,7 +1226,9 @@ func extractNanoflowParameters(ctx *ExecContext, action map[string]any) string {
 		}
 
 		if value != "" {
-			params = append(params, paramName+" = "+value)
+			// Canonical microflowArgV3 form is `Param: $value` (IDENTIFIER COLON expr);
+			// emitting `Param = $value` is IDENTIFIER EQUALS, which doesn't re-parse (#640).
+			params = append(params, paramName+": "+value)
 		}
 	}
 

@@ -557,8 +557,8 @@ func TestRoundtripPage_MicroflowButtonWithParams(t *testing.T) {
 	if !strings.Contains(output, mfName) {
 		t.Errorf("Expected microflow name '%s' in describe output.\nOutput:\n%s", mfName, output)
 	}
-	if !strings.Contains(output, "Product = $Product") {
-		t.Errorf("Expected 'Product = $Product' parameter mapping in describe output.\nOutput:\n%s", output)
+	if !strings.Contains(output, "Product: $Product") {
+		t.Errorf("Expected 'Product: $Product' parameter mapping in describe output.\nOutput:\n%s", output)
 	}
 
 	t.Logf("Microflow button with params roundtrip successful:\n%s", output)
@@ -631,8 +631,8 @@ func TestRoundtripPage_MicroflowButtonWithCurrentObject(t *testing.T) {
 	if !strings.Contains(output, mfName) {
 		t.Errorf("Expected microflow name '%s' in describe output.\nOutput:\n%s", mfName, output)
 	}
-	if !strings.Contains(output, "Target = $currentObject") {
-		t.Errorf("Expected 'Target = $currentObject' parameter mapping in describe output.\nOutput:\n%s", output)
+	if !strings.Contains(output, "Target: $currentObject") {
+		t.Errorf("Expected 'Target: $currentObject' parameter mapping in describe output.\nOutput:\n%s", output)
 	}
 
 	t.Logf("Microflow button with $currentObject roundtrip successful:\n%s", output)
