@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Marketplace download & install** — the content API now returns a per-version `downloadUrl`, so the previously-parked install path is unblocked. `mxcli marketplace download <id> [--version X] [-o file]` fetches a content version's `.mpk` (two-step: MxToken-authed `303` on `marketplace.mendix.com` → public CDN, no token sent to the CDN). `mxcli marketplace install <id> -p app.mpr` is type-aware: widgets are copied into `widgets/`, new modules are imported via `mx module-import`, other types are downloaded with import instructions. Module **updates** are intentionally reported-not-applied — re-importing an existing module would discard local edits and change persistent-entity IDs (data loss); that path is left to Studio Pro pending an ID-preserving merge
+
 ## [0.12.0] - 2026-06-04
 
 Headline: **one widget creation path.** The `datagrid`/`gallery`/`combobox`/`image` keywords and the `pluggablewidget '...'` form now build BSON through a single registry-driven engine, fed by widget definitions extracted from each project's installed `.mpk` files (`widget init`; auto-generated/refreshed on `exec`). The Mendix BSON *envelope* still comes from embedded `mendix-11.6` templates — full per-version, project-extracted templates remain tracked under #529.

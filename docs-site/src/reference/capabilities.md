@@ -131,6 +131,10 @@ Everything mxcli can do, organized by use case.
 | New project | `mxcli new <name> --version X.Y.Z` | Create project from scratch with all tooling |
 | Init project | `mxcli init` | Set up `.claude/` with skills |
 | Setup mxcli | `mxcli setup mxcli [--os linux]` | Download platform-specific mxcli binary |
+| Platform login | `mxcli auth login` | Store a Mendix PAT for marketplace access |
+| Marketplace browse | `mxcli marketplace search/info/versions` | Discover content; `--min-mendix` compatibility filter |
+| Marketplace download | `mxcli marketplace download <id> [--version X]` | Fetch a content version's `.mpk` to disk |
+| Marketplace install | `mxcli marketplace install <id> -p app.mpr` | Widget → `widgets/`; new module → `mx module-import`; existing module reported, not updated |
 
 ## Known Limitations
 
@@ -142,6 +146,7 @@ Everything mxcli can do, organized by use case.
 | Pluggable widget ImageUrl mode | Cannot set imageUrl from MDL | Configure in Studio Pro |
 | Concurrent editing | Not supported | Close Studio Pro before mxcli writes |
 | Widget template drift | CE0463 on version mismatch | MPK augmentation handles most cases |
+| Marketplace module update | Existing modules are reported, not updated in place | Update via Studio Pro (preserves local edits and entity IDs) |
 | 47 of 52 metamodel domains | Not yet implemented | REST, OData write, etc. pending |
 
 ## Version Compatibility
