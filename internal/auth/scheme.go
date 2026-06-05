@@ -16,6 +16,10 @@ package auth
 var hostSchemes = map[string]Scheme{
 	"marketplace-api.mendix.com": SchemePAT,
 	"catalog.mendix.com":         SchemePAT,
+	// marketplace.mendix.com serves the version download endpoint, which
+	// 303-redirects to the public CDN. The token is needed on this first hop
+	// only; the redirect to files.appstore.mendix.com is fetched without auth.
+	"marketplace.mendix.com": SchemePAT,
 }
 
 // SchemeForHost returns the auth scheme required by the given hostname.

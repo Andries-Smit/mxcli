@@ -114,6 +114,67 @@ func (c *Client) Versions(ctx context.Context, contentID int) (*VersionList, err
 	return &out, nil
 }
 
+// Download streams the .mpk for the given version to dst and returns the
+// suggested filename (from the CDN URL's last path segment).
+//
+// The flow is two hops (see reference_marketplace_download_api memory):
+//  1. GET version.DownloadURL on marketplace.mendix.com WITH the MxToken
+//     (the auth http.Client supplies it) but with redirects DISABLED, to
+//     capture the 303 Location pointing at the public CDN.
+//  2. GET that CDN URL with a PLAIN client — no token is sent to the CDN, and
+//     the CDN host is not in the auth allowlist so the auth client would reject
+//     it anyway.
+func (c *Client) Download(ctx context.Context, v *Version, dst io.Writer) (filename string, err error) {
+	if v == nil || v.DownloadURL == "" {
+		return "", fmt.Errorf("marketplace: this version exposes no download URL")
+	}
+
+	// Step 1: resolve the 303 redirect using the auth client, without following it.
+	req, err := http.NewRequestWithContext(ctx, "GET", v.DownloadURL, nil)
+	if err != nil {
+		return "", err
+	}
+	noRedirect := *c.httpClient
+	noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := noRedirect.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("marketplace download (resolve): %w", err)
+	}
+	cdnURL := resp.Header.Get("Location")
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther && resp.StatusCode != http.StatusFound && resp.StatusCode != http.StatusMovedPermanently {
+		return "", fmt.Errorf("marketplace download (resolve): expected redirect, got HTTP %d", resp.StatusCode)
+	}
+	if cdnURL == "" {
+		return "", fmt.Errorf("marketplace download (resolve): redirect carried no Location")
+	}
+
+	// Step 2: fetch the .mpk from the public CDN with a plain client.
+	cdnReq, err := http.NewRequestWithContext(ctx, "GET", cdnURL, nil)
+	if err != nil {
+		return "", err
+	}
+	cdnResp, err := http.DefaultClient.Do(cdnReq)
+	if err != nil {
+		return "", fmt.Errorf("marketplace download (fetch): %w", err)
+	}
+	defer cdnResp.Body.Close()
+	if cdnResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(cdnResp.Body, 256))
+		return "", fmt.Errorf("marketplace download (fetch): HTTP %d: %s", cdnResp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	if _, err := io.Copy(dst, cdnResp.Body); err != nil {
+		return "", fmt.Errorf("marketplace download (stream): %w", err)
+	}
+
+	if u, perr := url.Parse(cdnURL); perr == nil {
+		if i := strings.LastIndex(u.Path, "/"); i >= 0 && i+1 < len(u.Path) {
+			filename = u.Path[i+1:]
+		}
+	}
+	return filename, nil
+}
+
 func (c *Client) get(ctx context.Context, path string, dst any) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+path, nil)
 	if err != nil {

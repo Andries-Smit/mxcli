@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -17,13 +19,12 @@ import (
 var marketplaceCmd = &cobra.Command{
 	Use:   "marketplace",
 	Short: "Browse the Mendix marketplace",
-	Long: `Browse published modules, widgets, and themes in the Mendix marketplace.
+	Long: `Browse and download published modules, widgets, and themes in the Mendix marketplace.
 
 Requires a Personal Access Token (PAT). Run 'mxcli auth login' first.
 
-Install is not yet supported — the marketplace API does not currently
-expose .mpk download URLs. Use Studio Pro or 'mx module-import' to
-install a .mpk you have downloaded manually.`,
+'marketplace download' fetches a content version's .mpk to disk. To install a
+downloaded module into a project, use Studio Pro or 'mx module-import'.`,
 }
 
 var marketplaceSearchCmd = &cobra.Command{
@@ -54,6 +55,21 @@ var marketplaceVersionsCmd = &cobra.Command{
 	RunE: runMarketplaceVersions,
 }
 
+var marketplaceDownloadCmd = &cobra.Command{
+	Use:   "download <content-id>",
+	Short: "Download a marketplace item's .mpk to disk",
+	Long: `Download the .mpk package for a marketplace content version.
+
+By default the latest version is downloaded. Use --version to pick a specific
+version number. The file is written to the current directory under its CDN
+filename unless -o is given.`,
+	Example: `  mxcli marketplace download 2888
+  mxcli marketplace download 2888 --version 7.0.2
+  mxcli marketplace download 2888 -o ./mods/dbc.mpk`,
+	Args: cobra.ExactArgs(1),
+	RunE: runMarketplaceDownload,
+}
+
 func init() {
 	marketplaceSearchCmd.Flags().IntP("limit", "n", 20, "max results")
 	marketplaceSearchCmd.Flags().String("profile", auth.ProfileDefault, "credential profile")
@@ -66,11 +82,101 @@ func init() {
 	marketplaceVersionsCmd.Flags().Bool("json", false, "emit JSON instead of a table")
 	marketplaceVersionsCmd.Flags().String("min-mendix", "", "filter versions whose minSupportedMendixVersion is <= this (e.g., 10.24.0)")
 
+	marketplaceDownloadCmd.Flags().String("profile", auth.ProfileDefault, "credential profile")
+	marketplaceDownloadCmd.Flags().String("version", "", "version number to download (default: latest)")
+	marketplaceDownloadCmd.Flags().StringP("output", "o", "", "output path (default: CDN filename in the current directory)")
+
 	marketplaceCmd.AddCommand(marketplaceSearchCmd)
 	marketplaceCmd.AddCommand(marketplaceInfoCmd)
 	marketplaceCmd.AddCommand(marketplaceVersionsCmd)
+	marketplaceCmd.AddCommand(marketplaceDownloadCmd)
 
 	rootCmd.AddCommand(marketplaceCmd)
+}
+
+// resolveVersion picks a version from a content item's version list: the one
+// matching versionNumber, or the latest (first, per the API ordering) when
+// versionNumber is empty.
+func resolveVersion(versions []marketplace.Version, versionNumber string) (*marketplace.Version, error) {
+	if len(versions) == 0 {
+		return nil, fmt.Errorf("no versions available for this content")
+	}
+	if versionNumber == "" {
+		return &versions[0], nil
+	}
+	for i := range versions {
+		if versions[i].VersionNumber == versionNumber {
+			return &versions[i], nil
+		}
+	}
+	return nil, fmt.Errorf("version %q not found; run 'mxcli marketplace versions <id>' to list available versions", versionNumber)
+}
+
+func runMarketplaceDownload(cmd *cobra.Command, args []string) error {
+	contentID, err := parseContentID(args[0])
+	if err != nil {
+		return err
+	}
+	versionNumber, _ := cmd.Flags().GetString("version")
+	output, _ := cmd.Flags().GetString("output")
+
+	client, err := newMarketplaceClient(cmd.Context(), cmd)
+	if err != nil {
+		return err
+	}
+
+	list, err := client.Versions(cmd.Context(), contentID)
+	if err != nil {
+		return err
+	}
+	version, err := resolveVersion(list.Items, versionNumber)
+	if err != nil {
+		return err
+	}
+	if version.DownloadURL == "" {
+		return fmt.Errorf("version %s exposes no download URL", version.VersionNumber)
+	}
+
+	// Stream to a temp file first, then derive the final name and rename, so a
+	// failed/cancelled download never leaves a truncated .mpk in place.
+	dir := "."
+	if output != "" {
+		dir = filepath.Dir(output)
+	}
+	tmp, err := os.CreateTemp(dir, ".mxcli-download-*.part")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op once renamed
+
+	filename, derr := client.Download(cmd.Context(), version, tmp)
+	closeErr := tmp.Close()
+	if derr != nil {
+		return derr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+
+	dest := output
+	if dest == "" {
+		if filename == "" {
+			filename = fmt.Sprintf("content-%d-%s.mpk", contentID, version.VersionNumber)
+		}
+		dest = filename
+	}
+	if err := os.Rename(tmpName, dest); err != nil {
+		return fmt.Errorf("write %s: %w", dest, err)
+	}
+
+	info, _ := os.Stat(dest)
+	size := int64(0)
+	if info != nil {
+		size = info.Size()
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Downloaded %s (%s, %.1f MB)\n", dest, version.VersionNumber, float64(size)/(1024*1024))
+	return nil
 }
 
 // newMarketplaceClient builds an authenticated marketplace client using

@@ -39,6 +39,12 @@ type Version struct {
 	MinSupportedMendixVersion string    `json:"minSupportedMendixVersion"`
 	PublicationDate           time.Time `json:"publicationDate"`
 	ReleaseNotes              string    `json:"releaseNotes,omitempty"` // HTML
+	VersionType               string    `json:"versionType,omitempty"`  // "Regular", ...
+	// DownloadURL is the API endpoint that 303-redirects to the .mpk on the
+	// public CDN; requires MxToken auth on the first hop. Empty for versions the
+	// API exposes no download for. Added 2026-06; see the marketplace download
+	// reference memory for the verified flow.
+	DownloadURL string `json:"downloadUrl,omitempty"`
 }
 
 // ContentList is the list shape returned by search/list endpoints.
