@@ -1,12 +1,29 @@
 ---
 title: Unified Schema Registry
-status: proposed
+status: descoped
 ---
 
 # Proposal: Unified Schema Registry
 
-**Status**: Proposed
+**Status**: Descoped (2026-06-05)
 **Supersedes**: [`BSON_SCHEMA_REGISTRY_PROPOSAL.md`](BSON_SCHEMA_REGISTRY_PROPOSAL.md), [`PROPOSAL_schema_extract.md`](PROPOSAL_schema_extract.md)
+
+> **⚠️ Descoped — do not build as written.** The investigation in
+> [`PROPOSAL_backend_strategy.md` § Version handling & the schema-registry overlap](PROPOSAL_backend_strategy.md#version-handling--the-schema-registry-overlap-investigation-2026-06-05)
+> found that adopting engalar's roundtrip codec **retires this registry's core** and collapses
+> it to a much smaller feature set. The four jobs below resolve as:
+>
+> | Registry job | Fate under the codec |
+> |---|---|
+> | **(a)** Roundtrip-safe / field-complete serialization (the urgent driver, Phases 4–5) | **Retired into the engine.** Unknown fields pass through verbatim, so partial metamodel coverage is *safe* — the ~100%-coverage chase that justified this proposal disappears. |
+> | **(b)** Authoritative source (`mx dump-mpr`) replacing regex-npm + `supplements.json` | **Survives, path-independent.** Already tracked as the "re-point codegen" risk in the backend strategy. Needed only for doc types the npm SDK omits (Agent/AI) — the SDK's *version* metadata is already closed-world complete for 9–11. |
+> | **(c)** Inspection surface (`schema show/list/diff`, catalog tables, LSP hover) | **Survives, but cheap** — thin features over the codec's generated `gen/*` metadata, not a new subsystem. |
+> | **(d)** Migration tooling, dual-stack dispatch, object-list widgets (`check --post-migration`) | **Survives** as orthogonal product features. |
+>
+> **Action:** the surviving **(b)+(c)+(d)** should be re-drafted as a small *"schema inspection
+> & migration on top of the codec"* proposal. Treat the architecture, phasing, and codegen
+> sections below as **historical** — they predate the codec decision. The dual-stack dispatch,
+> object-list widget syntax, and migration UX (the user-facing parts) remain valid design input.
 
 ## Summary
 

@@ -77,7 +77,7 @@ for display in this README):
 | [SHOW/DESCRIBE Scheduled Events](show-describe-scheduled-events.md) | Proposed | Document type: ScheduledEvents$ScheduledEvent |
 | [SHOW/DESCRIBE Support for Missing Pluggable (React) Widgets](show-describe-pluggable-widgets.md) | Proposed | Scope: Improve DESCRIBE PAGE/SNIPPET output for pluggable widgets that currently fall through to generic formatting |
 | [Unified mxcli & MDL Documentation Site](proposal-documentation-site.md) | Proposed | mxcli has extensive documentation — 119 markdown files, a complete language specification, architecture docs, examples, and user guides — bu |
-| [Unified Schema Registry](UNIFIED_SCHEMA_REGISTRY.md) | Proposed | Mendix project metadata (BSON document schemas, widget property structures, MDL keyword |
+| [Unified Schema Registry](UNIFIED_SCHEMA_REGISTRY.md) | Descoped | Serialization core retired into engalar's roundtrip codec; survives as thin inspection/migration features over `gen/*` — see [backend strategy § Version handling](PROPOSAL_backend_strategy.md#version-handling--the-schema-registry-overlap-investigation-2026-06-05) |
 | [Version-Aware MDL and BSON Serialization](version-aware-mdl.md) | Proposed | The Mendix metamodel evolves across versions. |
 | [VS Code MDL Visualizations](PROPOSAL_vscode_visualizations.md) | Proposed | Add visual diagram previews to the VS Code MDL extension, enabling users to see entity-relationship diagrams, microflow flowcharts, page wir |
 | [VS Code Search — Quick Pick + Workspace Symbol](PROPOSAL_vscode_search.md) | Proposed | Full-text search exists in mxcli (mxcli search) but is only accessible via the terminal. |

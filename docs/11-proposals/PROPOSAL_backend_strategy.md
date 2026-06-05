@@ -206,7 +206,9 @@ concurrently; LSP and codegen-re-point are the long poles and can trail.
    to expose a save/flush tool. Track as a Studio Pro ask.
 3. **Codegen source debt.** If not re-pointed, new Studio Pro doc types (Agent Editor and
    successors) keep needing hand-coding. The PED/mxunit extraction we validated is the fix
-   but is itself L effort.
+   but is itself L effort. **Refined 2026-06-05** — the debt is **missing doc types**, not
+   missing *version* data; the npm SDK's version metadata is closed-world complete for the
+   supported range. See [Version handling & the schema-registry overlap](#version-handling--the-schema-registry-overlap-investigation-2026-06-05).
 4. **Widget parity uncertainty.** Until the golden-diff runs, the exact v0.12 gap on his
    engine is inferred, not measured. Run it before committing widget effort.
 5. **LSP/grammar drift.** The LSP binds to executor/grammar internals he rewrote; the port
@@ -216,7 +218,98 @@ concurrently; LSP and codegen-re-point are the long poles and can trail.
 
 ---
 
+## Version handling & the schema-registry overlap (investigation 2026-06-05)
+
+A follow-up investigation triggered by two questions: *does adopting the engine make the
+v0.13 [Unified Schema Registry](UNIFIED_SCHEMA_REGISTRY.md) redundant, and how does the
+inherited engine actually handle Mendix versions?* Measured against `engalar/dev` and the
+npm `mendixmodelsdk` source (4.105 / 4.111). The short answer reshapes both the registry
+roadmap and the "codegen source debt" risk above.
+
+### The v0.13 schema registry is subsumed except for *source* + *inspection/migration*
+
+The Unified Schema Registry bundles four jobs. The roundtrip codec absorbs the urgent one
+and leaves three thinner, orthogonal ones — so the registry should be **descoped to a small
+"inspection + migration on top of the codec" proposal**, not built as a new subsystem.
+
+| Registry job | Subsumed by the codec? | Disposition |
+|---|---|---|
+| **(a)** Roundtrip-safe / field-complete serialization (Studio Pro stops rejecting output) | **Yes — fully.** Unknown fields pass through verbatim (§4 of the pipeline doc); partial metamodel coverage is *safe*. This was the registry's urgent driver and its hardest part. | Retired into the engine |
+| **(b)** Authoritative *source* (`mx dump-mpr`) replacing regex-npm + `supplements.json` | **No** — engalar inherits the identical source. | Survives; **path-independent** (already the "re-point codegen" risk) |
+| **(c)** Inspection surface — `schema show/list/diff`, catalog tables, LSP hover/completion | **No** — orthogonal, but now cheap to build on the generated `gen/*` metadata | Survives as thin features |
+| **(d)** Migration tooling, dual-stack dispatch, object-list widgets (`check --post-migration`) | **No** — orthogonal product features | Survives as thin features |
+
+Because the codec makes partial field coverage safe, the registry's whole architecture
+(Phases 4–5, chasing ~100% coverage, dropping `supplements.json`) collapses. What's left is
+**(b)+(c)+(d)** layered on `gen/*`.
+
+### Two independent version systems — only one is active, and it didn't fork
+
+| System | Granularity | State | Forked from `main`? |
+|---|---|---|---|
+| Executor `sdk/versions/*.yaml` + `registry.go` | per-MDL-**feature** ("can I use this statement on vX") | **Active, enforced** via `checkFeature()` before every BSON write, with actionable hints | **Byte-identical** on `main` and `engalar/dev` (`mendix-{9,10,11}.yaml`, `registry.go`) |
+| Codec `modelsdk/gen/*/version.go` | per-BSON-**property** ("does field X exist in vX") | **Latent** — generated, but **zero non-test consumers** | engalar-only (part of the engine) |
+
+The version support users actually feel is the **YAML feature registry, which is identical
+on both branches** — so the adopt-vs-vendor decision is **neutral** on it; neither plan ports
+or changes it. The engine *adds* a finer-grained per-property table that is strategically
+valuable (it's the raw material `schema diff` / `check --post-migration` would consume) but
+inert today.
+
+### `version.go` is closed-world *complete* for 9–11 — not "incomplete"
+
+The per-property table looks sparse (~21% of properties carry an explicit `Introduced`/
+`Deleted`), but **absence is information, not a gap**:
+
+- Mendix's `StructureVersionInfo` is a **change-log**: a property carries `introduced` only
+  if it was added *after* the type's baseline. No bound ⇒ "present since the type's baseline."
+- The SDK's tracking floor is **Mendix 7** (source carries `introduced: "7.0.0"`+). mxcli
+  supports 9/10/11, so any property added anywhere in that range *necessarily* carries an
+  explicit `introduced`. Absence reliably means "present throughout 9–11."
+- This is a **guarantee, not a convention**: the SDK's own runtime `isAvailable` gating reads
+  `versionInfo`; an untagged post-floor addition would mis-gate the SDK itself.
+
+**Consequence:** for per-property existence-gating across the supported range, `version.go`
+is already complete. Neither a better parser nor `mx dump-mpr` is required for it.
+
+### The regex parser is a *robustness* liability, not a *coverage* one
+
+Comparing source to generated output: the npm source (4.105) holds **734 property-level**
+`introduced:` annotations (the other 667 of its 1401 are type/enum-level); engalar's
+generated `version.go` (from 4.111) holds **809** property-level `Introduced:` — i.e. it
+already captures **≥100%** of the property-level version data the source carries. The regex
+is *not* lossy on current content. Its real debt is fragility to **source *format* changes**
+(minification, restructure), which `retran` (#335) correctly flagged.
+
+- "Improve the regex to get more version info" has **no target** — the data is already out.
+- The robust replacement, if desired, is **instantiate-and-reflect**: `require('mendixmodelsdk')`
+  in a Node extraction step (already a codegen dependency) and read the live object graph —
+  yielding format-robustness *plus* constructor-computed defaults, type-level `versionInfo`,
+  and property descriptors (ref kinds, list encodings) the regex approximates. Pure-Go `goja`
+  is the no-Node alternative but costs CommonJS-`require` shimming and JS-compat risk. This is
+  optional tech-debt reduction, **not** a version-coverage lever.
+
+### The one real fix, and the one real gap
+
+| Concern | Status | Action |
+|---|---|---|
+| Per-property existence gating, v9–11 | **Already complete** (closed-world, SDK-guaranteed) | None |
+| Type-floor inheritance for unbounded props | Parser captures type-level `Introduced`/`Deleted` (`JsVersionInfo`), but the generated `TypeVersionInfo struct { Properties map[...] }` **drops it** | **Small emitter+struct fix** — add `Introduced`/`Deleted` to `TypeVersionInfo` and emit them; no parser or source work |
+| Regex robustness | Fragile to *format* changes, not lossy on content | Optional — instantiate-and-reflect |
+| Doc types the SDK omits entirely (Agent/AI) | **True coverage gap** — closed-world does **not** apply (absence = "not modeled") | `mx dump-mpr` *or* hand-code + promote the codegen `audit`/`audit-keys` mode to a CI gate |
+
+The only fidelity bug here is the type-level bound the emitter discards (a ~half-day change).
+The only genuine coverage gap is *missing types*, not *missing version data* — which is why
+Risk #3 above is refined from "codegen source debt (version)" to "missing doc types," and the
+`audit` gate is the safety net for it.
+
 ## Recommended next steps
+
+> **Concrete plan (2026-06-05):** the *vendor-the-engine-into-`main`* path (Option 3 evolved) now
+> has a phased, feature-flagged implementation plan with a dual-engine comparison harness:
+> [`docs/plans/2026-06-05-adopt-modelsdk-engine.md`](../plans/2026-06-05-adopt-modelsdk-engine.md).
+> It keeps `legacy` (`sdk/mpr`) as the default and shadow-validates `modelsdk` via normalized
+> BSON diff until cutover — sidestepping the upfront `mongo-driver` v2 migration.
 
 1. Settle the **collaboration/branch model** with engalar (blocks "adopt base").
 2. Establish a **working build on his foundation** + wire the golden-diff harness.
