@@ -154,10 +154,15 @@ the web app.
 
 ### Known Component IDs
 
-| Module | Component ID | Used By |
-|--------|-------------|---------|
-| External Database Connector | 2888 | 05-database-connection-examples.mdl |
+| Module | Content ID | Used By |
+|--------|-----------|---------|
+| External Database Connector | 219862 | 05-database-connection-examples.mdl |
+| Database Connector (separate JDBC module — not the one used by 05) | 2888 | — |
 | Business Events | (TBD) | 13-business-events-examples.mdl |
+
+> Note: `219862` carries the `6.2.x` line (e.g. `v6.2.3`, the bundled fixture version);
+> `2888` is a different module ("Database Connector") with its own `7.0.x`/`6.0.x` line. An
+> earlier draft conflated the two and labelled External Database Connector as `2888`.
 
 ## Proposed Commands
 
@@ -185,11 +190,11 @@ mxcli auth logout
 mxcli marketplace search "database connector"
 
 # show module details
-mxcli marketplace info 2888
+mxcli marketplace info 219862
 
-# Install module into project
-mxcli marketplace install 2888 -p app.mpr
-mxcli marketplace install 2888 --version 6.2.3 -p app.mpr
+# Install module into project (219862 = External Database Connector; 6.2.3 is one of its versions)
+mxcli marketplace install 219862 -p app.mpr
+mxcli marketplace install 219862 --version 6.2.3 -p app.mpr
 
 # list installed marketplace modules
 mxcli marketplace list -p app.mpr
