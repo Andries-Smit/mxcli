@@ -29,6 +29,7 @@ type pedAttribute struct {
 	Name            string `json:"name"`
 	Type            string `json:"type"`
 	EnumerationName string `json:"enumerationName,omitempty"`
+	Value           any    `json:"value,omitempty"`
 }
 
 type pedEntity struct {
@@ -37,7 +38,10 @@ type pedEntity struct {
 	Location       *pedPoint      `json:"location,omitempty"`
 	Attributes     []pedAttribute `json:"attributes"`
 	Generalization any            `json:"generalization,omitempty"`
+	Source         any            `json:"source,omitempty"`
 }
+
+const oqlViewEntitySourceType = "DomainModels$OqlViewEntitySource"
 
 type pedOperation struct {
 	Type  string `json:"type"`            // "set" | "add" | "remove"
@@ -428,10 +432,33 @@ func (b *Backend) buildEntityValue(entity *domainmodel.Entity) (*pedEntity, erro
 	if entity.GeneralizationRef != "" {
 		pe.Generalization = entity.GeneralizationRef // by-name reference (e.g. "System.User")
 	}
+	// View entity: link to its OQL source document (created separately via
+	// CreateViewEntitySourceDocument). The reference is by qualified name.
+	if entity.Source == oqlViewEntitySourceType {
+		if entity.SourceDocumentRef == "" {
+			return nil, fmt.Errorf("view entity %q: missing source document reference", entity.Name)
+		}
+		pe.Source = map[string]any{
+			"$Type":          oqlViewEntitySourceType,
+			"sourceDocument": entity.SourceDocumentRef,
+		}
+	}
+	isView := entity.Source == oqlViewEntitySourceType
 	for _, a := range entity.Attributes {
 		pa, err := b.buildAttributeValue(a)
 		if err != nil {
 			return nil, err
+		}
+		if isView {
+			// A view entity's attributes are sourced from OQL columns; each
+			// needs an OqlViewValue whose reference is the column alias (the
+			// executor stores it in Value.ViewReference, defaulting to the
+			// attribute name). Without it the entity is "out of sync" (CE-6770).
+			ref := a.Name
+			if a.Value != nil && a.Value.ViewReference != "" {
+				ref = a.Value.ViewReference
+			}
+			pa.Value = map[string]any{"$Type": "DomainModels$OqlViewValue", "reference": ref}
 		}
 		pe.Attributes = append(pe.Attributes, *pa)
 	}
@@ -619,22 +646,32 @@ func (b *Backend) ensureSchema(elementTypes ...string) error {
 	return nil
 }
 
-// pedUpdate applies operations to a module's domain model.
+// pedUpdate applies operations to a module's domain model and marks it dirty.
 func (b *Backend) pedUpdate(moduleName string, ops ...pedOpEntry) error {
+	if err := b.pedUpdateDoc(domainModelDocType, moduleName, ops...); err != nil {
+		return err
+	}
+	// The write applied to Studio Pro's in-memory model; the on-disk .mpr is now
+	// stale for this module, so route its reads through reconstruction.
+	b.markDirty(moduleName)
+	return nil
+}
+
+// pedUpdateDoc applies operations to any document (domain model, view-entity
+// source doc, …). Callers that change a module's domain model use pedUpdate,
+// which also marks the module dirty.
+func (b *Backend) pedUpdateDoc(docType, docName string, ops ...pedOpEntry) error {
 	res, err := b.client.CallTool("ped_update_document", map[string]any{
-		"documentType": domainModelDocType,
-		"documentName": moduleName,
+		"documentType": docType,
+		"documentName": docName,
 		"operations":   ops,
 	})
 	if err != nil {
 		return err
 	}
 	if res.IsError {
-		return fmt.Errorf("ped_update_document %s: %s", moduleName, res.Text)
+		return fmt.Errorf("ped_update_document %s: %s", docName, res.Text)
 	}
-	// The write applied to Studio Pro's in-memory model; the on-disk .mpr is now
-	// stale for this module, so route its reads through reconstruction.
-	b.markDirty(moduleName)
 	return nil
 }
 

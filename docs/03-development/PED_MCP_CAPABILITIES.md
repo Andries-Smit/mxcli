@@ -91,8 +91,18 @@ The port can change between Studio Pro sessions — confirm with `lsof` on the h
 ## How the mxcli MCP backend uses this surface
 
 Implemented (11.11): `CREATE/ALTER(add,drop attr)/DROP ENTITY`, `CREATE/DROP
-ASSOCIATION`, `CREATE ENUMERATION`, with a dirty-set read router that makes
-in-session edits visible. See `mdl/backend/mcp/` and the
+ASSOCIATION`, `CREATE ENUMERATION`, `CREATE VIEW ENTITY`, with a dirty-set read
+router that makes in-session edits visible.
+
+View-entity choreography (verified): `ped_create_document
+DomainModels$ViewEntitySourceDocument {name}` → `ped_update_document` set
+`/oql` → entity add with `source: {OqlViewEntitySource, sourceDocument:
+"<qualified>"}` and each attribute carrying `value: {OqlViewValue, reference:
+<column>}` (without the OqlViewValue the entity is "out of sync", CE-6770). The
+source document's name must equal the view entity's name. Because there is no
+delete-document tool, dropping a view entity removes the entity but orphans its
+source document, and `CREATE OR REPLACE` of an existing view entity fails at
+the duplicate source-document create. See `mdl/backend/mcp/` and the
 [proposal](../11-proposals/PROPOSAL_mcp_backend.md). Operations outside the slice
 return a clear "not supported by the MCP backend" error via the generated
 `unsupportedBackend` base.
