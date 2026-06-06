@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -24,6 +26,10 @@ const (
 	// (End-of-catalog normally terminates the loop first: an offset past the
 	// end returns a short/empty page.)
 	maxSearchPages = 50
+	// searchConcurrency bounds how many catalog pages are fetched in parallel
+	// during a deep keyword scan (the first page is always fetched alone so a
+	// common early match stays a single request).
+	searchConcurrency = 8
 )
 
 // Client is a typed wrapper around the marketplace REST API. Callers
@@ -72,20 +78,40 @@ func (c *Client) Search(ctx context.Context, query string, limit int) (*ContentL
 		return &out, nil
 	}
 
+	// Fetch the first page alone so a common query that matches early costs a
+	// single request, then ramp to concurrent batches so a rare/deep match
+	// (near-full scan) is a handful of round-trips instead of ~23 sequential
+	// ones. Stops at `limit` matches or end-of-catalog (a short page).
 	var matched []Content
-	for page := range maxSearchPages {
-		items, err := c.fetchContentPage(ctx, page*pageSize)
+	for page := 0; page < maxSearchPages; {
+		batch := searchConcurrency
+		if page == 0 {
+			batch = 1
+		}
+		if page+batch > maxSearchPages {
+			batch = maxSearchPages - page
+		}
+
+		pages, err := c.fetchPages(ctx, page, batch)
 		if err != nil {
 			return nil, err
 		}
-		matched = append(matched, filterItems(items, query)...)
+
+		endReached := false
+		for _, items := range pages {
+			matched = append(matched, filterItems(items, query)...)
+			if len(items) < pageSize {
+				endReached = true
+			}
+		}
 		if limit > 0 && len(matched) >= limit {
 			matched = matched[:limit]
 			break
 		}
-		if len(items) < pageSize {
-			break // reached the end of the catalog
+		if endReached {
+			break
 		}
+		page += batch
 	}
 	return &ContentList{Items: matched}, nil
 }
@@ -99,6 +125,28 @@ func (c *Client) fetchContentPage(ctx context.Context, offset int) ([]Content, e
 		return nil, err
 	}
 	return out.Items, nil
+}
+
+// fetchPages fetches n catalog pages starting at startPage concurrently and
+// returns them in page order (so client-side filtering preserves catalog order).
+func (c *Client) fetchPages(ctx context.Context, startPage, n int) ([][]Content, error) {
+	results := make([][]Content, n)
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(searchConcurrency)
+	for i := range n {
+		g.Go(func() error {
+			items, err := c.fetchContentPage(gctx, (startPage+i)*pageSize)
+			if err != nil {
+				return err
+			}
+			results[i] = items
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	return results, nil
 }
 
 // filterItems returns items whose name or publisher contains query

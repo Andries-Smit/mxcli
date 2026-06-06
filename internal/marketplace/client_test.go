@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -143,10 +144,13 @@ func contentPage(startID, n int, special string) string {
 // page (offset=100) must still be found. The server returns a full page of 100
 // non-matching items at offset 0, and the match at offset 100.
 func TestSearch_PaginatesPastFirstPage(t *testing.T) {
-	var offsetsSeen []string
+	var mu sync.Mutex
+	offsetsSeen := map[string]bool{}
 	client, _ := newMockServer(t, func(w http.ResponseWriter, r *http.Request) {
 		off := r.URL.Query().Get("offset")
-		offsetsSeen = append(offsetsSeen, off)
+		mu.Lock()
+		offsetsSeen[off] = true
+		mu.Unlock()
 		switch off {
 		case "0":
 			_, _ = w.Write([]byte(contentPage(1, 100, ""))) // full page, no match
@@ -164,9 +168,35 @@ func TestSearch_PaginatesPastFirstPage(t *testing.T) {
 	if len(result.Items) != 1 || result.Items[0].ContentID != 999999 {
 		t.Fatalf("expected the second-page match (999999), got %+v", result.Items)
 	}
-	// It must have advanced past the first page (offset 0 was a full 100).
-	if len(offsetsSeen) < 2 || offsetsSeen[1] != "100" {
-		t.Errorf("expected pagination to request offset=100; offsets seen: %v", offsetsSeen)
+	// It must have advanced past the first page (offset 0 was a full 100) and
+	// requested the second page where the match lives. The second batch is
+	// fetched concurrently, so order is not asserted.
+	mu.Lock()
+	defer mu.Unlock()
+	if !offsetsSeen["0"] || !offsetsSeen["100"] {
+		t.Errorf("expected requests at offset 0 and 100; offsets seen: %v", offsetsSeen)
+	}
+}
+
+// TestSearch_FirstPageAlone: when enough matches appear on the first (full)
+// page, search stops there — a single request — without firing the concurrent
+// follow-on batch. This keeps the common case fast.
+func TestSearch_FirstPageAlone(t *testing.T) {
+	var calls int
+	client, _ := newMockServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		// A full page (pageSize items) that includes a match for "filler".
+		_, _ = w.Write([]byte(contentPage(1, pageSize, "")))
+	})
+	res, err := client.Search(context.Background(), "filler", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Items) != 1 {
+		t.Errorf("expected limit=1 to return 1 match, got %d", len(res.Items))
+	}
+	if calls != 1 {
+		t.Errorf("expected exactly 1 request when the limit is met on page 0, got %d", calls)
 	}
 }
 
