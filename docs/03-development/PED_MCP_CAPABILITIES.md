@@ -91,9 +91,19 @@ The port can change between Studio Pro sessions — confirm with `lsof` on the h
 ## How the mxcli MCP backend uses this surface
 
 Implemented (11.11): `CREATE/ALTER(add,drop attr)/DROP ENTITY`, `CREATE/DROP
-ASSOCIATION`, `CREATE ENUMERATION`, `CREATE VIEW ENTITY`, and `CREATE MICROFLOW`
-(shell + return only), with a dirty-set read router that makes in-session edits
-visible.
+ASSOCIATION`, `CREATE ENUMERATION`, `CREATE VIEW ENTITY`, `CREATE MICROFLOW`
+(broad activity + control-flow coverage), and `CREATE PAGE` (foundation), with a
+dirty-set read router that makes in-session edits visible.
+
+Pages use a **separate protocol**: `pg_write_page` / `pg_read_page` (PED is
+forbidden for pages). The backend maps the executor's `pages.Page` (shell +
+LayoutCall slots + widget tree) onto the high-level page content. Note pg's
+container type is **`Pages$DivContainer`** (not `Container`); page reads
+(layouts/snippets/folders) delegate to the local reader because the executor
+resolves the layout through the container hierarchy. Widgets so far: DivContainer,
+ActionButton (+ No/Microflow/Page client actions); coverage grows per widget
+type. Validation success is signalled by a result text containing "success"
+(not the PED "SUCCESS"-prefix convention).
 
 Microflow support is now broad: name, parameters, return type, and a recursive
 object/flow graph (positions reused from the executor's layout engine, so the
