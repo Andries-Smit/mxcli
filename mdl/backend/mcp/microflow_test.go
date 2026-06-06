@@ -163,6 +163,42 @@ func TestMapMicroflowAction_ListAndAggregate(t *testing.T) {
 	}
 }
 
+func TestMapListOperation(t *testing.T) {
+	head, err := mapListOperation(&microflows.HeadOperation{ListVariable: "Items"})
+	if err != nil || head["$Type"] != "Microflows$Head" || head["listVariableName"] != "Items" {
+		t.Fatalf("head: %+v / %v", head, err)
+	}
+	filt, err := mapListOperation(&microflows.FilterOperation{ListVariable: "Items", Expression: "$item/Active"})
+	if err != nil || filt["$Type"] != "Microflows$FilterByExpression" || filt["expression"] != "$item/Active" {
+		t.Fatalf("filter: %+v / %v", filt, err)
+	}
+	find, err := mapListOperation(&microflows.FindOperation{ListVariable: "Items", Expression: "$item/Name = 'x'"})
+	if err != nil || find["$Type"] != "Microflows$FindByExpression" {
+		t.Fatalf("find: %+v / %v", find, err)
+	}
+	union, err := mapListOperation(&microflows.UnionOperation{ListVariable1: "A", ListVariable2: "B"})
+	if err != nil || union["$Type"] != "Microflows$Union" || union["listVariableName"] != "A" || union["secondListOrObjectVariableName"] != "B" {
+		t.Fatalf("union: %+v / %v", union, err)
+	}
+	// attribute-based filter/sort not supported yet
+	if _, err := mapListOperation(&microflows.SortOperation{}); err == nil {
+		t.Error("sort should be rejected for now")
+	}
+}
+
+func TestMapMicroflowAction_ListOperation(t *testing.T) {
+	m, err := mapMicroflowAction(&microflows.ListOperationAction{
+		OutputVariable: "First",
+		Operation:      &microflows.HeadOperation{ListVariable: "Items"},
+	})
+	if err != nil || m["$Type"] != "Microflows$ListOperationAction" || m["outputVariableName"] != "First" {
+		t.Fatalf("list op action: %+v / %v", m, err)
+	}
+	if op, _ := m["operation"].(map[string]any); op["$Type"] != "Microflows$Head" {
+		t.Fatalf("operation: %+v", m["operation"])
+	}
+}
+
 func TestMapMicroflowAction_MicroflowCall(t *testing.T) {
 	m, err := mapMicroflowAction(&microflows.MicroflowCallAction{
 		ResultVariableName: "Tripled",

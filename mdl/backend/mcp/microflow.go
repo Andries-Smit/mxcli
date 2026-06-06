@@ -400,6 +400,16 @@ func mapMicroflowAction(a microflows.MicroflowAction) (map[string]any, error) {
 			m["attribute"] = act.AttributeQualifiedName
 		}
 		return m, nil
+	case *microflows.ListOperationAction:
+		op, err := mapListOperation(act.Operation)
+		if err != nil {
+			return nil, err
+		}
+		m := map[string]any{"$Type": "Microflows$ListOperationAction", "operation": op}
+		if act.OutputVariable != "" {
+			m["outputVariableName"] = act.OutputVariable
+		}
+		return m, nil
 	case *microflows.MicroflowCallAction:
 		if act.MicroflowCall == nil || act.MicroflowCall.Microflow == "" {
 			return nil, fmt.Errorf("call microflow: missing target microflow")
@@ -475,6 +485,33 @@ func mapMicroflowAction(a microflows.MicroflowAction) (map[string]any, error) {
 		return m, nil
 	default:
 		return nil, fmt.Errorf("microflow action %T is not yet supported by the MCP backend", a)
+	}
+}
+
+// mapListOperation maps a list operation onto its PED element. The common
+// operations (head/tail, expression filter/find, set ops) are supported;
+// attribute-based filter/find/sort and contains/equals/range are rejected.
+func mapListOperation(op microflows.ListOperation) (map[string]any, error) {
+	binary := func(t, a, b string) map[string]any {
+		return map[string]any{"$Type": t, "listVariableName": a, "secondListOrObjectVariableName": b}
+	}
+	switch o := op.(type) {
+	case *microflows.HeadOperation:
+		return map[string]any{"$Type": "Microflows$Head", "listVariableName": o.ListVariable}, nil
+	case *microflows.TailOperation:
+		return map[string]any{"$Type": "Microflows$Tail", "listVariableName": o.ListVariable}, nil
+	case *microflows.FilterOperation:
+		return map[string]any{"$Type": "Microflows$FilterByExpression", "listVariableName": o.ListVariable, "expression": o.Expression}, nil
+	case *microflows.FindOperation:
+		return map[string]any{"$Type": "Microflows$FindByExpression", "listVariableName": o.ListVariable, "expression": o.Expression}, nil
+	case *microflows.UnionOperation:
+		return binary("Microflows$Union", o.ListVariable1, o.ListVariable2), nil
+	case *microflows.IntersectOperation:
+		return binary("Microflows$Intersect", o.ListVariable1, o.ListVariable2), nil
+	case *microflows.SubtractOperation:
+		return binary("Microflows$Subtract", o.ListVariable1, o.ListVariable2), nil
+	default:
+		return nil, fmt.Errorf("list operation %T is not yet supported by the MCP backend", op)
 	}
 }
 
