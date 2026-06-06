@@ -252,7 +252,8 @@ No forced early v2 migration.
 | Java-action `mdl/types` reconciliation (alias re-export; fixes 3 pkgs) | ✅ done | `b1536ba7` |
 | `MXCLI_ENGINE` / `--engine` selection seam (legacy wired; modelsdk/compare fail-fast) | ✅ done | `1e8ec679` |
 | Vendor engalar codegen + `TypeVersionInfo` type-level bound fix | ⏳ todo | — |
-| Comparison harness: port `cmd_bson_dump`/`cmd_bson_compare`, ID-canonicalizer, `make engine-diff` | ⏳ todo (run-both diff is Phase-2-gated on the modelsdk backend) | — |
+| Comparison harness — **read side** (`mdl/enginecompare` + `make engine-diff`) | ✅ done | `6a1fd4e2` |
+| Comparison harness — write/BSON side (port `cmd_bson_dump`/`cmd_bson_compare`, ID-canonicalizer) | ⏳ Phase-2-gated on the modelsdk write path | — |
 
 `make build` green; engine, backend, and affected packages tested. Legacy path verified end-to-end
 against `testdata/expr-checker/minimal.mpr` (SHOW ENTITIES / SHOW MODULES); the three engine guards
@@ -272,7 +273,16 @@ against `testdata/expr-checker/minimal.mpr` (SHOW ENTITIES / SHOW MODULES); the 
 | Nanoflows read (`ListNanoflows`/`GetNanoflow`, reuses microflow helpers) | ✅ done | `24c4428d` |
 | Enumerations read (`ListEnumerations`/`GetEnumeration`, ports engalar's converter) | ✅ done | `0a5c532f` |
 | Constants read (`ListConstants`/`GetConstant`, ports engalar's converter) | ✅ done | `82f7d7e0` |
+| **Read-parity harness** (`mdl/enginecompare`, `make engine-diff`) — 6 strict cases green | ✅ done | `6a1fd4e2` |
 | Read coverage beyond constants (security, scheduled events, mappings, …) | ⏳ next | — |
+
+The harness automates what had been manual `diff`s: `make engine-diff` runs each `SHOW` query
+through both engines in-process and compares padding/order-normalized output. Strict cases
+(microflows, nanoflows, pages, enums, constants, entities-non-System) must match; `SHOW MODULES`
+is a declared **known gap** (module `Source`/`FromAppStore` not yet converted + legacy's injected
+System aggregate counts) — reported, not failed, and it self-flags if it unexpectedly matches.
+Every new read type should add a case here, making subsequent type work **self-validating** and
+regression-proofed. Write/BSON comparison (the ID-canonicalizer) is the Phase-2 extension.
 
 Enums confirmed that engalar's `convert_reader.go` *does* have portable converters for the
 non-domain-model document types (`enumToModel`/`enumValueToModel`, etc.) — unlike domain models,
