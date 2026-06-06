@@ -28,10 +28,12 @@ import (
 // (via the embedded mock for everything it doesn't override).
 var _ backend.FullBackend = (*Backend)(nil)
 
-// Backend reads a Mendix project through the modelsdk engine.
+// Backend reads (and, for the Phase-2 slice, writes) a Mendix project through
+// the modelsdk engine.
 type Backend struct {
 	*mock.MockBackend // stubs for every not-yet-implemented FullBackend method
 	reader            *mmpr.Reader
+	writer            *mmpr.Writer
 	path              string
 }
 
@@ -43,13 +45,17 @@ func New() *Backend {
 
 // --- ConnectionBackend ---
 
-// Connect opens the project read-only through the modelsdk reader.
+// Connect opens the project read-write through the modelsdk reader/writer
+// (matching legacy mprbackend, which also opens read-write for all operations).
+// The writer shares the reader so cache invalidation after a write is seen by
+// subsequent reads on the same connection.
 func (b *Backend) Connect(path string) error {
-	r, err := mmpr.OpenWithOptions(path, mmpr.OpenOptions{ReadOnly: true})
+	r, err := mmpr.OpenWithOptions(path, mmpr.OpenOptions{ReadOnly: false})
 	if err != nil {
 		return err
 	}
 	b.reader = r
+	b.writer = mmpr.NewWriterWithReader(r)
 	b.path = path
 	return nil
 }
