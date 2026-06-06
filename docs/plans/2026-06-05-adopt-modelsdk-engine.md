@@ -561,3 +561,32 @@ each new write type is just a converter + a registry entry.
   - No index conversion was shipped — better to leave it unimplemented than ship a guess against
     an unreliable baseline. (Indexes are rare; the inline `index(...)` path stays legacy-only for
     now.) This is exactly the case the MCP oracle exists for.
+
+### Index spec resolved via MCP capture (2026-06-06)
+
+Created `MxcliDiskProbe.IdxProbe` with an index via Studio Pro (MCP entity create + UI
+index add + save), then dumped the real 11.x `.mxunit`. Authoritative index BSON:
+
+```
+EntityIndex { GUID, IncludeInOffline=false, Attributes=[<marker 2>,
+  IndexedAttribute { Ascending(bool), Type("Normal"), AttributePointer(bin), AssociationPointer(bin) } ] }
+```
+
+Findings (the MCP oracle earning its keep):
+1. **Legacy is WRONG for 11.x** — it emits `SortOrder`(string); real Studio Pro uses
+   `Ascending`(bool)+`Type`+`AttributePointer`. Legacy has a real index-serialization bug for
+   11.x worth fixing in its own right (it's the default engine).
+2. **gen `IndexedAttribute` is missing `AssociationPointer`** (binary) — same class as the
+   ErrorMessage→Message gap; needs a gen correction / supplements entry.
+3. **🔴 Per-list typed-array marker.** The inner index `Attributes` list uses marker **2**, but
+   the encoder hardcodes `int32(3)` for every PartList. So the marker is per-element-list-type
+   (metamodel-driven), not universal — a real encoder limitation, not a converter detail.
+
+**Status: indexes still not shipped.** Unlike the other write types, correct index output needs
+(a) a per-list-type array marker in the shared encoder (metamodel-driven), (b) the gen
+`AssociationPointer` fix, and (c) the converter + EntityIndex GUID/IncludeInOffline defaults.
+That's a bigger, encoder-touching change — a focused follow-up, not a quick converter add. The
+spec is now captured and authoritative, so the follow-up is unblocked.
+
+(Scratch entities `MxcliDiskProbe.IdxProbe` + `OracleTmp` were saved into test7-app during the
+capture — safe to delete.)
