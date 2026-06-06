@@ -9,6 +9,7 @@ import (
 	"github.com/mendixlabs/mxcli/mdl/types"
 	"github.com/mendixlabs/mxcli/model"
 	"github.com/mendixlabs/mxcli/sdk/domainmodel"
+	"github.com/mendixlabs/mxcli/sdk/microflows"
 	"github.com/mendixlabs/mxcli/sdk/mpr"
 )
 
@@ -59,6 +60,11 @@ type Backend struct {
 	// Enumerations are create-only via PED (no delete tool), so a registry is
 	// enough; no live reconstruction is needed.
 	sessionEnums []*model.Enumeration
+
+	// sessionMicroflows holds microflows created over MCP this session, merged
+	// into ListMicroflows/GetMicroflow for the same reason as sessionEnums
+	// (duplicate detection and create-then-reference within one run).
+	sessionMicroflows []*microflows.Microflow
 }
 
 // compile-time guarantee that Backend (and its embedded base) satisfies the

@@ -91,8 +91,16 @@ The port can change between Studio Pro sessions — confirm with `lsof` on the h
 ## How the mxcli MCP backend uses this surface
 
 Implemented (11.11): `CREATE/ALTER(add,drop attr)/DROP ENTITY`, `CREATE/DROP
-ASSOCIATION`, `CREATE ENUMERATION`, `CREATE VIEW ENTITY`, with a dirty-set read
-router that makes in-session edits visible.
+ASSOCIATION`, `CREATE ENUMERATION`, `CREATE VIEW ENTITY`, and `CREATE MICROFLOW`
+(shell + return only), with a dirty-set read router that makes in-session edits
+visible.
+
+Microflow slice: name, parameters, return type, and a Start→End body whose
+EndEvent carries the return expression (computed-value microflows). The
+constructor's `objects`/`flows` are the canvas graph — flows reference objects
+by `$id(/objects/N)` (the update/read path uses `/objectCollection/objects`).
+Microflows with activity bodies (the 130+ Microflows$* object types) are
+rejected with a clear error; full activity coverage is an iterative follow-on.
 
 View-entity choreography (verified): `ped_create_document
 DomainModels$ViewEntitySourceDocument {name}` → `ped_update_document` set
