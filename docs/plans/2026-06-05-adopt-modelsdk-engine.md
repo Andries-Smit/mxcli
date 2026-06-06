@@ -268,7 +268,25 @@ against `testdata/expr-checker/minimal.mpr` (SHOW ENTITIES / SHOW MODULES); the 
 | Entities read (`ListDomainModels`/`GetDomainModel` + gen→`domainmodel` adapter) | ✅ done | `7dd42a1d` |
 | Container-tree reads (`ListUnits`/`ListFolders`) for module/folder resolution | ✅ done | `f7b2a020` |
 | Microflows read (`ListMicroflows`/`GetMicroflow` + flow-object/param conversion) | ✅ done | `f7b2a020` |
-| Read coverage beyond microflows (pages, nanoflows, enums, …) | ⏳ next | — |
+| Pages read (`ListPages`/`GetPage` + title/template handling) | ✅ done | `fb9664da` |
+| Read coverage beyond pages (nanoflows, enums, security, …) | ⏳ next | — |
+
+**Two more reusable lessons from pages** (both will recur across remaining doc types):
+
+1. **Strict typing vs legacy prefix-matching.** Legacy's `listUnitsByType("Forms$Page")` is
+   *prefix-matched*, so it silently sweeps in `Forms$PageTemplate` (16 pages + 46 templates = 62).
+   The modelsdk reader is strict-typed and returned only the 16. To match, `ListPages` explicitly
+   reads `Forms$PageTemplate` too. **Watch for other prefix collisions** (the module `ModuleImpl`
+   case was the same family). The modelsdk strictness is arguably *more correct*; we replicate the
+   quirk for parity and can fix both engines later.
+2. **Child-element gen packages must be registered.** Page titles came back empty because
+   `Texts$Text` wasn't registered — the codec decoded the title child as bare `element.Base`, and
+   the interface-based `textElementToModel` silently returned nil. Fix: blank-import the child's
+   gen package (`modelsdk/gen/texts`). Any converter that reaches into nested element types must
+   ensure those packages' `init()` registrations have run.
+
+**Validated:** `SHOW PAGES` byte-identical to legacy across all 62 rows (16 pages + 46 templates),
+titles included.
 
 **Third discovery — renderers need the container tree, not just the doc converter.** Microflows
 read fine (16 units) but `SHOW MICROFLOWS` initially dropped *every* row: the renderer resolves
