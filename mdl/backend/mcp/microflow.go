@@ -235,6 +235,46 @@ func mapMicroflowAction(a microflows.MicroflowAction) (map[string]any, error) {
 			// ShowMessage's template is an inline object (no $Type).
 			"template": mfStringTemplate("", act.Template, act.TemplateParameters),
 		}, nil
+	case *microflows.CreateObjectAction:
+		if act.EntityQualifiedName == "" {
+			return nil, fmt.Errorf("create object: missing entity")
+		}
+		m := map[string]any{
+			"$Type":  "Microflows$CreateObjectAction",
+			"entity": act.EntityQualifiedName,
+			"commit": mfCommitType(act.Commit),
+		}
+		if act.OutputVariable != "" {
+			m["outputVariableName"] = act.OutputVariable
+		}
+		if len(act.InitialMembers) > 0 {
+			m["items"] = mapMemberChanges(act.InitialMembers)
+		}
+		return m, nil
+	case *microflows.ChangeObjectAction:
+		m := map[string]any{
+			"$Type":              "Microflows$ChangeObjectAction",
+			"changeVariableName": act.ChangeVariable,
+			"commit":             mfCommitType(act.Commit),
+			"refreshInClient":    act.RefreshInClient,
+		}
+		if len(act.Changes) > 0 {
+			m["items"] = mapMemberChanges(act.Changes)
+		}
+		return m, nil
+	case *microflows.CommitObjectsAction:
+		return map[string]any{
+			"$Type":              "Microflows$CommitAction",
+			"commitVariableName": act.CommitVariable,
+			"withEvents":         act.WithEvents,
+			"refreshInClient":    act.RefreshInClient,
+		}, nil
+	case *microflows.DeleteObjectAction:
+		return map[string]any{
+			"$Type":              "Microflows$DeleteAction",
+			"deleteVariableName": act.DeleteVariable,
+			"refreshInClient":    act.RefreshInClient,
+		}, nil
 	case *microflows.LogMessageAction:
 		level := string(act.LogLevel)
 		if level == "" {
@@ -252,6 +292,46 @@ func mapMicroflowAction(a microflows.MicroflowAction) (map[string]any, error) {
 		return m, nil
 	default:
 		return nil, fmt.Errorf("microflow action %T is not yet supported by the MCP backend", a)
+	}
+}
+
+// mapMemberChanges maps a list of attribute/association member changes onto PED
+// MemberChange elements ({attribute|association by-name, type, value}).
+func mapMemberChanges(changes []*microflows.MemberChange) []any {
+	items := make([]any, 0, len(changes))
+	for _, c := range changes {
+		m := map[string]any{
+			"$Type": "Microflows$MemberChange",
+			"type":  memberChangeType(c.Type),
+			"value": c.Value,
+		}
+		if c.AttributeQualifiedName != "" {
+			m["attribute"] = c.AttributeQualifiedName
+		}
+		if c.AssociationQualifiedName != "" {
+			m["association"] = c.AssociationQualifiedName
+		}
+		items = append(items, m)
+	}
+	return items
+}
+
+func memberChangeType(t microflows.MemberChangeType) string {
+	if t == "" {
+		return "Set"
+	}
+	return string(t)
+}
+
+// mfCommitType maps a CommitType onto the PED commit enum (Yes / YesWithoutEvents / No).
+func mfCommitType(c microflows.CommitType) string {
+	switch c {
+	case microflows.CommitTypeYes, microflows.CommitTypeYesWithEvents:
+		return "Yes"
+	case microflows.CommitTypeNoEvent:
+		return "YesWithoutEvents"
+	default:
+		return "No"
 	}
 }
 

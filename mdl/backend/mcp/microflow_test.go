@@ -54,6 +54,54 @@ func TestMapMicroflowAction_VariableAndMessages(t *testing.T) {
 	}
 }
 
+func TestMapMicroflowAction_ObjectActions(t *testing.T) {
+	create, err := mapMicroflowAction(&microflows.CreateObjectAction{
+		EntityQualifiedName: "Sales.Order",
+		OutputVariable:      "Order",
+		Commit:              microflows.CommitTypeNo,
+		InitialMembers: []*microflows.MemberChange{
+			{AttributeQualifiedName: "Sales.Order.Total", Type: "Set", Value: "0"},
+		},
+	})
+	if err != nil || create["$Type"] != "Microflows$CreateObjectAction" ||
+		create["entity"] != "Sales.Order" || create["outputVariableName"] != "Order" || create["commit"] != "No" {
+		t.Fatalf("create object: %+v / %v", create, err)
+	}
+	items, _ := create["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 member change, got %+v", create["items"])
+	}
+	mc, _ := items[0].(map[string]any)
+	if mc["$Type"] != "Microflows$MemberChange" || mc["attribute"] != "Sales.Order.Total" || mc["type"] != "Set" || mc["value"] != "0" {
+		t.Fatalf("member change shape wrong: %+v", mc)
+	}
+
+	commit, err := mapMicroflowAction(&microflows.CommitObjectsAction{CommitVariable: "Order", WithEvents: true})
+	if err != nil || commit["$Type"] != "Microflows$CommitAction" || commit["commitVariableName"] != "Order" || commit["withEvents"] != true {
+		t.Fatalf("commit: %+v / %v", commit, err)
+	}
+
+	del, err := mapMicroflowAction(&microflows.DeleteObjectAction{DeleteVariable: "Order"})
+	if err != nil || del["$Type"] != "Microflows$DeleteAction" || del["deleteVariableName"] != "Order" {
+		t.Fatalf("delete: %+v / %v", del, err)
+	}
+}
+
+func TestMfCommitType(t *testing.T) {
+	cases := map[microflows.CommitType]string{
+		microflows.CommitTypeYes:           "Yes",
+		microflows.CommitTypeYesWithEvents: "Yes",
+		microflows.CommitTypeNoEvent:       "YesWithoutEvents",
+		microflows.CommitTypeNo:            "No",
+		microflows.CommitType(""):          "No",
+	}
+	for in, want := range cases {
+		if got := mfCommitType(in); got != want {
+			t.Errorf("mfCommitType(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestMfDataType_Primitives(t *testing.T) {
 	cases := []struct {
 		dt   microflows.DataType
@@ -118,7 +166,7 @@ func TestMapMicroflowAction_CreateVariable(t *testing.T) {
 }
 
 func TestMapMicroflowAction_Unsupported(t *testing.T) {
-	if _, err := mapMicroflowAction(&microflows.CommitObjectsAction{}); err == nil {
+	if _, err := mapMicroflowAction(&microflows.RetrieveAction{}); err == nil {
 		t.Error("an unmapped action type should error")
 	}
 }
