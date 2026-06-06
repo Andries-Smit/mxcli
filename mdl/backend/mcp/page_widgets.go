@@ -86,6 +86,55 @@ func (b *Backend) mapPageWidget(w pages.Widget) (map[string]any, error) {
 			"editable":   wd.Editable,
 			"widgets":    children,
 		}, nil
+	case *pages.LayoutGrid:
+		rows := make([]any, 0, len(wd.Rows))
+		for _, r := range wd.Rows {
+			cols := make([]any, 0, len(r.Columns))
+			for _, c := range r.Columns {
+				kids, err := b.mapPageWidgets(c.Widgets)
+				if err != nil {
+					return nil, err
+				}
+				weight := c.Weight
+				if weight <= 0 {
+					weight = 12
+				}
+				tablet := c.TabletWeight
+				if tablet <= 0 {
+					tablet = weight
+				}
+				phone := c.PhoneWeight
+				if phone <= 0 {
+					phone = 12
+				}
+				cols = append(cols, map[string]any{
+					"$Type":             "Pages$LayoutGridColumn",
+					"appearance":        pageAppearance("", ""),
+					"weight":            weight,
+					"tabletWeight":      tablet,
+					"phoneWeight":       phone,
+					"previewWidth":      -1,
+					"verticalAlignment": "None",
+					"widgets":           kids,
+				})
+			}
+			rows = append(rows, map[string]any{
+				"$Type":                 "Pages$LayoutGridRow",
+				"appearance":            pageAppearance("", ""),
+				"verticalAlignment":     "None",
+				"horizontalAlignment":   "None",
+				"spacingBetweenColumns": true,
+				"columns":               cols,
+			})
+		}
+		return map[string]any{
+			"$Type":      "Pages$LayoutGrid",
+			"name":       wd.Name,
+			"appearance": pageAppearance(wd.Class, wd.Style),
+			"tabIndex":   wd.TabIndex,
+			"width":      "FullWidth",
+			"rows":       rows,
+		}, nil
 	case *pages.TextBox:
 		return inputWidget("Pages$TextBox", wd.Name, wd.Label, wd.AttributePath, wd.Class, wd.Style), nil
 	case *pages.CheckBox:

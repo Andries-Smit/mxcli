@@ -151,6 +151,42 @@ func TestMapPageWidget_Inputs(t *testing.T) {
 	}
 }
 
+func TestMapPageWidget_LayoutGrid(t *testing.T) {
+	b := &Backend{}
+	btn := &pages.ActionButton{Action: &pages.NoClientAction{}}
+	btn.Name = "btn"
+	grid := &pages.LayoutGrid{
+		Rows: []*pages.LayoutGridRow{{
+			Columns: []*pages.LayoutGridColumn{
+				{Weight: 6, Widgets: []pages.Widget{btn}},
+				{}, // empty column -> defaults to full width (12)
+			},
+		}},
+	}
+	grid.Name = "lg"
+	m, err := b.mapPageWidget(grid)
+	if err != nil || m["$Type"] != "Pages$LayoutGrid" || m["width"] != "FullWidth" {
+		t.Fatalf("layout grid: %+v / %v", m, err)
+	}
+	rows, _ := m["rows"].([]any)
+	if len(rows) != 1 {
+		t.Fatalf("rows: %+v", rows)
+	}
+	row, _ := rows[0].(map[string]any)
+	cols, _ := row["columns"].([]any)
+	if len(cols) != 2 {
+		t.Fatalf("columns: %+v", cols)
+	}
+	c0, _ := cols[0].(map[string]any)
+	c1, _ := cols[1].(map[string]any)
+	if c0["weight"] != 6 || c1["weight"] != 12 {
+		t.Fatalf("weights: %v / %v", c0["weight"], c1["weight"])
+	}
+	if kids, _ := c0["widgets"].([]any); len(kids) != 1 {
+		t.Fatalf("column widgets: %+v", c0["widgets"])
+	}
+}
+
 func TestMapPageWidget_Unsupported(t *testing.T) {
 	b := &Backend{}
 	lv := &pages.ListView{}
