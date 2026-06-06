@@ -495,3 +495,26 @@ each adapter — it's shared across all write types, so fixing it once unblocks 
 the engine writes *correct, parity* BSON for everything it emits; the only work left for full
 parity is the shared `applyDefaults`/GUID engine fix, then growing the write adapter
 (attributes, associations, …).
+
+### Phase 2 — applyDefaults target CONFIRMED via Studio Pro (2026-06-06)
+
+Validated against the live MCP backend (now on main) + real Studio-Pro BSON in
+`mx-test-projects/test7-app` (11.x):
+
+- The MCP backend creates entities end-to-end against a live Studio Pro
+  (`mxcli --mcp … -c "CREATE PERSISTENT ENTITY …"` → "Created entity").
+- `ped_get_schema DomainModels$Entity` (the creation *contract*) contains only
+  name/attributes/location/generalization/source — **no GUID, ExportLevel,
+  member arrays, or persistability**. Proof that Studio Pro applies those
+  **internally** on create — i.e. `applyDefaults` is exactly Studio Pro's own behaviour.
+- A real Studio-Pro entity on disk (`ObjListV10.Location`) carries the full set:
+  `$ID, $Type=EntityImpl, Name, Documentation, ExportLevel="Hidden", GUID, Location,
+  MaybeGeneralization, Attributes, AccessRules, ValidationRules, Indexes, Events`
+  (empty collections encoded as the `[3]` marker).
+
+**Conclusions:** (1) the modelsdk fresh-entity residual (missing GUID + 5 empty member
+arrays) is a gap vs **real Studio Pro**, so `applyDefaults`/GUID is required for true
+fidelity, not just legacy parity. (2) **Legacy's field set matches Studio Pro exactly**,
+so the legacy baseline used in the read/write harness is authoritative-equivalent for
+entities. (3) MCP is validated as the live oracle / a real 4th backend on the `MXCLI_ENGINE`
+seam (`--mcp`/`--mcp-dial`).
