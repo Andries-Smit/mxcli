@@ -69,7 +69,9 @@ func NewClient(opts ClientOptions) (*Client, error) {
 	}
 	timeout := opts.Timeout
 	if timeout == 0 {
-		timeout = 30 * time.Second
+		// Some writes (microflow create + validate) can take tens of seconds to
+		// round-trip through Studio Pro; keep the default generous.
+		timeout = 90 * time.Second
 	}
 	return &Client{
 		http:     newHTTPClient(dial, timeout),

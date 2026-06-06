@@ -87,6 +87,51 @@ func TestMapMicroflowAction_ObjectActions(t *testing.T) {
 	}
 }
 
+func TestMapMicroflowAction_Retrieve(t *testing.T) {
+	// by database query
+	db, err := mapMicroflowAction(&microflows.RetrieveAction{
+		OutputVariable: "Locations",
+		Source: &microflows.DatabaseRetrieveSource{
+			EntityQualifiedName: "ObjListV10.Location",
+			XPathConstraint:     "[Name = $Name]",
+			Range:               &microflows.Range{RangeType: microflows.RangeTypeFirst},
+		},
+	})
+	if err != nil || db["$Type"] != "Microflows$RetrieveAction" || db["outputVariableName"] != "Locations" {
+		t.Fatalf("retrieve db: %+v / %v", db, err)
+	}
+	q, _ := db["byDatabaseQuery"].(map[string]any)
+	if q["entity"] != "ObjListV10.Location" || q["xPathConstraint"] != "[Name = $Name]" || q["takeOnlyFirst"] != true {
+		t.Fatalf("byDatabaseQuery wrong: %+v", q)
+	}
+
+	// by association
+	assoc, err := mapMicroflowAction(&microflows.RetrieveAction{
+		OutputVariable: "Orders",
+		Source:         &microflows.AssociationRetrieveSource{StartVariable: "Customer", AssociationQualifiedName: "Sales.Order_Customer"},
+	})
+	if err != nil {
+		t.Fatalf("retrieve assoc: %v", err)
+	}
+	a, _ := assoc["byAssociation"].(map[string]any)
+	if a["startVariableName"] != "Customer" || a["association"] != "Sales.Order_Customer" {
+		t.Fatalf("byAssociation wrong: %+v", a)
+	}
+}
+
+func TestMapMicroflowAction_RetrieveRejectsUnsupported(t *testing.T) {
+	if _, err := mapMicroflowAction(&microflows.RetrieveAction{Source: &microflows.DatabaseRetrieveSource{
+		EntityQualifiedName: "M.E", Range: &microflows.Range{RangeType: microflows.RangeTypeCustom},
+	}}); err == nil {
+		t.Error("custom range should be rejected")
+	}
+	if _, err := mapMicroflowAction(&microflows.RetrieveAction{Source: &microflows.DatabaseRetrieveSource{
+		EntityQualifiedName: "M.E", Sorting: []*microflows.SortItem{{}},
+	}}); err == nil {
+		t.Error("sorting should be rejected")
+	}
+}
+
 func TestMfCommitType(t *testing.T) {
 	cases := map[microflows.CommitType]string{
 		microflows.CommitTypeYes:           "Yes",

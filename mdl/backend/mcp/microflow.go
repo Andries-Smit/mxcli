@@ -275,6 +275,36 @@ func mapMicroflowAction(a microflows.MicroflowAction) (map[string]any, error) {
 			"deleteVariableName": act.DeleteVariable,
 			"refreshInClient":    act.RefreshInClient,
 		}, nil
+	case *microflows.RetrieveAction:
+		m := map[string]any{"$Type": "Microflows$RetrieveAction"}
+		if act.OutputVariable != "" {
+			m["outputVariableName"] = act.OutputVariable
+		}
+		switch src := act.Source.(type) {
+		case *microflows.AssociationRetrieveSource:
+			m["byAssociation"] = map[string]any{
+				"startVariableName": src.StartVariable,
+				"association":       src.AssociationQualifiedName,
+			}
+		case *microflows.DatabaseRetrieveSource:
+			if len(src.Sorting) > 0 {
+				return nil, fmt.Errorf("retrieve: sorting is not yet supported by the MCP backend")
+			}
+			if src.Range != nil && src.Range.RangeType == microflows.RangeTypeCustom {
+				return nil, fmt.Errorf("retrieve: custom range (offset/limit) is not yet supported by the MCP backend")
+			}
+			q := map[string]any{"entity": src.EntityQualifiedName}
+			if src.XPathConstraint != "" {
+				q["xPathConstraint"] = src.XPathConstraint
+			}
+			if src.Range != nil && src.Range.RangeType == microflows.RangeTypeFirst {
+				q["takeOnlyFirst"] = true
+			}
+			m["byDatabaseQuery"] = q
+		default:
+			return nil, fmt.Errorf("retrieve: unsupported source %T", act.Source)
+		}
+		return m, nil
 	case *microflows.LogMessageAction:
 		level := string(act.LogLevel)
 		if level == "" {
