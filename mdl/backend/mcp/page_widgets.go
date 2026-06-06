@@ -135,6 +135,29 @@ func (b *Backend) mapPageWidget(w pages.Widget) (map[string]any, error) {
 			"width":      "FullWidth",
 			"rows":       rows,
 		}, nil
+	case *pages.ListView:
+		src, err := mapDataViewSource(wd.DataSource)
+		if err != nil {
+			return nil, fmt.Errorf("list view %q: %w", wd.Name, err)
+		}
+		rowWidgets := wd.Widgets
+		if len(rowWidgets) == 0 && len(wd.Templates) > 0 {
+			rowWidgets = wd.Templates[0].Widgets
+		}
+		kids, err := b.mapPageWidgets(rowWidgets)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"$Type":      "Pages$ListView",
+			"name":       wd.Name,
+			"appearance": pageAppearance(wd.Class, wd.Style),
+			"dataSource": src,
+			"editable":   wd.Editable,
+			"widgets":    kids,
+		}, nil
+	case *pages.DataGrid:
+		return nil, fmt.Errorf("legacy DataGrid is not supported by the MCP backend — pg_write_page has no Pages$DataGrid type (use a ListView, or DataGrid 2 which is a pluggable widget)")
 	case *pages.TextBox:
 		return inputWidget("Pages$TextBox", wd.Name, wd.Label, wd.AttributePath, wd.Class, wd.Style), nil
 	case *pages.CheckBox:
@@ -185,6 +208,18 @@ func mapDataViewSource(ds pages.DataSource) (map[string]any, error) {
 			return nil, fmt.Errorf("data view source has neither a page parameter nor an entity")
 		}
 		return src, nil
+	case *pages.DatabaseSource:
+		if s.XPathConstraint != "" || len(s.Sorting) > 0 {
+			return nil, fmt.Errorf("database data source with an XPath constraint or sorting is not yet supported by the MCP backend")
+		}
+		if s.EntityName == "" {
+			return nil, fmt.Errorf("database data source has no entity")
+		}
+		return map[string]any{
+			"$Type":            "Pages$DataViewSource",
+			"entityRef":        map[string]any{"$Type": "DomainModels$DirectEntityRef", "entity": s.EntityName},
+			"forceFullObjects": false,
+		}, nil
 	case *pages.EntityPathSource:
 		if strings.HasPrefix(s.EntityPath, "$") && !strings.Contains(s.EntityPath, "/") {
 			return map[string]any{

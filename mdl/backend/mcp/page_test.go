@@ -187,11 +187,57 @@ func TestMapPageWidget_LayoutGrid(t *testing.T) {
 	}
 }
 
+func TestMapPageWidget_ListView(t *testing.T) {
+	b := &Backend{}
+	row := &pages.DynamicText{AttributePath: "$currentObject/Name"}
+	row.Name = "t"
+	lv := &pages.ListView{
+		DataSource: &pages.DatabaseSource{EntityName: "ObjListV10.Location"},
+		Widgets:    []pages.Widget{row},
+	}
+	lv.Name = "lv1"
+	m, err := b.mapPageWidget(lv)
+	if err != nil || m["$Type"] != "Pages$ListView" {
+		t.Fatalf("listview: %+v / %v", m, err)
+	}
+	src, _ := m["dataSource"].(map[string]any)
+	ref, _ := src["entityRef"].(map[string]any)
+	if ref["entity"] != "ObjListV10.Location" {
+		t.Fatalf("listview source: %+v", src)
+	}
+	if kids, _ := m["widgets"].([]any); len(kids) != 1 {
+		t.Fatalf("listview row widgets: %+v", m["widgets"])
+	}
+}
+
+func TestMapPageWidget_DataGridRejected(t *testing.T) {
+	b := &Backend{}
+	dg := &pages.DataGrid{}
+	dg.Name = "dg"
+	if _, err := b.mapPageWidget(dg); err == nil {
+		t.Error("legacy DataGrid should be rejected (no Pages$DataGrid in pg)")
+	}
+}
+
+func TestMapDataViewSource_Database(t *testing.T) {
+	ok, err := mapDataViewSource(&pages.DatabaseSource{EntityName: "Sales.Order"})
+	if err != nil {
+		t.Fatalf("database source: %v", err)
+	}
+	if ref, _ := ok["entityRef"].(map[string]any); ref["entity"] != "Sales.Order" {
+		t.Fatalf("entityRef: %+v", ok)
+	}
+	// xpath constraint not supported yet
+	if _, err := mapDataViewSource(&pages.DatabaseSource{EntityName: "Sales.Order", XPathConstraint: "[Total > 0]"}); err == nil {
+		t.Error("database source with xpath should be rejected for now")
+	}
+}
+
 func TestMapPageWidget_Unsupported(t *testing.T) {
 	b := &Backend{}
-	lv := &pages.ListView{}
-	lv.Name = "lv"
-	if _, err := b.mapPageWidget(lv); err == nil {
+	tab := &pages.TabContainer{}
+	tab.Name = "tabs"
+	if _, err := b.mapPageWidget(tab); err == nil {
 		t.Error("an unmapped widget type should error")
 	}
 }
