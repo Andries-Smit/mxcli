@@ -270,7 +270,14 @@ against `testdata/expr-checker/minimal.mpr` (SHOW ENTITIES / SHOW MODULES); the 
 | Microflows read (`ListMicroflows`/`GetMicroflow` + flow-object/param conversion) | ✅ done | `f7b2a020` |
 | Pages read (`ListPages`/`GetPage` + title/template handling) | ✅ done | `fb9664da` |
 | Nanoflows read (`ListNanoflows`/`GetNanoflow`, reuses microflow helpers) | ✅ done | `24c4428d` |
-| Read coverage beyond nanoflows (enums, constants, security, …) | ⏳ next | — |
+| Enumerations read (`ListEnumerations`/`GetEnumeration`, ports engalar's converter) | ✅ done | `0a5c532f` |
+| Read coverage beyond enums (constants, security, …) | ⏳ next | — |
+
+Enums confirmed that engalar's `convert_reader.go` *does* have portable converters for the
+non-domain-model document types (`enumToModel`/`enumValueToModel`, etc.) — unlike domain models,
+where he changed the interface and left nothing to port. So the remaining `model.*`-typed reads
+(constants, scheduled events, mappings, business events, …) can mostly **port engalar's
+converter + wrap with `ListUnitsWithContainer`**, which is faster than writing from scratch.
 
 Nanoflows were a clean reuse — `nanoflowFromGen` shares `splitFlowObjects`/`dataTypeFromGen`
 with microflows unchanged; `SHOW NANOFLOWS` was byte-identical on the first run (13 rows). The
