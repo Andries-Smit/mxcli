@@ -42,6 +42,50 @@ func (b *Backend) GetMicroflow(id model.ID) (*microflows.Microflow, error) {
 	return nil, nil
 }
 
+func (b *Backend) ListNanoflows() ([]*microflows.Nanoflow, error) {
+	units, err := mprread.ListUnitsWithContainer[*genMf.Nanoflow](b.reader)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*microflows.Nanoflow, 0, len(units))
+	for _, u := range units {
+		out = append(out, nanoflowFromGen(u.Element, u.ContainerID))
+	}
+	return out, nil
+}
+
+func (b *Backend) GetNanoflow(id model.ID) (*microflows.Nanoflow, error) {
+	units, err := mprread.ListUnitsWithContainer[*genMf.Nanoflow](b.reader)
+	if err != nil {
+		return nil, err
+	}
+	for _, u := range units {
+		if model.ID(u.Element.ID()) == id {
+			return nanoflowFromGen(u.Element, u.ContainerID), nil
+		}
+	}
+	return nil, nil
+}
+
+// nanoflowFromGen mirrors microflowFromGen — nanoflows share the same parameter,
+// flow-object, and return-type structures, so the same helpers apply.
+func nanoflowFromGen(nf *genMf.Nanoflow, containerID model.ID) *microflows.Nanoflow {
+	out := &microflows.Nanoflow{
+		ContainerID:   containerID,
+		Name:          nf.Name(),
+		Documentation: nf.Documentation(),
+		Excluded:      nf.Excluded(),
+		ReturnType:    dataTypeFromGen(nf.MicroflowReturnType()),
+	}
+	out.ID = model.ID(nf.ID())
+	params, objs := splitFlowObjects(nf.ObjectCollection())
+	out.Parameters = params
+	if objs != nil {
+		out.ObjectCollection = &microflows.MicroflowObjectCollection{Objects: objs}
+	}
+	return out
+}
+
 func microflowFromGen(mf *genMf.Microflow, containerID model.ID) *microflows.Microflow {
 	out := &microflows.Microflow{
 		ContainerID:        containerID,

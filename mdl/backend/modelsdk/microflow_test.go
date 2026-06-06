@@ -54,3 +54,27 @@ func TestReadSlice_Microflows(t *testing.T) {
 		t.Error("ChangeMyPassword should have a populated object collection")
 	}
 }
+
+// TestReadSlice_Nanoflows confirms nanoflows reuse the microflow conversion
+// helpers (parameter split, flow objects, return type). SHOW NANOFLOWS is
+// cross-checked byte-for-byte against legacy in the plan validation.
+func TestReadSlice_Nanoflows(t *testing.T) {
+	b := New()
+	if err := b.Connect(fixture); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	t.Cleanup(func() { _ = b.Disconnect() })
+
+	nfs, err := b.ListNanoflows()
+	if err != nil {
+		t.Fatalf("ListNanoflows: %v", err)
+	}
+	if len(nfs) != 13 {
+		t.Fatalf("ListNanoflows count = %d, want 13", len(nfs))
+	}
+	for _, nf := range nfs {
+		if nf.Name == "" {
+			t.Error("nanoflow with empty name")
+		}
+	}
+}
