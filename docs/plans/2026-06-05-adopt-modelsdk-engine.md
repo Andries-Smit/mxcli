@@ -266,7 +266,22 @@ against `testdata/expr-checker/minimal.mpr` (SHOW ENTITIES / SHOW MODULES); the 
 | Wire `MXCLI_ENGINE=modelsdk` → read backend (read-only warning; writes no-op via mock) | ✅ done | `43cbb3b3` |
 | Modules read (`ListModules`/`GetModule*`) — diff-identical to legacy | ✅ done | `43cbb3b3` |
 | Entities read (`ListDomainModels`/`GetDomainModel` + gen→`domainmodel` adapter) | ✅ done | `7dd42a1d` |
-| Read coverage beyond entities (microflows, pages, …) | ⏳ next | — |
+| Container-tree reads (`ListUnits`/`ListFolders`) for module/folder resolution | ✅ done | `f7b2a020` |
+| Microflows read (`ListMicroflows`/`GetMicroflow` + flow-object/param conversion) | ✅ done | `f7b2a020` |
+| Read coverage beyond microflows (pages, nanoflows, enums, …) | ⏳ next | — |
+
+**Third discovery — renderers need the container tree, not just the doc converter.** Microflows
+read fine (16 units) but `SHOW MICROFLOWS` initially dropped *every* row: the renderer resolves
+each flow's module from its `ContainerID` via `ContainerHierarchy` (`FindModuleID`/
+`BuildFolderPath`), which is built from `ListModules` + **`ListUnits`** + **`ListFolders`**.
+Flows are nested in folders, so without those two reads folder→module resolution fails silently.
+Lesson for the remaining read domains: implementing the doc converter is necessary but not
+sufficient — the supporting container/metadata reads must be present too. (`ListUnits`/`ListFolders`
+are now done, so later doc types inherit working module/folder resolution.)
+
+**Validated:** `SHOW MICROFLOWS` byte-identical to legacy across all 16 microflows and every
+column (params, actions, McCabe, returns). `SHOW MODULES` aggregate counts now match legacy for
+the implemented doc types (entities, microflows); the rest converge as reads land.
 
 **Two discoveries this slice:**
 
