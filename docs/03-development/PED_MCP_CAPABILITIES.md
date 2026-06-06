@@ -100,10 +100,21 @@ forbidden for pages). The backend maps the executor's `pages.Page` (shell +
 LayoutCall slots + widget tree) onto the high-level page content. Note pg's
 container type is **`Pages$DivContainer`** (not `Container`); page reads
 (layouts/snippets/folders) delegate to the local reader because the executor
-resolves the layout through the container hierarchy. Widgets so far: DivContainer,
-ActionButton (+ No/Microflow/Page client actions); coverage grows per widget
-type. Validation success is signalled by a result text containing "success"
-(not the PED "SUCCESS"-prefix convention).
+resolves the layout through the container hierarchy. Validation success is
+signalled by a result text containing "success" (not the PED "SUCCESS"-prefix
+convention), and — unlike PED — there is **no pg validation tool**, so a bad
+attribute/page reference still writes "successfully" but shows a CE error in
+Studio Pro.
+
+Widgets so far: DivContainer, LayoutGrid/Row/Column, ActionButton, DynamicText,
+DataView, ListView, TextBox, CheckBox, DatePicker (+ No/Microflow/Page client
+actions; page-variable / direct-entity / database data sources). pg's widget
+union (from the tool schema) is the limit of native support: ActionButton,
+CheckBox, Content, DataView, DatePicker, DivContainer, DynamicText, LayoutGrid/
+Row/Column, ListView, RadioButtonGroup, TabContainer/TabPage, TextArea, TextBox,
+plus `CustomWidgets$CustomWidget` (pluggable). **No `Pages$DataGrid`** — the
+legacy DataGrid is rejected; DataGrid 2 is a pluggable custom widget. Coverage
+grows one widget/data-source type at a time.
 
 Microflow support is now broad: name, parameters, return type, and a recursive
 object/flow graph (positions reused from the executor's layout engine, so the
