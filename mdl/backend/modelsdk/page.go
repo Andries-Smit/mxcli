@@ -61,6 +61,22 @@ func (b *Backend) GetPage(id model.ID) (*pages.Page, error) {
 	return nil, nil
 }
 
+// ListSnippets reads snippet units (count + identity is what SHOW MODULES needs;
+// the widget tree is not converted).
+func (b *Backend) ListSnippets() ([]*pages.Snippet, error) {
+	units, err := mprread.ListUnitsWithContainer[*genPg.Snippet](b.reader)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*pages.Snippet, 0, len(units))
+	for _, u := range units {
+		s := &pages.Snippet{ContainerID: u.ContainerID, Name: u.Element.Name()}
+		s.ID = model.ID(u.Element.ID())
+		out = append(out, s)
+	}
+	return out, nil
+}
+
 func pageFromGen(p *genPg.Page, containerID model.ID) *pages.Page {
 	out := &pages.Page{
 		ContainerID: containerID,

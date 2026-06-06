@@ -19,6 +19,8 @@ import (
 	"github.com/mendixlabs/mxcli/mdl/backend/mock"
 	"github.com/mendixlabs/mxcli/mdl/types"
 	"github.com/mendixlabs/mxcli/model"
+	"github.com/mendixlabs/mxcli/modelsdk/codec"
+	genPr "github.com/mendixlabs/mxcli/modelsdk/gen/projects"
 	mmpr "github.com/mendixlabs/mxcli/modelsdk/mpr"
 )
 
@@ -109,9 +111,22 @@ func (b *Backend) ListModules() ([]*model.Module, error) {
 	if err != nil {
 		return nil, err
 	}
+	dec := codec.NewDecoder(codec.DefaultRegistry)
 	out := make([]*model.Module, 0, len(infos))
 	for _, mi := range infos {
-		out = append(out, moduleFromInfo(mi))
+		m := moduleFromInfo(mi)
+		// Enrich with Marketplace metadata by decoding the module unit.
+		// reader.ListModules returns only ID+Name; FromAppStore/AppStoreVersion
+		// (the SHOW MODULES "Source" column) live on the gen Module.
+		if raw, rerr := b.reader.GetRawUnitBytes(mi.ID); rerr == nil && len(raw) > 0 {
+			if el, derr := dec.Decode(raw); derr == nil {
+				if gm, ok := el.(*genPr.Module); ok {
+					m.FromAppStore = gm.FromAppStore()
+					m.AppStoreVersion = gm.AppStoreVersion()
+				}
+			}
+		}
+		out = append(out, m)
 	}
 	return out, nil
 }

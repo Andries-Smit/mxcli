@@ -16,6 +16,10 @@ const fixture = "../../testdata/expr-checker/minimal.mpr"
 // tracked architectural difference, not a conversion error.
 func dropSystem(row string) bool { return !strings.HasPrefix(row, "|System.") }
 
+// dropSystemModule drops the System module's row from a SHOW MODULES table
+// (module name in the first cell), same rationale as dropSystem.
+func dropSystemModule(row string) bool { return !strings.HasPrefix(row, "|System|") }
+
 // TestReadParity runs each read query through both engines and asserts their
 // normalized output matches. Cases with a knownGap are reported, not failed —
 // they document where the engines legitimately differ today (and flag if they
@@ -33,11 +37,12 @@ func TestReadParity(t *testing.T) {
 		{name: "enumerations", query: "SHOW ENUMERATIONS"},
 		{name: "constants", query: "SHOW CONSTANTS"},
 		{name: "entities", query: "SHOW ENTITIES", keep: dropSystem},
-		{
-			name:     "modules",
-			query:    "SHOW MODULES",
-			knownGap: "module Source (FromAppStore/version) not yet converted; System aggregate counts injected by legacy",
-		},
+		// Non-System modules match across every column (Source, and all per-doc
+		// counts: entities, enums, pages, snippets, microflows, nanoflows, java
+		// actions). The System row differs only because legacy injects a
+		// hardcoded System module while modelsdk reads the real (sparser) unit —
+		// same principled difference as entities — so it is filtered out.
+		{name: "modules", query: "SHOW MODULES", keep: dropSystemModule},
 	}
 
 	for _, tc := range cases {

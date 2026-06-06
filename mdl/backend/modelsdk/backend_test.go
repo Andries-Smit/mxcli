@@ -56,6 +56,16 @@ func TestReadSlice_Modules(t *testing.T) {
 		t.Errorf("expected a System module; got %d modules", len(mods))
 	}
 
+	// Marketplace metadata (the SHOW MODULES "Source" column) must be enriched
+	// from the decoded module unit, not just ID+Name.
+	for _, m := range mods {
+		if m.Name == "Administration" {
+			if !m.FromAppStore || m.AppStoreVersion != "4.3.2" {
+				t.Errorf("Administration FromAppStore=%v version=%q, want true/4.3.2", m.FromAppStore, m.AppStoreVersion)
+			}
+		}
+	}
+
 	// GetModuleByName round-trips against the list.
 	sys, err := b.GetModuleByName("System")
 	if err != nil {
