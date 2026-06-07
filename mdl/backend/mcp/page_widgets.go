@@ -70,12 +70,18 @@ func (b *Backend) mapPageWidgetBody(w pages.Widget) (map[string]any, error) {
 			return nil, fmt.Errorf("button %q: %w", wd.Name, err)
 		}
 		style := buttonStyle(string(wd.ButtonStyle))
+		// The executor stores a button's caption in CaptionTemplate (a client
+		// template, so "{1}" params work); Caption is the legacy plain-text field.
+		caption := clientTemplateValue(wd.CaptionTemplate)
+		if s, ok := caption.(string); ok && s == "" {
+			caption = textValue(wd.Caption)
+		}
 		return map[string]any{
 			"$Type":                         "Pages$ActionButton",
 			"name":                          wd.Name,
 			"appearance":                    pageAppearance(wd.Class, wd.Style),
 			"conditionalVisibilitySettings": nil,
-			"ct:caption":                    textValue(wd.Caption),
+			"ct:caption":                    caption,
 			"t:tooltip":                     textValue(wd.Tooltip),
 			"icon":                          nil,
 			"action":                        action,

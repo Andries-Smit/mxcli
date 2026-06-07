@@ -30,6 +30,21 @@ func TestMapPageWidget_ActionButton(t *testing.T) {
 	}
 }
 
+func TestMapPageWidget_ActionButton_CaptionTemplate(t *testing.T) {
+	// The executor stores a button's caption in CaptionTemplate, not Caption.
+	// Reading the wrong field produced captionless (invisible) buttons.
+	b := &Backend{}
+	btn := &pages.ActionButton{
+		CaptionTemplate: &pages.ClientTemplate{Template: &model.Text{Translations: map[string]string{"en_US": "New Order"}}},
+		Action:          &pages.NoClientAction{},
+	}
+	btn.Name = "btnNew"
+	m, err := b.mapPageWidget(btn)
+	if err != nil || m["ct:caption"] != "New Order" {
+		t.Fatalf("caption from CaptionTemplate: %+v / %v", m["ct:caption"], err)
+	}
+}
+
 func TestMapPageWidget_Container(t *testing.T) {
 	b := &Backend{}
 	inner := &pages.ActionButton{Action: &pages.NoClientAction{}}
