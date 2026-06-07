@@ -719,3 +719,19 @@ Also wired the previously-stubbed **executor ALTER ENUMERATION** handler (engine
 / RENAME VALUE read-modify-write through UpdateEnumeration) — so ALTER ENUMERATION now works for
 *both* engines. (DROP VALUE has an executor branch but no grammar rule yet; left as defensive code.)
 Updated the CLI syntax help and added a doctype-test example.
+
+### Constants CREATE/DROP/(modify) (2026-06-07)
+
+Second top-level-document type, same unit-write pattern as enumerations:
+- `CreateConstant` (InsertUnit) / `DeleteConstant` (DeleteUnit) / `UpdateConstant` (UpdateRawUnit).
+- `constToGen` mirrors the legacy serializer; `constantDataTypeToGen` (reverse of the read adapter)
+  builds the DataTypes$* element (Long→IntegerType, Date→DateTimeType, per legacy).
+- Verified against a real on-disk constant (test7-app FeedbackModule.ClientIdentifier): Studio Pro
+  emits only the `Type` element, **no** `DataType` primitive — so `constToGen` deliberately omits it.
+  No applyDefaults needed (all scalars + the Type element).
+- Added `ConstCanonBSON`. `TestWriteParity_Constant` (String/Integer/Decimal/Boolean + CREATE OR
+  MODIFY → UpdateConstant) and `TestWriteParity_DropConstant` are green — strict legacy parity.
+
+Constants have no `ALTER CONSTANT` statement; the "alter" path is `CREATE OR MODIFY CONSTANT`
+(already wired in the executor → UpdateConstant), so no executor changes were needed. The read
+adapter was already lossless, so the modify round-trip needed no read-side work.
