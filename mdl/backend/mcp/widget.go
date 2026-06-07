@@ -242,9 +242,16 @@ func (w *mcpWidgetBuilder) SetTextTemplateWithParams(propertyKey, _ string, _ st
 func (w *mcpWidgetBuilder) SetAction(propertyKey string, _ pages.ClientAction) {
 	w.note("action:" + propertyKey)
 }
-func (w *mcpWidgetBuilder) SetAttributeObjects(propertyKey string, _ []string) {
-	w.note("attributeObjects:" + propertyKey)
-}
+
+// SetAttributeObjects is a deliberate no-op. The only widgets that use it are the
+// DataGrid column filters, whose def.json always sets attrChoice="auto" — under
+// which Studio Pro auto-binds the filter to the column's attribute and *ignores*
+// the attributes list (in fact pg rejects a non-empty attributes list when
+// attrChoice is "auto", silently dropping the widget). So emitting the derived
+// column attribute here would be both redundant and harmful; auto-bind is the
+// correct, faithful result. (Revisit if a filter ever exposes attrChoice="linked"
+// with an explicit Attributes property.)
+func (w *mcpWidgetBuilder) SetAttributeObjects(_ string, _ []string) {}
 func (w *mcpWidgetBuilder) CloneGallerySelectionProperty(propertyKey, _ string) {
 	w.note("gallerySelection:" + propertyKey)
 }
@@ -286,8 +293,16 @@ func (w *mcpWidgetBuilder) SetObjectList(propertyKey string, items []backend.Obj
 				w.note(fmt.Sprintf("%s[].%s (%s)", propertyKey, p.PropertyKey, p.Operation))
 			}
 		}
-		if len(it.ChildWidgets) > 0 {
-			w.note(propertyKey + "[] (custom content)")
+		// Widgets-typed sub-slots of the item (e.g. a column's `filter` widget, or
+		// custom-content cell `content` widgets) are mapped recursively. The child
+		// widgets were already built and registered by the engine before this call.
+		for _, slot := range sortedKeys(it.ChildWidgets) {
+			mapped, err := w.backend.mapPageWidgets(it.ChildWidgets[slot])
+			if err != nil {
+				w.note(fmt.Sprintf("%s[].%s: %v", propertyKey, slot, err))
+				continue
+			}
+			obj[slot] = mapped
 		}
 		list = append(list, obj)
 	}

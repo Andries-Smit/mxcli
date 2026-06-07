@@ -12,6 +12,22 @@
     {
       "widgetId": "com.mendix.widget.web.gallery.Gallery",
       "dataSourceProperties": []
+    },
+    {
+      "widgetId": "com.mendix.widget.web.datagridtextfilter.DatagridTextFilter",
+      "dataSourceProperties": []
+    },
+    {
+      "widgetId": "com.mendix.widget.web.datagridnumberfilter.DatagridNumberFilter",
+      "dataSourceProperties": []
+    },
+    {
+      "widgetId": "com.mendix.widget.web.datagriddatefilter.DatagridDateFilter",
+      "dataSourceProperties": []
+    },
+    {
+      "widgetId": "com.mendix.widget.web.datagriddropdownfilter.DatagridDropdownFilter",
+      "dataSourceProperties": []
     }
   ]
 }

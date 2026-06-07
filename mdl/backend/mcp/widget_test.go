@@ -184,17 +184,44 @@ func TestMapCustomWidget_Gallery(t *testing.T) {
 	}
 }
 
-func TestSetObjectList_CustomContentRejected(t *testing.T) {
+func TestSetObjectList_ColumnFilterAndCustomContent(t *testing.T) {
 	b := &Backend{}
 	wb, _ := b.LoadWidgetTemplate("com.mendix.widget.web.datagrid.Datagrid", "")
 	w := wb.(*mcpWidgetBuilder)
-	dt := &pages.DynamicText{}
-	dt.Name = "cell"
+
+	// A filter widget is itself a pluggable CustomWidget the engine builds and
+	// registers; mapping the column's `filter` slot must recurse into it.
+	filterWB, _ := b.LoadWidgetTemplate("com.mendix.widget.web.datagridtextfilter.DatagridTextFilter", "")
+	filterW := filterWB.(*mcpWidgetBuilder)
+	filterW.SetPrimitive("attrChoice", "auto")
+	filter := filterW.Finalize(model.ID("tf1"), "tf", "", "Always")
+
+	// A custom-content cell widget in the column's `content` slot.
+	cell := &pages.DynamicText{Content: &pages.ClientTemplate{Template: &model.Text{Translations: map[string]string{"en_US": "x"}}}}
+	cell.Name = "cell"
+
 	w.SetObjectList("columns", []backend.ObjectListItemSpec{
-		{ChildWidgets: map[string][]pages.Widget{"content": {dt}}},
+		{
+			Properties:   []backend.ObjectListItemProperty{{PropertyKey: "attribute", Operation: "attribute", AttributePath: "PgTest.Order.OrderNumber"}},
+			ChildWidgets: map[string][]pages.Widget{"filter": {filter}, "content": {cell}},
+		},
 	})
 	cw := w.Finalize(model.ID("dg2"), "dg", "", "Always")
-	if _, err := b.mapPageWidget(cw); err == nil {
-		t.Error("a custom-content (child-widget) column should be rejected for now")
+	m, err := b.mapPageWidget(cw)
+	if err != nil {
+		t.Fatalf("mapPageWidget: %v", err)
+	}
+	cols, _ := m["object"].(map[string]any)["columns"].([]any)
+	col, _ := cols[0].(map[string]any)
+	fl, _ := col["filter"].([]any)
+	if len(fl) != 1 {
+		t.Fatalf("column filter slot: %+v", col["filter"])
+	}
+	f0, _ := fl[0].(map[string]any)
+	if f0["widgetId"] != "com.mendix.widget.web.datagridtextfilter.DatagridTextFilter" {
+		t.Fatalf("filter widget: %+v", f0)
+	}
+	if cc, _ := col["content"].([]any); len(cc) != 1 {
+		t.Fatalf("column content slot: %+v", col["content"])
 	}
 }

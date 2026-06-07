@@ -159,6 +159,14 @@ translates the shared engine's storage-agnostic calls:
 - `SetChildWidgets` → Widgets-typed slots (Gallery `content` template), mapped
   recursively through the normal widget mapper so nested pluggable widgets and
   conditional visibility work inside a slot.
+- An object-list item's own Widgets-typed sub-slots are mapped recursively too,
+  which gives **DataGrid 2 column filters** (`textfilter`/`numberfilter`/
+  `datefilter`/`dropdownfilter` → the column's `filter` slot) and custom-content
+  cells (the column's `content` slot). The filter widgets are added to
+  `widgets.def.json`. Their def.json always sets `attrChoice: "auto"`, under which
+  Studio Pro auto-binds the filter to the column attribute and rejects a non-empty
+  `attributes` list — so `SetAttributeObjects` is a deliberate no-op (emitting the
+  derived attribute would drop the widget).
 
 Client templates with `{N}` parameters (common in Gallery/DataGrid cells) emit a
 full `Pages$ClientTemplate` with `attributeRef`/`expression`/`sourceVariable`
