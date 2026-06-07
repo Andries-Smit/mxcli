@@ -735,3 +735,35 @@ Second top-level-document type, same unit-write pattern as enumerations:
 Constants have no `ALTER CONSTANT` statement; the "alter" path is `CREATE OR MODIFY CONSTANT`
 (already wired in the executor → UpdateConstant), so no executor changes were needed. The read
 adapter was already lossless, so the modify round-trip needed no read-side work.
+
+### Microflows: codec-native CREATE conversion — foundation (2026-06-07)
+
+Decision (user): build the full microflowToGen CREATE conversion now (codec-native, the path to
+deleting sdk/mpr); ALTER comes later via the mutator pattern (OpenMicroflowForMutation, passthrough
+diff-fidelity). Microflows are create-only today, so CREATE has no passthrough benefit on its own —
+it's the prerequisite for sdk/mpr removal, not an end in itself.
+
+Foundation laid this session:
+- **gen typo bug fixed + committed**: real BSON key is `ConcurrenyErrorMessage` (Mendix's typo), gen
+  wired `ConcurrencyErrorMessage` on encode+decode → silently failed to round-trip. Verified vs
+  test7-app ACT_Callee. (Legacy was right.)
+- `MicroflowCanonBSON` added to the harness.
+- Captured the real wrapper field set (test7 ACT_Callee, v11): $ID, $Type, AllowConcurrentExecution,
+  AllowedModuleRoles, ApplyEntityAccess, ConcurrencyErrorMicroflow(""), ConcurrenyErrorMessage
+  (Texts$Text), Documentation, Excluded, ExportLevel, Flows[3,…], MarkAsUsed, MicroflowActionInfo
+  (null), MicroflowReturnType, Name, ObjectCollection, ReturnVariableName, StableId, Url(""),
+  UrlSearchParameters[1], WorkflowActionInfo(null). v10+ gates ReturnVariableName/StableId/Url/
+  UrlSearchParameters (legacy gates on majorVersion; fixture minimal.mpr = 11.6.6).
+
+Reference: legacy serializeMicroflow (wrapper), serializeMicroflowObjectCollectionWithoutFlows
+(22 lines; merges mf.Parameters into Objects), serializeMicroflowObject (dispatch @ line 486),
+serializeSequenceFlow (170), serializeMicroflowDataType (return/param types; nil→VoidType).
+gen has all wrapper props + NewMicroflow/StartEvent/EndEvent/MicroflowObjectCollection/SequenceFlow/
+MicroflowParameter/ActionActivity + setters (SetObjectCollection/AddFlows/AddObjects/SetMicroflow
+ReturnType/OriginID/DestinationID/…). Backend version via b.ProjectVersion().MajorVersion.
+
+**Next step (skeleton): microflow_write.go** — CreateMicroflow/Update/Delete (unit-write pattern);
+microflowToGen wrapper (all fields, v10+ gated) + microflowReturnTypeToGen + ObjectCollection
+(microflowObjectToGen dispatch: StartEvent/EndEvent/MicroflowParameter first) + Flows
+(sequenceFlowToGen) + assignMicroflowIDs. Parity-test the simplest microflow (start→end), then add
+activity groups incrementally (object ops → splits → loops → calls → java/REST).

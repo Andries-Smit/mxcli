@@ -14,9 +14,40 @@ import (
 	genConst "github.com/mendixlabs/mxcli/modelsdk/gen/constants"
 	_ "github.com/mendixlabs/mxcli/modelsdk/gen/datatypes" // register DataTypes$* for constant decode
 	genEnum "github.com/mendixlabs/mxcli/modelsdk/gen/enumerations"
+	genMf "github.com/mendixlabs/mxcli/modelsdk/gen/microflows"
 	"github.com/mendixlabs/mxcli/modelsdk/mprread"
 	mmpr "github.com/mendixlabs/mxcli/modelsdk/mpr"
 )
+
+// MicroflowCanonBSON returns the canonicalized raw BSON of a named microflow unit
+// in a module (microflows are top-level documents).
+func MicroflowCanonBSON(projectPath, moduleName, mfName string) (string, error) {
+	r, err := mmpr.OpenWithOptions(projectPath, mmpr.OpenOptions{ReadOnly: true})
+	if err != nil {
+		return "", err
+	}
+	defer r.Close()
+
+	mod, err := r.GetModuleByName(moduleName)
+	if err != nil || mod == nil {
+		return "", fmt.Errorf("module %q not found: %v", moduleName, err)
+	}
+	units, err := mprread.ListUnitsWithContainer[*genMf.Microflow](r)
+	if err != nil {
+		return "", err
+	}
+	for _, u := range units {
+		if string(u.ContainerID) != mod.ID || u.Element.Name() != mfName {
+			continue
+		}
+		raw, err := r.GetRawUnitBytes(string(u.Element.ID()))
+		if err != nil {
+			return "", err
+		}
+		return CanonicalizeRaw(bson.Raw(raw)), nil
+	}
+	return "", fmt.Errorf("microflow %q not found in module %q", mfName, moduleName)
+}
 
 // ConstCanonBSON returns the canonicalized raw BSON of a named constant unit in a
 // module (constants are top-level documents).
