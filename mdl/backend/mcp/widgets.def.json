@@ -1,0 +1,13 @@
+{
+  "_comment": "MCP-backend pluggable-widget capability registry. Owned by the MCP backend and embedded here ON PURPOSE — it is NOT registered in the shared widget registry (sdk/widgets/definitions), so it cannot change the MPR datagrid path while that backend is being replaced by the new engine. It declares only what the MCP builder needs beyond the shared engine's resolved calls: which property of a widget is its DataSource (so PropertyTypeIDs can report it and the engine's auto-datasource fires through SetDataSource). Column/object-list shaping is generic (see SetObjectList in widget.go). When the shared MPR path is migrated to def.json after the engine merge, this can be folded into the shared definitions.",
+  "widgets": [
+    {
+      "widgetId": "com.mendix.widget.web.combobox.Combobox",
+      "dataSourceProperties": []
+    },
+    {
+      "widgetId": "com.mendix.widget.web.datagrid.Datagrid",
+      "dataSourceProperties": ["datasource"]
+    }
+  ]
+}

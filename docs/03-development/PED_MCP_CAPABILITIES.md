@@ -129,21 +129,34 @@ plus `CustomWidgets$CustomWidget` (pluggable). **No `Pages$DataGrid`** — the
 legacy DataGrid is rejected; DataGrid 2 is a pluggable custom widget. Coverage
 grows one widget/data-source type at a time.
 
-**Pluggable widgets (ComboBox).** The reference/dropdown selector — the Mendix 11
+**Pluggable widgets (ComboBox, DataGrid 2).** The reference/dropdown selector — the Mendix 11
 ComboBox (`com.mendix.widget.web.combobox.Combobox`) — is supported in both
 enumeration and association modes. Crucially, the MCP path does *not* build the
 BSON widget template the MPR writer must: it implements `LoadWidgetTemplate` with
 an `mcpWidgetBuilder` that records the engine's semantic property operations
 (`SetAttribute`/`SetAssociation`/`SetPrimitive`/`SetDataSource`) into a high-level
 pg `object`, and Studio Pro expands every default on `pg_write_page` (37 props
-filled from ~5). **This sidesteps the entire CE0463 "widget definition changed"
-template-mismatch class of bugs** that the on-disk BSON writer hits, because the
-server owns serialization. One quirk: the ComboBox def.json enum mode maps only
+filled from ~5 for ComboBox; 34 object + 19/column for DataGrid 2). **This
+sidesteps the entire CE0463 "widget definition changed" template-mismatch class
+of bugs** that the on-disk BSON writer hits, because the server owns
+serialization. One ComboBox quirk: the def.json enum mode maps only
 `attributeEnumeration` (the MPR template carries `optionsSourceType`'s default),
 so the MCP backend infers `optionsSourceType: "enumeration"` — otherwise pg
-defaults it to `association` and prunes the enum binding. Other pluggable widgets
-(DataGrid 2, Gallery) and any ComboBox property op the builder doesn't translate
-are rejected, not silently emitted with missing properties.
+defaults it to `association` and prunes the enum binding.
+
+Which pluggable widgets are supported, and each widget's DataSource property, are
+declared in `mdl/backend/mcp/widgets.def.json` — an MCP-owned capability registry
+**deliberately not** added to the shared widget registry, so it cannot change the
+MPR datagrid path (which is being replaced by the new engine). `PropertyTypeIDs`
+reports the DataSource property from it so the shared engine's auto-datasource
+pass routes the data source through `SetDataSource`; **DataGrid 2** columns are
+shaped generically in `SetObjectList` (operation kind → pg shape; text-template
+properties take pg's `ct:` prefix). DataGrid 2 columns with custom-content child
+widgets or parameterised header templates, the legacy Gallery, and any property
+op the builder doesn't translate are rejected, not silently emitted with missing
+content. The broader consolidation (removing the hardcoded Go maps in
+`widget_defs.go` and migrating the MPR path to def.json) is deferred until after
+the engine replacement merges.
 
 Data sources for DataView/ListView: page-variable (`Pages$PageVariable`),
 direct-entity (`DomainModels$DirectEntityRef`), and **microflow**

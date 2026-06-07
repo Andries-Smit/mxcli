@@ -5,6 +5,7 @@ package mcp
 import (
 	"testing"
 
+	"github.com/mendixlabs/mxcli/mdl/backend"
 	"github.com/mendixlabs/mxcli/model"
 	"github.com/mendixlabs/mxcli/sdk/pages"
 )
@@ -78,11 +79,11 @@ func TestMapCustomWidget_AssociationCombobox(t *testing.T) {
 
 func TestMapCustomWidget_UnsupportedWidgetRejected(t *testing.T) {
 	b := &Backend{}
-	wb, _ := b.LoadWidgetTemplate("com.mendix.widget.web.datagrid.Datagrid", "")
+	wb, _ := b.LoadWidgetTemplate("com.mendix.widget.web.gallery.Gallery", "")
 	w := wb.(*mcpWidgetBuilder)
-	cw := w.Finalize(model.ID("dg1"), "dg", "", "Always")
+	cw := w.Finalize(model.ID("g1"), "g", "", "Always")
 	if _, err := b.mapPageWidget(cw); err == nil {
-		t.Error("non-combobox pluggable widget should be rejected")
+		t.Error("a pluggable widget not in widgets.def.json should be rejected")
 	}
 }
 
@@ -91,9 +92,61 @@ func TestMapCustomWidget_UnsupportedPropertyRejected(t *testing.T) {
 	wb, _ := b.LoadWidgetTemplate(comboboxWidgetID, "")
 	w := wb.(*mcpWidgetBuilder)
 	w.SetAttribute("attributeEnumeration", "M.E.Status")
-	w.SetObjectList("columns", nil) // records an unsupported op
+	w.SetAction("onChange", nil) // records an unsupported op
 	cw := w.Finalize(model.ID("cw2"), "cmb", "", "Always")
 	if _, err := b.mapPageWidget(cw); err == nil {
 		t.Error("combobox using an unsupported property op should be rejected")
+	}
+}
+
+func TestSetObjectList_DataGridColumns(t *testing.T) {
+	b := &Backend{}
+	wb, _ := b.LoadWidgetTemplate("com.mendix.widget.web.datagrid.Datagrid", "")
+	w := wb.(*mcpWidgetBuilder)
+	// The shared engine calls SetDataSource (via auto-datasource) and SetObjectList.
+	w.SetDataSource("datasource", &pages.DatabaseSource{EntityName: "PgTest.Order"})
+	w.SetObjectList("columns", []backend.ObjectListItemSpec{
+		{Properties: []backend.ObjectListItemProperty{
+			{PropertyKey: "attribute", Operation: "attribute", AttributePath: "PgTest.Order.OrderNumber"},
+			{PropertyKey: "header", Operation: "texttemplate", TextTemplate: "Order #"},
+			{PropertyKey: "showContentAs", Operation: "primitive", PrimitiveVal: "attribute"},
+		}},
+	})
+	cw := w.Finalize(model.ID("dg1"), "dg", "", "Always")
+	m, err := b.mapPageWidget(cw)
+	if err != nil {
+		t.Fatalf("mapPageWidget: %v", err)
+	}
+	ob, _ := m["object"].(map[string]any)
+	ds, _ := ob["datasource"].(map[string]any)
+	if ds["$Type"] != "CustomWidgets$CustomWidgetXPathSource" {
+		t.Fatalf("datasource not set via PropertyTypeIDs/auto-datasource: %+v", ob["datasource"])
+	}
+	cols, _ := ob["columns"].([]any)
+	if len(cols) != 1 {
+		t.Fatalf("columns: %+v", cols)
+	}
+	col, _ := cols[0].(map[string]any)
+	if col["$Type"] != "CustomWidgets$WidgetObject" || col["ct:header"] != "Order #" || col["showContentAs"] != "attribute" {
+		t.Fatalf("column: %+v", col)
+	}
+	ar, _ := col["attribute"].(map[string]any)
+	if ar["attribute"] != "PgTest.Order.OrderNumber" {
+		t.Fatalf("column attribute: %+v", col["attribute"])
+	}
+}
+
+func TestSetObjectList_CustomContentRejected(t *testing.T) {
+	b := &Backend{}
+	wb, _ := b.LoadWidgetTemplate("com.mendix.widget.web.datagrid.Datagrid", "")
+	w := wb.(*mcpWidgetBuilder)
+	dt := &pages.DynamicText{}
+	dt.Name = "cell"
+	w.SetObjectList("columns", []backend.ObjectListItemSpec{
+		{ChildWidgets: map[string][]pages.Widget{"content": {dt}}},
+	})
+	cw := w.Finalize(model.ID("dg2"), "dg", "", "Always")
+	if _, err := b.mapPageWidget(cw); err == nil {
+		t.Error("a custom-content (child-widget) column should be rejected for now")
 	}
 }

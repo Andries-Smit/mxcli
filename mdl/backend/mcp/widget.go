@@ -3,6 +3,8 @@
 package mcp
 
 import (
+	_ "embed"
+	"encoding/json"
 	"fmt"
 
 	"github.com/mendixlabs/mxcli/mdl/backend"
@@ -11,11 +13,38 @@ import (
 	"github.com/mendixlabs/mxcli/sdk/pages"
 )
 
-// comboboxWidgetID is the only pluggable widget the MCP backend maps so far —
-// the Mendix 11 association/enumeration selector (the reference/dropdown
-// replacement). Other pluggable widgets (DataGrid 2, Gallery) are rejected in
-// mapCustomWidget until their pg `object` shapes are mapped.
+// comboboxWidgetID names the Mendix 11 association/enumeration selector. It needs
+// one widget-specific quirk (enum-mode optionsSourceType inference) so it keeps a
+// named constant; every other supported-widget decision is data-driven from
+// widgets.def.json.
 const comboboxWidgetID = "com.mendix.widget.web.combobox.Combobox"
+
+// widgetsDefJSON is the MCP backend's pluggable-widget capability registry. It is
+// embedded and consumed ONLY by this package — deliberately not registered in the
+// shared widget registry — so it cannot change the MPR datagrid path while that
+// backend is being replaced. See the file's _comment for the rationale.
+//
+//go:embed widgets.def.json
+var widgetsDefJSON []byte
+
+type mcpWidgetDef struct {
+	WidgetID             string   `json:"widgetId"`
+	DataSourceProperties []string `json:"dataSourceProperties"`
+}
+
+var mcpWidgetDefs = func() map[string]mcpWidgetDef {
+	var doc struct {
+		Widgets []mcpWidgetDef `json:"widgets"`
+	}
+	if err := json.Unmarshal(widgetsDefJSON, &doc); err != nil {
+		panic("mcp: invalid widgets.def.json: " + err.Error())
+	}
+	m := make(map[string]mcpWidgetDef, len(doc.Widgets))
+	for _, w := range doc.Widgets {
+		m[w.WidgetID] = w
+	}
+	return m
+}()
 
 // mapCustomWidget emits the pg CustomWidgets$CustomWidget for a pluggable widget
 // built this session. Only ComboBox is mapped so far; other pluggable widgets,
@@ -26,11 +55,11 @@ func (b *Backend) mapCustomWidget(wd *pages.CustomWidget) (map[string]any, error
 	if cw == nil {
 		return nil, fmt.Errorf("custom widget %q has no recorded properties (the MCP backend builds pluggable widgets via the widget engine)", wd.Name)
 	}
-	if cw.widgetID != comboboxWidgetID {
-		return nil, fmt.Errorf("pluggable widget %q (%s) is not yet supported by the MCP backend — only ComboBox", wd.Name, cw.widgetID)
+	if _, ok := mcpWidgetDefs[cw.widgetID]; !ok {
+		return nil, fmt.Errorf("pluggable widget %q (%s) is not yet supported by the MCP backend (supported: %v)", wd.Name, cw.widgetID, supportedWidgetIDs())
 	}
 	if len(cw.unsupported) > 0 {
-		return nil, fmt.Errorf("combobox %q uses properties not yet supported by the MCP backend: %v", wd.Name, cw.unsupported)
+		return nil, fmt.Errorf("%s %q uses properties not yet supported by the MCP backend: %v", cw.widgetID, wd.Name, cw.unsupported)
 	}
 	// The combobox def.json enum mode maps only attributeEnumeration; the MPR
 	// template carries optionsSourceType's default, which the MCP path lacks. pg
@@ -63,6 +92,16 @@ type mcpCustomWidget struct {
 	unsupported []string // property ops recorded for not-yet-supported widget shapes
 }
 
+// supportedWidgetIDs lists the pluggable widget ids the MCP backend can emit,
+// for use in error messages. Order is not significant.
+func supportedWidgetIDs() []string {
+	ids := make([]string, 0, len(mcpWidgetDefs))
+	for id := range mcpWidgetDefs {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 // LoadWidgetTemplate returns an MCP-specific pluggable-widget builder. Unlike the
 // MPR builder (which mutates an embedded BSON template), this one records the
 // engine's semantic property operations into a high-level pg `object` map. No
@@ -70,7 +109,7 @@ type mcpCustomWidget struct {
 // so the projectPath is ignored and the CE0463 template-mismatch class of bugs
 // does not arise on the MCP path.
 func (b *Backend) LoadWidgetTemplate(widgetID string, _ string) (backend.WidgetObjectBuilder, error) {
-	return &mcpWidgetBuilder{backend: b, widgetID: widgetID, object: map[string]any{}}, nil
+	return &mcpWidgetBuilder{backend: b, widgetID: widgetID, def: mcpWidgetDefs[widgetID], object: map[string]any{}}, nil
 }
 
 // mcpWidgetBuilder implements backend.WidgetObjectBuilder by translating each
@@ -81,6 +120,7 @@ func (b *Backend) LoadWidgetTemplate(widgetID string, _ string) (backend.WidgetO
 type mcpWidgetBuilder struct {
 	backend     *Backend
 	widgetID    string
+	def         mcpWidgetDef
 	object      map[string]any
 	unsupported []string
 }
@@ -144,9 +184,18 @@ func customWidgetXPathSource(ds pages.DataSource) map[string]any {
 	}
 }
 
-// Operations not needed by ComboBox — recorded so an unsupported widget that
+// SetSelection sets a selection-typed property (e.g. a DataGrid's itemSelection).
+// In pg these are plain string enums ("None" / "Single" / "Multi"), so the value
+// is stored directly. (The MPR path's richer multi-selection cloning is not
+// needed — Studio Pro expands the rest on pg_write_page.)
+func (w *mcpWidgetBuilder) SetSelection(propertyKey, value string) {
+	if value != "" {
+		w.object[propertyKey] = value
+	}
+}
+
+// Operations not needed by the supported widgets — recorded so a widget that
 // relies on them is rejected rather than emitted with missing properties.
-func (w *mcpWidgetBuilder) SetSelection(propertyKey, _ string)  { w.note("selection:" + propertyKey) }
 func (w *mcpWidgetBuilder) SetExpression(propertyKey, _ string) { w.note("expression:" + propertyKey) }
 func (w *mcpWidgetBuilder) SetChildWidgets(propertyKey string, _ []pages.Widget) {
 	w.note("childWidgets:" + propertyKey)
@@ -163,18 +212,66 @@ func (w *mcpWidgetBuilder) SetAction(propertyKey string, _ pages.ClientAction) {
 func (w *mcpWidgetBuilder) SetAttributeObjects(propertyKey string, _ []string) {
 	w.note("attributeObjects:" + propertyKey)
 }
-func (w *mcpWidgetBuilder) SetObjectList(propertyKey string, _ []backend.ObjectListItemSpec) {
-	w.note("objectList:" + propertyKey)
-}
 func (w *mcpWidgetBuilder) CloneGallerySelectionProperty(propertyKey, _ string) {
 	w.note("gallerySelection:" + propertyKey)
 }
 
-// PropertyTypeIDs returns an empty map — the MCP path needs no template metadata
-// (Studio Pro expands the object), and the engine's auto-datasource/child-slot
-// passes simply find nothing to do.
+// SetObjectList translates an object-list property (e.g. a DataGrid's `columns`)
+// into a list of pg CustomWidgets$WidgetObject items. The shared engine has
+// already resolved each item's properties (attribute paths, header templates,
+// primitives), so the translation is generic: the operation kind determines the
+// pg shape, and text-template properties take pg's `ct:` prefix. Items that need
+// shapes not yet supported (custom-content child widgets, parameterised header
+// templates) are recorded as unsupported so the widget is rejected rather than
+// written with missing content.
+func (w *mcpWidgetBuilder) SetObjectList(propertyKey string, items []backend.ObjectListItemSpec) {
+	list := make([]any, 0, len(items))
+	for _, it := range items {
+		obj := map[string]any{"$Type": "CustomWidgets$WidgetObject"}
+		for _, p := range it.Properties {
+			switch p.Operation {
+			case "attribute":
+				if p.AttributePath != "" {
+					obj[p.PropertyKey] = map[string]any{"$Type": "DomainModels$AttributeRef", "attribute": p.AttributePath}
+				}
+			case "texttemplate":
+				if len(p.Parameters) > 0 {
+					w.note(fmt.Sprintf("%s[].%s (template params)", propertyKey, p.PropertyKey))
+					continue
+				}
+				// pg expects ct:-prefixed ClientTemplate keys and wraps a plain string.
+				obj["ct:"+p.PropertyKey] = p.TextTemplate
+			case "primitive":
+				obj[p.PropertyKey] = p.PrimitiveVal
+			case "expression":
+				obj[p.PropertyKey] = p.Expression
+			case "datasource":
+				if src := customWidgetXPathSource(p.DataSource); src != nil {
+					obj[p.PropertyKey] = src
+				}
+			default:
+				w.note(fmt.Sprintf("%s[].%s (%s)", propertyKey, p.PropertyKey, p.Operation))
+			}
+		}
+		if len(it.ChildWidgets) > 0 {
+			w.note(propertyKey + "[] (custom content)")
+		}
+		list = append(list, obj)
+	}
+	w.object[propertyKey] = list
+}
+
+// PropertyTypeIDs reports the widget's DataSource-typed properties from
+// widgets.def.json. The shared engine's auto-datasource pass reads this to route
+// the AST data source through SetDataSource (the MCP path has no template, so
+// this is the only metadata it needs). Other property types are not needed —
+// Studio Pro expands every default on pg_write_page.
 func (w *mcpWidgetBuilder) PropertyTypeIDs() map[string]pages.PropertyTypeIDEntry {
-	return map[string]pages.PropertyTypeIDEntry{}
+	out := make(map[string]pages.PropertyTypeIDEntry, len(w.def.DataSourceProperties))
+	for _, key := range w.def.DataSourceProperties {
+		out[key] = pages.PropertyTypeIDEntry{ValueType: "DataSource"}
+	}
+	return out
 }
 
 func (w *mcpWidgetBuilder) EnsureRequiredObjectLists()                             {}
