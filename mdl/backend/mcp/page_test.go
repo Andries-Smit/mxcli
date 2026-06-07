@@ -290,6 +290,31 @@ func TestMapPageWidget_TabContainer(t *testing.T) {
 	}
 }
 
+func TestMapPageWidget_ConditionalVisibility(t *testing.T) {
+	b := &Backend{}
+	dt := &pages.DynamicText{
+		Content: &pages.ClientTemplate{Template: &model.Text{Translations: map[string]string{"en_US": "hi"}}},
+	}
+	dt.Name = "t1"
+	dt.ConditionalVisibility = &pages.ConditionalVisibilitySettings{Expression: "$currentObject/Active"}
+	m, err := b.mapPageWidget(dt)
+	if err != nil {
+		t.Fatalf("dynamic text: %v", err)
+	}
+	cv, _ := m["conditionalVisibilitySettings"].(map[string]any)
+	if cv == nil || cv["$Type"] != "Pages$ConditionalVisibilitySettings" || cv["expression"] != "$currentObject/Active" {
+		t.Fatalf("conditionalVisibilitySettings: %+v", m["conditionalVisibilitySettings"])
+	}
+
+	// No VISIBLE IF -> no conditionalVisibilitySettings key emitted.
+	dt2 := &pages.DynamicText{Content: &pages.ClientTemplate{Template: &model.Text{}}}
+	dt2.Name = "t2"
+	m2, _ := b.mapPageWidget(dt2)
+	if _, ok := m2["conditionalVisibilitySettings"]; ok {
+		t.Fatalf("unexpected conditionalVisibilitySettings on plain widget: %+v", m2)
+	}
+}
+
 func TestMapPageWidget_Unsupported(t *testing.T) {
 	b := &Backend{}
 	sc := &pages.ScrollContainer{}

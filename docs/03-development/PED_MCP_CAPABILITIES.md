@@ -113,7 +113,13 @@ direct-entity / database / microflow data sources). TextArea and the executor's
 RadioButtons (→ `Pages$RadioButtonGroup`) are attribute-bound inputs that share
 the same minimal `attributeRef` + `ct:labelTemplate` shape as TextBox; the server
 fills in the rest of their defaults (rows, render direction, placeholder, …),
-which are not yet mapped. Tab-page captions use the `t:caption` key (a plain
+which are not yet mapped. **Conditional visibility** (`visible: [xpath]`, i.e.
+VISIBLE IF) maps onto a `Pages$ConditionalVisibilitySettings {expression}` and
+is attached uniformly to every mapped widget; the MDL `visible:` property only
+ever produces an expression, so module-role / attribute / source-variable
+conditions are not mapped. (The static `visible: false` form sets a separate
+`Visible` value, not conditional visibility, and is not yet mapped.) Tab-page
+captions use the `t:caption` key (a plain
 string the server wraps in `Texts$Text`), not the `ct:` ClientTemplate prefix
 that button captions use. pg's widget
 union (from the tool schema) is the limit of native support: ActionButton,

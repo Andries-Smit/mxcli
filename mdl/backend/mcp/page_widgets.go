@@ -11,8 +11,47 @@ import (
 )
 
 // mapPageWidget maps one executor page widget onto its pg_write_page (Pages$*)
-// form. Coverage grows one widget type at a time; unmapped widgets are rejected.
+// form, then attaches any conditional-visibility setting (VISIBLE IF) uniformly.
 func (b *Backend) mapPageWidget(w pages.Widget) (map[string]any, error) {
+	m, err := b.mapPageWidgetBody(w)
+	if err != nil {
+		return nil, err
+	}
+	if cv := conditionalVisibility(w); cv != nil {
+		m["conditionalVisibilitySettings"] = cv
+	}
+	return m, nil
+}
+
+// conditionalVisibility builds a Pages$ConditionalVisibilitySettings from a
+// widget's VISIBLE IF expression. The MDL `visible:` property only ever produces
+// an expression (no module-role / attribute / source-variable conditions), so
+// only the expression form is mapped; the rest stay at their pg defaults.
+func conditionalVisibility(w pages.Widget) map[string]any {
+	type baseWidgetGetter interface {
+		GetBaseWidget() *pages.BaseWidget
+	}
+	bwg, ok := w.(baseWidgetGetter)
+	if !ok {
+		return nil
+	}
+	cv := bwg.GetBaseWidget().ConditionalVisibility
+	if cv == nil || cv.Expression == "" {
+		return nil
+	}
+	return map[string]any{
+		"$Type":          "Pages$ConditionalVisibilitySettings",
+		"expression":     cv.Expression,
+		"conditions":     []any{},
+		"moduleRoles":    []any{},
+		"ignoreSecurity": false,
+	}
+}
+
+// mapPageWidgetBody maps the widget's own Pages$* form (without conditional
+// settings). Coverage grows one widget type at a time; unmapped widgets are
+// rejected.
+func (b *Backend) mapPageWidgetBody(w pages.Widget) (map[string]any, error) {
 	switch wd := w.(type) {
 	case *pages.Container:
 		children, err := b.mapPageWidgets(wd.Widgets)
