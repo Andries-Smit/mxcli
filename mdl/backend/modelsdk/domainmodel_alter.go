@@ -108,17 +108,8 @@ func (b *Backend) UpdateEntity(domainModelID model.ID, entity *domainmodel.Entit
 		return err
 	}
 	order := dm.EntitiesItems()
-	existing := findGenEntity(dm, entity.ID)
-	if existing == nil {
+	if findGenEntity(dm, entity.ID) == nil {
 		return fmt.Errorf("entity not found: %s", entity.ID)
-	}
-	// Event handlers are not round-tripped yet: the gen wires BSON keys
-	// Event/PassEventObject while the legacy serializer emits Type/SendInputParameter,
-	// a discrepancy that needs a real Studio-Pro reference to settle (cf. the index
-	// capture). Until then, refuse rather than risk corrupting them. Access rules,
-	// by contrast, are round-tripped (accessRuleFromGen/accessRuleToGen).
-	if len(existing.EventHandlersItems()) > 0 {
-		return fmt.Errorf("UpdateEntity: modelsdk engine cannot yet ALTER an entity with event handlers (%s) — use the legacy engine", entity.ID)
 	}
 
 	ge := entityToGen(entity, b.moduleNameFor(domainModelID))

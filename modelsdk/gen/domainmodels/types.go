@@ -1848,7 +1848,7 @@ func (o *Entity) InitFromRaw(raw bson.Raw) {
 			o.validationRules.AppendFromDecode(child)
 		}
 	}
-	if children, err := codec.DecodeChildren(raw, "EventHandlers"); err == nil {
+	if children, err := codec.DecodeChildren(raw, "Events"); err == nil { // storage name (SDK name: EventHandlers)
 		for _, child := range children {
 			o.eventHandlers.AppendFromDecode(child)
 		}
@@ -2202,7 +2202,7 @@ func (o *EventHandler) InitFromRaw(raw bson.Raw) {
 			o.moment.SetFromDecode(s)
 		}
 	}
-	if val, err := raw.LookupErr("Event"); err == nil {
+	if val, err := raw.LookupErr("Type"); err == nil { // storage name (SDK name: Event)
 		if s, ok := val.StringValueOK(); ok {
 			o.event.SetFromDecode(s)
 		}
@@ -2213,7 +2213,7 @@ func (o *EventHandler) InitFromRaw(raw bson.Raw) {
 		}
 	}
 	o.raiseErrorOnFalse.Init(raw)
-	o.passEventObject.Init(raw)
+	o.passEventObject.Init(raw) // reads "SendInputParameter" (the property's storage name)
 }
 
 // ────────────────────────────────────────────────────────
@@ -3870,7 +3870,11 @@ func initEntity() *Entity {
 	o.attributes.Bind(&o.Base, 5)
 	o.validationRules = property.NewPartList[element.Element]("ValidationRules")
 	o.validationRules.Bind(&o.Base, 6)
-	o.eventHandlers = property.NewPartList[element.Element]("EventHandlers")
+	// STORAGE-NAME OVERRIDE: BSON key is "Events", not the SDK name "EventHandlers"
+	// (verified against real Studio-Pro 11.x BSON, test7-app). Permanent fix belongs
+	// in supplements.json; patched here like the EntityEvent Type/SendInputParameter
+	// overrides. Must match the InitFromRaw decode key and the "Events" MandatoryList.
+	o.eventHandlers = property.NewPartList[element.Element]("Events")
 	o.eventHandlers.Bind(&o.Base, 7)
 	o.indexes = property.NewPartList[element.Element]("Indexes")
 	o.indexes.Bind(&o.Base, 8)
@@ -4047,13 +4051,17 @@ func initEventHandler() *EventHandler {
 	o.SetTypeName("DomainModels$EntityEvent")
 	o.moment = property.NewEnum[string]("Moment")
 	o.moment.Bind(&o.Base, 0)
-	o.event = property.NewEnum[string]("Event")
+	// STORAGE-NAME OVERRIDE: BSON key is "Type", not the SDK name "Event" (verified
+	// against real Studio-Pro 11.x BSON, test7-app IdxProbe). Permanent fix belongs
+	// in supplements.json; patched here like the ErrorMessage→Message override.
+	o.event = property.NewEnum[string]("Type")
 	o.event.Bind(&o.Base, 1)
 	o.microflow = property.NewByNameRef[element.Element]("Microflow", "Microflows$Microflow")
 	o.microflow.Bind(&o.Base, 2)
 	o.raiseErrorOnFalse = property.NewPrimitive[bool]("RaiseErrorOnFalse", property.DecodeBool)
 	o.raiseErrorOnFalse.Bind(&o.Base, 3)
-	o.passEventObject = property.NewPrimitive[bool]("PassEventObject", property.DecodeBool)
+	// STORAGE-NAME OVERRIDE: BSON key is "SendInputParameter", not "PassEventObject".
+	o.passEventObject = property.NewPrimitive[bool]("SendInputParameter", property.DecodeBool)
 	o.passEventObject.Bind(&o.Base, 4)
 	o.SetProperties([]element.Property{o.moment, o.event, o.microflow, o.raiseErrorOnFalse, o.passEventObject})
 	return o

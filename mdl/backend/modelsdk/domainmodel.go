@@ -111,9 +111,9 @@ func entityFromGen(e *genDm.Entity) *domainmodel.Entity {
 		}
 	}
 	for _, el := range e.EventHandlersItems() {
-		eh := &domainmodel.EventHandler{}
-		eh.ID = model.ID(el.ID())
-		out.EventHandlers = append(out.EventHandlers, eh)
+		if eh, ok := el.(*genDm.EventHandler); ok {
+			out.EventHandlers = append(out.EventHandlers, eventHandlerFromGen(eh))
+		}
 	}
 	return out
 }
@@ -144,6 +144,22 @@ func attributeFromGen(a *genDm.Attribute) *domainmodel.Attribute {
 		attr.Value = &domainmodel.AttributeValue{DefaultValue: sv.DefaultValue()}
 	}
 	return attr
+}
+
+// eventHandlerFromGen converts a gen EventHandler to a lossless
+// domainmodel.EventHandler so ALTER ENTITY preserves entity events on round-trip.
+// The gen reads the correct storage keys (Type, SendInputParameter) after the
+// storage-name override; the microflow is a by-name reference.
+func eventHandlerFromGen(eh *genDm.EventHandler) *domainmodel.EventHandler {
+	out := &domainmodel.EventHandler{
+		Moment:            domainmodel.EventMoment(eh.Moment()),
+		Event:             domainmodel.EventType(eh.Event()),
+		MicroflowName:     eh.MicroflowQualifiedName(),
+		RaiseErrorOnFalse: eh.RaiseErrorOnFalse(),
+		PassEventObject:   eh.PassEventObject(),
+	}
+	out.ID = model.ID(eh.ID())
+	return out
 }
 
 // accessRuleFromGen converts a gen AccessRule to a lossless domainmodel.AccessRule

@@ -679,3 +679,27 @@ Event/PassEventObject while legacy emits Type/SendInputParameter, a discrepancy 
 Studio-Pro reference to settle (an MCP capture, like the index spec) before it can be round-tripped.
 modelsdk domain-model write surface: create (entity/attrs/assoc/gen/validations/indexes) + DROP
 ENTITY + ALTER ENTITY (incl. access-rule entities; event-handler entities still deferred).
+
+### Event handlers round-trip; last ALTER guard removed (2026-06-07)
+
+MCP capture (test7-app IdxProbe, save + dump) settled the gen-vs-legacy disagreement — and this
+time **legacy was right, the gen was wrong**. Real Studio-Pro 11.x event-handler BSON:
+`EntityEvent { Microflow=<by-name>, Moment, RaiseErrorOnFalse, SendInputParameter, Type }`.
+
+Three gen storage-name bugs fixed (the gen both read and wrote the wrong keys, so event-handler
+reads silently returned 0):
+- `EventHandler` field `Event` → BSON key **`Type`** (init + InitFromRaw lookup).
+- `EventHandler` field `PassEventObject` → BSON key **`SendInputParameter`**.
+- `Entity.eventHandlers` list `EventHandlers` → BSON key **`Events`** (NewPartList + DecodeChildren;
+  must match the "Events" MandatoryList default, else a dirty entity double-emitted the list).
+
+Wired `eventHandlerFromGen`/`eventHandlerToGen`, added event handlers to `assignEntityIDs`, and
+**removed the last `UpdateEntity` guard**. `TestWriteParity_AlterKeepsEventHandler` is green (setup
+via legacy, ALTER via each engine, strict parity). The gen fix also corrects event-handler reads
+(SHOW ENTITIES event counts). No read or write regression.
+
+modelsdk domain-model write surface is now complete for ALTER: entity/attrs/assoc/gen/validations/
+indexes (create) + DROP ENTITY + ALTER ENTITY with **no remaining guards** (access rules AND event
+handlers round-trip). Two storage-name overrides (this + ErrorMessage→Message) should move to
+supplements.json when the codegen is next run. (Scratch in test7-app/MxcliDiskProbe: IdxProbe now
+also carries two duplicate event handlers from the capture — safe to delete.)

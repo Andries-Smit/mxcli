@@ -231,6 +231,9 @@ func entityToGen(e *domainmodel.Entity, moduleName string) *genDm.Entity {
 	for _, idx := range e.Indexes {
 		out.AddIndexes(indexToGen(idx))
 	}
+	for _, eh := range e.EventHandlers {
+		out.AddEventHandlers(eventHandlerToGen(eh))
+	}
 	if len(e.AccessRules) > 0 {
 		// Member accesses are kept in sync with the entity's attributes: every
 		// attribute has a MemberAccess in each rule, new ones joining with the
@@ -268,6 +271,30 @@ func syncMemberAccesses(gar *genDm.AccessRule, attrQNames []string) {
 			gar.AddMemberAccesses(ma)
 		}
 	}
+}
+
+// eventHandlerToGen converts a domainmodel.EventHandler to a gen EventHandler.
+// Mirrors the legacy serializer's defaults (Moment→Before, Event→Commit) and the
+// by-name microflow reference; the gen emits the correct storage keys (Type,
+// SendInputParameter) after the override.
+func eventHandlerToGen(eh *domainmodel.EventHandler) *genDm.EventHandler {
+	out := genDm.NewEventHandler()
+	moment := string(eh.Moment)
+	if moment == "" {
+		moment = "Before"
+	}
+	out.SetMoment(moment)
+	event := string(eh.Event)
+	if event == "" {
+		event = "Commit"
+	}
+	out.SetEvent(event)
+	if eh.MicroflowName != "" {
+		out.SetMicroflowQualifiedName(eh.MicroflowName)
+	}
+	out.SetRaiseErrorOnFalse(eh.RaiseErrorOnFalse)
+	out.SetPassEventObject(eh.PassEventObject)
+	return out
 }
 
 // accessRuleToGen converts a domainmodel.AccessRule to a gen AccessRule. Mirrors
@@ -491,6 +518,9 @@ func assignEntityIDs(e *genDm.Entity) {
 				assignID(ma)
 			}
 		}
+	}
+	for _, el := range e.EventHandlersItems() {
+		assignID(el)
 	}
 	for _, el := range e.ValidationRulesItems() {
 		assignID(el)

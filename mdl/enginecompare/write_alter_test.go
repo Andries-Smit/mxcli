@@ -68,6 +68,40 @@ func TestWriteParity_AlterKeepsAccessRule(t *testing.T) {
 	}
 }
 
+// TestWriteParity_AlterKeepsEventHandler verifies that ALTERing an entity which
+// has an event handler preserves it on the codec round-trip — the path the
+// UpdateEntity guard used to refuse, now closed after the MCP capture confirmed
+// the BSON keys (Type / SendInputParameter) and fixed the gen storage names.
+func TestWriteParity_AlterKeepsEventHandler(t *testing.T) {
+	const ent = "MyFirstModule.EvtEnt"
+	setup := []string{
+		"CREATE MICROFLOW MyFirstModule.OnEvt () RETURNS BOOLEAN BEGIN RETURN true END",
+		"CREATE PERSISTENT ENTITY " + ent + " ( Code: string(20), Rank: integer )",
+		"ALTER ENTITY " + ent + " ADD EVENT HANDLER ON BEFORE COMMIT CALL MyFirstModule.OnEvt RAISE ERROR",
+	}
+	alter := "ALTER ENTITY " + ent + " ADD ATTRIBUTE Extra: boolean"
+
+	run := func(alterEng Engine) string {
+		p := copyProject(t)
+		for _, s := range setup {
+			if _, e := Run(Legacy, p, s); e != nil {
+				t.Fatalf("setup %q: %v", s, e)
+			}
+		}
+		if _, e := Run(alterEng, p, alter); e != nil {
+			t.Fatalf("%s alter: %v", alterEng, e)
+		}
+		s, e := EntityCanonBSON(p, "MyFirstModule", "EvtEnt")
+		if e != nil {
+			t.Fatalf("%s canon: %v", alterEng, e)
+		}
+		return s
+	}
+	if leg, msd := run(Legacy), run(ModelSDK); leg != msd {
+		t.Errorf("ALTER-keeps-event-handler divergence:\nlegacy:   %s\nmodelsdk: %s", leg, msd)
+	}
+}
+
 // alterSeq runs a CREATE then an ALTER as two sessions (so the ALTER loads the
 // entity from disk: read-modify-write), returning the entity's canonical BSON.
 func alterSeq(t *testing.T, eng Engine, create, alter, module, entity string) string {
