@@ -28,6 +28,8 @@ func init() {
 	for _, t := range []string{"Microflows$NoCase", "Microflows$EnumerationCase", "Microflows$ExpressionCase", "Microflows$InheritanceCase"} {
 		codec.RegisterListMarker(t, 2)
 	}
+	// Create/Change actions store their member-change Items list with marker 2.
+	codec.RegisterListMarker("Microflows$ChangeActionItem", 2)
 }
 
 // majorVersion returns the project's Mendix major version (for version-gated BSON).
@@ -164,9 +166,96 @@ func microflowObjectToGen(obj microflows.MicroflowObject) element.Element {
 		g.SetReturnValue(o.ReturnValue)
 		g.SetSize(sizeStr(o.Size))
 		return g
+	case *microflows.ActionActivity:
+		g := genMf.NewActionActivity()
+		g.SetID(element.ID(o.ID))
+		if a := microflowActionToGen(o.Action); a != nil {
+			g.SetAction(a)
+		}
+		g.SetAutoGenerateCaption(o.AutoGenerateCaption)
+		g.SetBackgroundColor(orDefault(o.BackgroundColor, "Default"))
+		g.SetCaption(o.Caption)
+		g.SetDisabled(o.Disabled)
+		g.SetDocumentation(o.Documentation)
+		g.SetRelativeMiddlePoint(pointStr(o.Position))
+		g.SetSize(sizeStr(o.Size))
+		return g
 	default:
 		return nil // unsupported object type (added in later activity groups)
 	}
+}
+
+// microflowActionToGen dispatches a microflow action to its gen element. Object
+// operations group: create/change/commit/delete/rollback. Uses the storage $Type
+// (set by the gen constructors). Returns nil for not-yet-supported actions.
+func microflowActionToGen(action microflows.MicroflowAction) element.Element {
+	switch a := action.(type) {
+	case *microflows.CreateObjectAction:
+		g := genMf.NewCreateObjectAction()
+		g.SetID(element.ID(a.ID))
+		g.SetCommit(string(a.Commit))
+		if a.EntityQualifiedName != "" {
+			g.SetEntityQualifiedName(a.EntityQualifiedName)
+		}
+		g.SetErrorHandlingType(orDefault(string(a.ErrorHandlingType), "Rollback"))
+		for _, m := range a.InitialMembers {
+			g.AddItems(memberChangeToGen(m))
+		}
+		g.SetRefreshInClient(false)
+		g.SetOutputVariableName(a.OutputVariable)
+		return g
+	case *microflows.ChangeObjectAction:
+		g := genMf.NewChangeObjectAction()
+		g.SetID(element.ID(a.ID))
+		g.SetChangeVariableName(a.ChangeVariable)
+		g.SetCommit(string(a.Commit))
+		g.SetErrorHandlingType(orDefault(string(a.ErrorHandlingType), "Rollback"))
+		for _, m := range a.Changes {
+			g.AddItems(memberChangeToGen(m))
+		}
+		g.SetRefreshInClient(a.RefreshInClient)
+		return g
+	case *microflows.CommitObjectsAction:
+		g := genMf.NewCommitAction()
+		g.SetID(element.ID(a.ID))
+		g.SetCommitVariableName(a.CommitVariable)
+		g.SetErrorHandlingType(orDefault(string(a.ErrorHandlingType), "Rollback"))
+		g.SetRefreshInClient(a.RefreshInClient)
+		g.SetWithEvents(a.WithEvents)
+		return g
+	case *microflows.DeleteObjectAction:
+		g := genMf.NewDeleteAction()
+		g.SetID(element.ID(a.ID))
+		g.SetDeleteVariableName(a.DeleteVariable)
+		g.SetRefreshInClient(a.RefreshInClient)
+		return g
+	case *microflows.RollbackObjectAction:
+		g := genMf.NewRollbackAction()
+		g.SetID(element.ID(a.ID))
+		g.SetRollbackVariableName(a.RollbackVariable)
+		g.SetRefreshInClient(a.RefreshInClient)
+		return g
+	default:
+		return nil // not yet supported (added in later groups)
+	}
+}
+
+// memberChangeToGen builds a gen MemberChange (ChangeActionItem). Mirrors legacy:
+// Association is emitted as "" for attribute-targeted changes.
+func memberChangeToGen(m *microflows.MemberChange) element.Element {
+	g := genMf.NewMemberChange()
+	g.SetID(element.ID(m.ID))
+	if m.AssociationQualifiedName != "" {
+		g.SetAssociationQualifiedName(m.AssociationQualifiedName)
+	} else {
+		g.SetAssociationQualifiedName("")
+		if m.AttributeQualifiedName != "" {
+			g.SetAttributeQualifiedName(m.AttributeQualifiedName)
+		}
+	}
+	g.SetType(string(m.Type))
+	g.SetValue(m.Value)
+	return g
 }
 
 // microflowParameterToGen builds a gen MicroflowParameter (position derives from
@@ -219,7 +308,7 @@ func microflowDataTypeToGen(dt microflows.DataType) element.Element {
 	if dt == nil {
 		return genDT.NewVoidType()
 	}
-	switch dt.(type) {
+	switch a := dt.(type) {
 	case *microflows.BooleanType:
 		return genDT.NewBooleanType()
 	case *microflows.IntegerType, *microflows.LongType:
@@ -228,8 +317,18 @@ func microflowDataTypeToGen(dt microflows.DataType) element.Element {
 		return genDT.NewDecimalType()
 	case *microflows.StringType:
 		return genDT.NewStringType()
-	case *microflows.DateTimeType:
+	case *microflows.DateTimeType, *microflows.DateType: // Date maps to DateTime in BSON
 		return genDT.NewDateTimeType()
+	case *microflows.BinaryType:
+		return genDT.NewBinaryType()
+	case *microflows.ObjectType:
+		t := genDT.NewObjectType()
+		t.SetEntityQualifiedName(a.EntityQualifiedName)
+		return t
+	case *microflows.ListType:
+		t := genDT.NewListType()
+		t.SetEntityQualifiedName(a.EntityQualifiedName)
+		return t
 	default:
 		return genDT.NewVoidType()
 	}
@@ -246,6 +345,20 @@ func assignMicroflowIDs(m *genMf.Microflow) {
 			assignID(el)
 			if p, ok := el.(*genMf.MicroflowParameter); ok {
 				assignID(p.ParameterType())
+			}
+			if aa, ok := el.(*genMf.ActionActivity); ok {
+				act := aa.Action()
+				assignID(act)
+				switch a := act.(type) {
+				case *genMf.CreateObjectAction:
+					for _, it := range a.ItemsItems() {
+						assignID(it)
+					}
+				case *genMf.ChangeObjectAction:
+					for _, it := range a.ItemsItems() {
+						assignID(it)
+					}
+				}
 			}
 		}
 	}
