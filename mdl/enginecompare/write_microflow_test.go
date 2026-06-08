@@ -44,6 +44,32 @@ func TestWriteParity_Microflow_ObjectOps(t *testing.T) {
 	}
 }
 
+// TestWriteParity_Microflow_Splits validates the exclusive-split group: an if/else
+// (ExclusiveSplit + ExpressionSplitCondition + ExclusiveMerge + branch flows whose
+// cases serialize as EnumerationCase true/false), with supported branch activities.
+func TestWriteParity_Microflow_Splits(t *testing.T) {
+	const setup = "CREATE PERSISTENT ENTITY MyFirstModule.SThing ( Count: integer )"
+	const mf = "CREATE MICROFLOW MyFirstModule.MfSplit (Item: MyFirstModule.SThing) BEGIN " +
+		"if $Item/Count > 10 then commit $Item; else rollback $Item; end if; END"
+	run := func(eng Engine) string {
+		p := copyProject(t)
+		if _, e := Run(Legacy, p, setup); e != nil {
+			t.Fatalf("setup: %v", e)
+		}
+		if _, e := Run(eng, p, mf); e != nil {
+			t.Fatalf("%s create: %v", eng, e)
+		}
+		s, e := MicroflowCanonBSON(p, "MyFirstModule", "MfSplit")
+		if e != nil {
+			t.Fatalf("%s canon: %v", eng, e)
+		}
+		return s
+	}
+	if leg, msd := run(Legacy), run(ModelSDK); leg != msd {
+		t.Errorf("split divergence:\nlegacy:   %s\nmodelsdk: %s", leg, msd)
+	}
+}
+
 // TestWriteParity_Microflow_Retrieve validates the retrieve group: database
 // source (all + XPath) and association source. Real BSON (test7) confirmed a
 // DatabaseRetrieveSource always carries a default Range + an empty NewSortings.

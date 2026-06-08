@@ -186,6 +186,24 @@ func microflowObjectToGen(obj microflows.MicroflowObject) element.Element {
 		g.SetRelativeMiddlePoint(pointStr(o.Position))
 		g.SetSize(sizeStr(o.Size))
 		return g
+	case *microflows.ExclusiveSplit:
+		g := genMf.NewExclusiveSplit()
+		g.SetID(element.ID(o.ID))
+		g.SetCaption(o.Caption)
+		g.SetDocumentation(o.Documentation)
+		g.SetErrorHandlingType(string(o.ErrorHandlingType))
+		g.SetRelativeMiddlePoint(pointStr(o.Position))
+		g.SetSize(sizeStr(o.Size))
+		if sc := splitConditionToGen(o.SplitCondition); sc != nil {
+			g.SetSplitCondition(sc)
+		}
+		return g
+	case *microflows.ExclusiveMerge:
+		g := genMf.NewExclusiveMerge()
+		g.SetID(element.ID(o.ID))
+		g.SetRelativeMiddlePoint(pointStr(o.Position))
+		g.SetSize(sizeStr(o.Size))
+		return g
 	default:
 		return nil // unsupported object type (added in later activity groups)
 	}
@@ -252,6 +270,40 @@ func microflowActionToGen(action microflows.MicroflowAction) element.Element {
 		return g
 	default:
 		return nil // not yet supported (added in later groups)
+	}
+}
+
+// splitConditionToGen builds an exclusive-split condition. Rule conditions are a
+// later slice (RuleCall + parameter mappings).
+func splitConditionToGen(sc microflows.SplitCondition) element.Element {
+	switch c := sc.(type) {
+	case *microflows.ExpressionSplitCondition:
+		g := genMf.NewExpressionSplitCondition()
+		g.SetID(element.ID(c.ID))
+		g.SetExpression(c.Expression)
+		return g
+	default:
+		return nil
+	}
+}
+
+// caseValueToGen renders a sequence-flow case. ExpressionCase is serialized AS an
+// EnumerationCase with Value = the expression ("true"/"false") — Studio Pro has
+// never recognised Microflows$ExpressionCase (verified vs legacy). Default NoCase.
+func caseValueToGen(cv microflows.CaseValue) element.Element {
+	switch c := cv.(type) {
+	case *microflows.EnumerationCase:
+		g := genMf.NewEnumerationCase()
+		g.SetID(element.ID(c.ID))
+		g.SetValue(c.Value)
+		return g
+	case *microflows.ExpressionCase:
+		g := genMf.NewEnumerationCase()
+		g.SetID(element.ID(c.ID))
+		g.SetValue(c.Expression)
+		return g
+	default:
+		return genMf.NewNoCase()
 	}
 }
 
@@ -366,11 +418,6 @@ func sequenceFlowToGen(f *microflows.SequenceFlow, major int) element.Element {
 	return g
 }
 
-// caseValueToGen renders a sequence-flow case (NoCase default).
-func caseValueToGen(cv microflows.CaseValue) element.Element {
-	return genMf.NewNoCase()
-}
-
 // microflowDataTypeToGen maps a microflow DataType to a gen DataTypes$* element
 // (nil → VoidType). Long maps to IntegerType (per the legacy serializer).
 func microflowDataTypeToGen(dt microflows.DataType) element.Element {
@@ -414,6 +461,9 @@ func assignMicroflowIDs(m *genMf.Microflow) {
 			assignID(el)
 			if p, ok := el.(*genMf.MicroflowParameter); ok {
 				assignID(p.ParameterType())
+			}
+			if es, ok := el.(*genMf.ExclusiveSplit); ok {
+				assignID(es.SplitCondition())
 			}
 			if aa, ok := el.(*genMf.ActionActivity); ok {
 				act := aa.Action()
