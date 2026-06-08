@@ -168,6 +168,11 @@ func (e *Encoder) buildDoc(elem element.Element) (bson.D, error) {
 					doc = append(doc, bson.E{Key: name, Value: zeroGUIDBinary()})
 				}
 			}
+			for _, name := range d.FreshGUIDFields {
+				if !emitted[name] {
+					doc = append(doc, bson.E{Key: name, Value: idToBinarySubtype0("")})
+				}
+			}
 		}
 		return doc, nil
 	}

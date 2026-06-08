@@ -29,6 +29,11 @@ type TypeDefaults struct {
 	// AssociationPointer on an attribute-based index segment). Emitted when not
 	// otherwise set. Stands in for a gen property the constructor doesn't expose.
 	ZeroGUIDFields []string
+	// FreshGUIDFields are keys Studio Pro serializes as a fresh random GUID binary
+	// (subtype 0), e.g. a microflow's StableId. Emitted when not otherwise set.
+	// Stands in for a gen property mistyped as a string. The value is opaque to
+	// Studio Pro (and masked in canonical comparison), so a fresh GUID suffices.
+	FreshGUIDFields []string
 }
 
 var registeredDefaults = map[string]TypeDefaults{}

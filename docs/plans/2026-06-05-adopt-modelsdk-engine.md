@@ -767,3 +767,23 @@ microflowToGen wrapper (all fields, v10+ gated) + microflowReturnTypeToGen + Obj
 (microflowObjectToGen dispatch: StartEvent/EndEvent/MicroflowParameter first) + Flows
 (sequenceFlowToGen) + assignMicroflowIDs. Parity-test the simplest microflow (start→end), then add
 activity groups incrementally (object ops → splits → loops → calls → java/REST).
+
+### Microflows: skeleton CREATE at parity (2026-06-08)
+
+`microflow_write.go` — Create/Update/Delete (unit-write pattern) + `microflowToGen` wrapper +
+`microflowObjectToGen` (StartEvent/EndEvent) + `sequenceFlowToGen` (v10+ CaseValues marker-2 + Line
+BezierCurve, NoCase default) + `microflowDataTypeToGen` (return/param types) + `assignMicroflowIDs`.
+`TestWriteParity_Microflow_Skeleton` (CREATE MICROFLOW … RETURNS BOOLEAN BEGIN RETURN true END,
+start→end, no params) is green — byte-identical to legacy.
+
+Two new findings while reaching parity:
+- **StableId is binary, not a string** — the gen mistypes it as a string primitive (so reads were
+  broken and writes emitted a string). Added a `FreshGUIDFields` codec default (emits a fresh GUID
+  binary subtype 0) and registered it for Microflows$Microflow; StableId is no longer set as a string.
+- AllowedModuleRoles needed explicit emission (empty marker-1 by-name list), like UrlSearchParameters.
+- Registered CaseValues list marker 2 (keyed by the case child types: NoCase/Enumeration/Expression/
+  Inheritance), mirroring the index IndexedAttribute marker.
+
+Known gap deferred to the parameters group: the gen MicroflowParameter is missing Documentation/
+HasVariableNameBeenChanged/IsRequired/DefaultValue (legacy emits them) — skeleton uses a no-param
+microflow. Next: parameters group, then activity groups (object ops → splits → loops → calls → java/REST).
