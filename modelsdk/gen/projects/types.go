@@ -917,7 +917,9 @@ func initModule() *Module {
 	o.folders.Bind(&o.Base, 0)
 	o.documents = property.NewPartList[element.Element]("Documents")
 	o.documents.Bind(&o.Base, 1)
-	o.sortIndex = property.NewPrimitive[float64]("SortIndex", property.DecodeFloat64)
+	// STORAGE-NAME OVERRIDE: BSON key is "NewSortIndex" (a double), not "SortIndex"
+	// (verified vs real BSON, test7 MyFirstModule). Permanent fix = supplements.json.
+	o.sortIndex = property.NewPrimitive[float64]("NewSortIndex", property.DecodeFloat64)
 	o.sortIndex.Bind(&o.Base, 2)
 	o.name = property.NewPrimitive[string]("Name", property.DecodeString)
 	o.name.Bind(&o.Base, 3)
