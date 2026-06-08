@@ -1098,7 +1098,7 @@ func (o *AssociationRetrieveSource) SetAssociationQualifiedName(v string) {
 // InitFromRaw populates lazy-decoded property holders from raw BSON.
 func (o *AssociationRetrieveSource) InitFromRaw(raw bson.Raw) {
 	o.startVariableName.Init(raw)
-	if val, err := raw.LookupErr("Association"); err == nil {
+	if val, err := raw.LookupErr("AssociationId"); err == nil { // storage name (SDK name: Association)
 		if s, ok := val.StringValueOK(); ok {
 			o.association.SetFromDecode(s)
 		}
@@ -12651,7 +12651,9 @@ func initAssociationRetrieveSource() *AssociationRetrieveSource {
 	o.SetTypeName("Microflows$AssociationRetrieveSource")
 	o.startVariableName = property.NewPrimitive[string]("StartVariableName", property.DecodeString)
 	o.startVariableName.Bind(&o.Base, 0)
-	o.association = property.NewByNameRef[element.Element]("Association", "DomainModels$AssociationBase")
+	// STORAGE-NAME OVERRIDE: BSON key is "AssociationId", not "Association" (verified
+	// vs real BSON, test7 SaveNewAccount). Permanent fix = supplements.json.
+	o.association = property.NewByNameRef[element.Element]("AssociationId", "DomainModels$AssociationBase")
 	o.association.Bind(&o.Base, 1)
 	o.SetProperties([]element.Property{o.startVariableName, o.association})
 	return o

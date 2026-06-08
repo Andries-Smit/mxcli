@@ -19,8 +19,12 @@ type TypeDefaults struct {
 	// EmitGUID adds {GUID: <$ID as binary subtype 0>} (domain-model elements).
 	EmitGUID bool
 	// MandatoryLists are PartList BSON keys Studio Pro always serializes; the
-	// encoder emits each (empty) as the typed-array marker when not otherwise set.
+	// encoder emits each (empty) as the typed-array marker [3] when not otherwise set.
 	MandatoryLists []string
+	// MandatoryListMarkers are mandatory PartList keys whose empty form uses a
+	// non-default marker (e.g. a SortingsList's "Sortings" empties as [2]). Emitted
+	// as bson.A{marker} when not otherwise set.
+	MandatoryListMarkers map[string]int32
 	// NullFields are keys Studio Pro always serializes as BSON null (e.g. an
 	// unset reference like an association's Source); emitted when not otherwise set.
 	NullFields []string

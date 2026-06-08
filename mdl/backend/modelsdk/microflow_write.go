@@ -30,6 +30,12 @@ func init() {
 	}
 	// Create/Change actions store their member-change Items list with marker 2.
 	codec.RegisterListMarker("Microflows$ChangeActionItem", 2)
+	// A retrieve's SortingsList always serializes its (possibly empty) Sortings
+	// list with marker 2 (verified vs real BSON: test7 PopulateUserAttributes).
+	codec.RegisterTypeDefaults("Microflows$SortingsList", codec.TypeDefaults{
+		MandatoryListMarkers: map[string]int32{"Sortings": 2},
+	})
+	codec.RegisterListMarker("Microflows$RetrieveSorting", 2)
 }
 
 // majorVersion returns the project's Mendix major version (for version-gated BSON).
@@ -235,9 +241,72 @@ func microflowActionToGen(action microflows.MicroflowAction) element.Element {
 		g.SetRollbackVariableName(a.RollbackVariable)
 		g.SetRefreshInClient(a.RefreshInClient)
 		return g
+	case *microflows.RetrieveAction:
+		g := genMf.NewRetrieveAction()
+		g.SetID(element.ID(a.ID))
+		g.SetErrorHandlingType("Rollback")
+		g.SetOutputVariableName(a.OutputVariable)
+		if src := retrieveSourceToGen(a.Source); src != nil {
+			g.SetRetrieveSource(src)
+		}
+		return g
 	default:
 		return nil // not yet supported (added in later groups)
 	}
+}
+
+// retrieveSourceToGen builds a gen retrieve source. Verified against real BSON
+// (test7): a DatabaseRetrieveSource always carries a Range (default ConstantRange,
+// SingleObject=false) and a NewSortings SortingsList (empty Sortings=[2]).
+func retrieveSourceToGen(src microflows.RetrieveSource) element.Element {
+	switch s := src.(type) {
+	case *microflows.DatabaseRetrieveSource:
+		g := genMf.NewDatabaseRetrieveSource()
+		g.SetID(element.ID(s.ID))
+		if s.EntityQualifiedName != "" {
+			g.SetEntityQualifiedName(s.EntityQualifiedName)
+		}
+		g.SetRange(rangeToGen(s.Range))
+		if s.XPathConstraint != "" {
+			g.SetXPathConstraint(s.XPathConstraint)
+		}
+		g.SetSortItemList(genMf.NewSortItemList()) // empty Sortings=[2] via default; sort columns are a later slice
+		return g
+	case *microflows.AssociationRetrieveSource:
+		g := genMf.NewAssociationRetrieveSource()
+		g.SetID(element.ID(s.ID))
+		if s.StartVariable != "" {
+			g.SetStartVariableName(s.StartVariable)
+		}
+		if s.AssociationQualifiedName != "" {
+			g.SetAssociationQualifiedName(s.AssociationQualifiedName)
+		}
+		return g
+	default:
+		return nil
+	}
+}
+
+// rangeToGen builds a gen retrieve Range; nil → default ConstantRange (retrieve all).
+func rangeToGen(r *microflows.Range) element.Element {
+	if r == nil {
+		g := genMf.NewConstantRange()
+		g.SetSingleObject(false)
+		return g
+	}
+	if r.RangeType == microflows.RangeTypeCustom {
+		g := genMf.NewCustomRange()
+		if r.Limit != "" {
+			g.SetLimitExpression(r.Limit)
+		}
+		if r.Offset != "" {
+			g.SetOffsetExpression(r.Offset)
+		}
+		return g
+	}
+	g := genMf.NewConstantRange()
+	g.SetSingleObject(r.RangeType == microflows.RangeTypeFirst)
+	return g
 }
 
 // memberChangeToGen builds a gen MemberChange (ChangeActionItem). Mirrors legacy:
@@ -357,6 +426,18 @@ func assignMicroflowIDs(m *genMf.Microflow) {
 				case *genMf.ChangeObjectAction:
 					for _, it := range a.ItemsItems() {
 						assignID(it)
+					}
+				case *genMf.RetrieveAction:
+					src := a.RetrieveSource()
+					assignID(src)
+					if db, ok := src.(*genMf.DatabaseRetrieveSource); ok {
+						assignID(db.Range())
+						if sl, ok := db.SortItemList().(*genMf.SortItemList); ok {
+							assignID(sl)
+							for _, it := range sl.ItemsItems() {
+								assignID(it)
+							}
+						}
 					}
 				}
 			}

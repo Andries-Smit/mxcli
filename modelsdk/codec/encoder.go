@@ -3,6 +3,7 @@ package codec
 import (
 	"bytes"
 	"fmt"
+	"sort"
 	"unsafe"
 
 	"github.com/mendixlabs/mxcli/modelsdk/element"
@@ -156,6 +157,18 @@ func (e *Encoder) buildDoc(elem element.Element) (bson.D, error) {
 			for _, name := range d.MandatoryLists {
 				if !emitted[name] {
 					doc = append(doc, bson.E{Key: name, Value: bson.A{int32(3)}})
+				}
+			}
+			if len(d.MandatoryListMarkers) > 0 {
+				names := make([]string, 0, len(d.MandatoryListMarkers))
+				for name := range d.MandatoryListMarkers {
+					names = append(names, name)
+				}
+				sort.Strings(names)
+				for _, name := range names {
+					if !emitted[name] {
+						doc = append(doc, bson.E{Key: name, Value: bson.A{d.MandatoryListMarkers[name]}})
+					}
 				}
 			}
 			for _, name := range d.NullFields {

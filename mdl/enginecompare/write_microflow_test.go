@@ -44,6 +44,45 @@ func TestWriteParity_Microflow_ObjectOps(t *testing.T) {
 	}
 }
 
+// TestWriteParity_Microflow_Retrieve validates the retrieve group: database
+// source (all + XPath) and association source. Real BSON (test7) confirmed a
+// DatabaseRetrieveSource always carries a default Range + an empty NewSortings.
+func TestWriteParity_Microflow_Retrieve(t *testing.T) {
+	setup := []string{
+		"CREATE PERSISTENT ENTITY MyFirstModule.RThing ( Code: string(20), Count: integer )",
+		"CREATE PERSISTENT ENTITY MyFirstModule.ROther ( Label: string(20) )",
+		"CREATE ASSOCIATION MyFirstModule.RThing_ROther FROM MyFirstModule.RThing TO MyFirstModule.ROther",
+	}
+	cases := []struct{ name, stmt, mf string }{
+		{"DatabaseAll", "CREATE MICROFLOW MyFirstModule.MfRetAll () BEGIN retrieve $L from MyFirstModule.RThing; END", "MfRetAll"},
+		{"DatabaseWhere", "CREATE MICROFLOW MyFirstModule.MfRetWhere () BEGIN retrieve $L from MyFirstModule.RThing where Count = 5; END", "MfRetWhere"},
+		{"Association", "CREATE MICROFLOW MyFirstModule.MfRetAssoc (Item: MyFirstModule.RThing) BEGIN retrieve $L from $Item/MyFirstModule.RThing_ROther; END", "MfRetAssoc"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			run := func(eng Engine) string {
+				p := copyProject(t)
+				for _, s := range setup {
+					if _, e := Run(Legacy, p, s); e != nil {
+						t.Fatalf("setup %q: %v", s, e)
+					}
+				}
+				if _, e := Run(eng, p, c.stmt); e != nil {
+					t.Fatalf("%s create: %v", eng, e)
+				}
+				s, e := MicroflowCanonBSON(p, "MyFirstModule", c.mf)
+				if e != nil {
+					t.Fatalf("%s canon: %v", eng, e)
+				}
+				return s
+			}
+			if leg, msd := run(Legacy), run(ModelSDK); leg != msd {
+				t.Errorf("%s divergence:\nlegacy:   %s\nmodelsdk: %s", c.name, leg, msd)
+			}
+		})
+	}
+}
+
 // TestWriteParity_Microflow validates the codec-native microflow CREATE path
 // against legacy, group by group. Skeleton = start → end, boolean return.
 func TestWriteParity_Microflow(t *testing.T) {
