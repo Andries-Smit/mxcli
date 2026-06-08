@@ -25,4 +25,16 @@ func TestSessionModuleResolution(t *testing.T) {
 	if err != nil || got.ID != "mcp~module~NewMod" {
 		t.Fatalf("GetModule(by id) = %+v / %v", got, err)
 	}
+
+	// GetDomainModel for a session module returns an empty synthetic DM whose ID
+	// round-trips through moduleNameForDomainModel back to the module name — so
+	// "create module X; create entity X.Foo" resolves in one run.
+	dm, err := b.GetDomainModel(mod.ID)
+	if err != nil || dm.ID != "mcp~dm~NewMod" || dm.ContainerID != mod.ID || len(dm.Entities) != 0 {
+		t.Fatalf("GetDomainModel(session module) = %+v / %v", dm, err)
+	}
+	name, err := b.moduleNameForDomainModel(dm.ID)
+	if err != nil || name != "NewMod" {
+		t.Fatalf("moduleNameForDomainModel(%s) = %q / %v", dm.ID, name, err)
+	}
 }

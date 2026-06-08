@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/mendixlabs/mxcli/model"
 	"github.com/mendixlabs/mxcli/sdk/domainmodel"
@@ -550,6 +551,11 @@ func unsupportedEntityFeature(entityName, feature string) error {
 // moduleNameForDomainModel resolves the PED documentName (the module name) for
 // a domain-model ID using the local reader.
 func (b *Backend) moduleNameForDomainModel(domainModelID model.ID) (string, error) {
+	// Synthetic domain model for a session-created module (see GetDomainModel):
+	// the module name is encoded in the ID.
+	if name, ok := strings.CutPrefix(string(domainModelID), sessionDMPrefix); ok {
+		return name, nil
+	}
 	dm, err := b.reader.GetDomainModelByID(domainModelID)
 	if err != nil {
 		return "", fmt.Errorf("resolve domain model %s: %w", domainModelID, err)
@@ -661,15 +667,29 @@ func (b *Backend) pedUpdate(moduleName string, ops ...pedOpEntry) error {
 // source doc, …). Callers that change a module's domain model use pedUpdate,
 // which also marks the module dirty.
 func (b *Backend) pedUpdateDoc(docType, docName string, ops ...pedOpEntry) error {
-	res, err := b.client.CallTool("ped_update_document", map[string]any{
-		"documentType": docType,
-		"documentName": docName,
-		"operations":   ops,
-	})
-	if err != nil {
-		return err
+	// A module created via ped_create_module this session lags briefly before
+	// ped_update_document can mutate it ("Module ... not found"), even though the
+	// create flushed to disk. Retry on that transient with a short backoff.
+	const maxAttempts = 6
+	for attempt := 0; ; attempt++ {
+		res, err := b.client.CallTool("ped_update_document", map[string]any{
+			"documentType": docType,
+			"documentName": docName,
+			"operations":   ops,
+		})
+		if err != nil {
+			return err
+		}
+		opErr := pedOpError("ped_update_document", docName, res)
+		if opErr == nil {
+			return nil
+		}
+		if attempt < maxAttempts-1 && strings.Contains(opErr.Error(), "not found") {
+			time.Sleep(300 * time.Millisecond)
+			continue
+		}
+		return opErr
 	}
-	return pedOpError("ped_update_document", docName, res)
 }
 
 // pedStripReminder removes the trailing <system-reminder>…</system-reminder>

@@ -292,12 +292,28 @@ func (b *Backend) ListDomainModels() ([]*domainmodel.DomainModel, error) {
 // model so in-session edits are visible; otherwise it comes from the local
 // reader (last-saved state).
 func (b *Backend) GetDomainModel(moduleID model.ID) (*domainmodel.DomainModel, error) {
+	// A module created over MCP this session has no on-disk domain model for the
+	// reader to read (the reader is a pre-create snapshot). Return an empty
+	// synthetic domain model whose ID encodes the module name, so a subsequent
+	// CREATE ENTITY in the same run resolves back to it (moduleNameForDomainModel).
+	for _, m := range b.sessionModules {
+		if m.ID == moduleID {
+			dm := &domainmodel.DomainModel{ContainerID: moduleID}
+			dm.ID = model.ID(sessionDMPrefix + m.Name)
+			dm.TypeName = "DomainModels$DomainModel"
+			return dm, nil
+		}
+	}
 	mod, err := b.reader.GetModule(moduleID)
 	if err == nil && b.dirty[mod.Name] {
 		return b.reconstructDomainModel(mod.Name, moduleID)
 	}
 	return b.reader.GetDomainModel(moduleID)
 }
+
+// sessionDMPrefix prefixes the synthetic domain-model ID handed out for a
+// session-created module; the suffix is the module name.
+const sessionDMPrefix = "mcp~dm~"
 
 // GetDomainModelByID mirrors GetDomainModel but is keyed by the domain model's
 // own ID; it resolves the owning module and applies the same dirty routing.

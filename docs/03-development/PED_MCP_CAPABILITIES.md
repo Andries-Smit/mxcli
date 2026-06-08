@@ -99,8 +99,14 @@ makes in-session edits visible.
 `CREATE MODULE` routes through `ped_create_module` (which flushes to disk
 immediately) and registers the module in a session list merged into
 `ListModules`/`GetModule(ByName)`, so a later op in the same run — e.g. `create
-module X; create enumeration X.Y` — resolves the freshly created module (the
-local reader does not yet know about it). The standalone-doc create paths
+module X; create enumeration X.Y`, or `create module X; create entity X.Foo` —
+resolves the freshly created module (the local reader does not yet know about it).
+For entities, `GetDomainModel` returns an empty **synthetic** domain model for a
+session module (ID `mcp~dm~<module>`, which `moduleNameForDomainModel` decodes
+back to the module name) since the reader has no on-disk domain model to read.
+**Quirk:** a module created via `ped_create_module` lags briefly before
+`ped_update_document` can mutate it (errors `Module ... not found` even though the
+create flushed), so `pedUpdateDoc` retries on that transient with a short backoff. The standalone-doc create paths
 (enumeration/page/microflow) resolve their module via `GetModule` (session-aware)
 rather than the reader directly. Note `ped_create_module`'s success text is
 `"Module 'X' created successfully."`, NOT the `SUCCESS`-prefix the document ops
