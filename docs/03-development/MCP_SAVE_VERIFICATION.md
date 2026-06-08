@@ -67,6 +67,16 @@ Paste this into Claude Code in the Concord terminal (Studio Pro, macOS):
 > - If it didn't persist, do a **manual Cmd-S** in Studio Pro and re-check — that
 >   isolates "the automation didn't land" from "the project can't save."
 
+## Result (2026-06-08, Studio Pro 11.11 Beta)
+
+**Confirmed broken.** Run from Claude Code in the Concord terminal with a single
+active Studio Pro instance (frontmost), `save_all` did **not** persist the change
+**and hung Studio Pro** while Concord tried to drive the save. This rules out the
+two-instance ambiguity — it is a genuine **Concord/Studio Pro `save_all` bug**
+(the synthetic Cmd-S hangs the IDE), to be reported upstream. Use manual Cmd-S in
+Studio Pro meanwhile. `--mcp-save` is wired correctly and will work unchanged once
+`save_all` is fixed; re-run this procedure to re-confirm after a Concord update.
+
 ## Interpreting the result
 
 - **mtime advances + `SaveProbeMac` on disk** → `--mcp-save` works; the

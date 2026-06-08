@@ -282,17 +282,19 @@ Wired so far:
      `open -n -a "<app>" --args …` (launchd → app is its own responsible process)
      and grant Studio Pro Accessibility. Otherwise it fails `osascript is not
      allowed to send keystrokes (1002)`.
-  2. **The keystroke may not save even when permitted.** With permission granted
-     and Studio Pro frontmost, `save_all` returned `{"status":"save_command_sent"}`
-     yet the project on disk did **not** change (mtime unmoved, new docs absent) —
-     verified on a virtiofs-shared project so disk reads are authoritative.
-     Suspected cause: two Studio Pro instances sharing one bundle id make
-     "activate + Cmd+S" target the wrong window, and/or Studio Pro not honoring
-     synthetic keystrokes. **Treat `--mcp-save` as best-effort; confirm the save
-     in Studio Pro (or just Ctrl+S there).** The backend reports a save *failure*
-     as a stderr warning, but a silently-no-op `save_command_sent` it cannot
-     detect. This is a Concord automation limitation, not a backend issue —
-     model-based gap-closers (`delete_document`, `check_model`) do not have it.
+  2. **The keystroke does not save, and hangs Studio Pro — confirmed broken in
+     11.11 Beta (2026-06-08).** First observed from a devcontainer
+     (`{"status":"save_command_sent"}`, no disk change). Then re-tested the
+     authoritative way — from Claude Code in the Concord terminal, **single active
+     Studio Pro instance, app frontmost** — and it still did **not** persist *and*
+     **hung Studio Pro** while Concord tried to drive the save. So it is **not**
+     the two-instance ambiguity; it is a genuine **Concord/Studio Pro `save_all`
+     bug** (the synthetic Cmd-S hangs the IDE). **Do not rely on `--mcp-save`;
+     save manually (Cmd-S) in Studio Pro, and report `save_all` upstream to the
+     Concord/Studio Pro team.** The backend wiring is correct and will work
+     unchanged once `save_all` is fixed; a silently-no-op `save_command_sent` it
+     cannot detect. Model-based gap-closers (`delete_document`, `check_model`) are
+     unaffected — they do not use keystroke automation.
 
 Candidate gap-closers not yet wired: `delete_model_element` (entity/attribute/
 association — but PED already deletes these, so low priority; snake_case args
