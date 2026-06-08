@@ -44,6 +44,42 @@ func TestWriteParity_Microflow_ObjectOps(t *testing.T) {
 	}
 }
 
+// TestWriteParity_Microflow_Loops validates the loop group: iterate-over-list
+// (IterableList) and while (WhileLoopCondition), each with a nested body
+// (ObjectCollection objects-only) and supported branch activities.
+func TestWriteParity_Microflow_Loops(t *testing.T) {
+	const setup = "CREATE PERSISTENT ENTITY MyFirstModule.LThing ( Code: string(20) )"
+	cases := []struct{ name, stmt, mf string }{
+		{"IterateList",
+			"CREATE MICROFLOW MyFirstModule.MfLoop (Items: list of MyFirstModule.LThing) BEGIN " +
+				"loop $It in $Items begin commit $It; end loop END", "MfLoop"},
+		{"While",
+			"CREATE MICROFLOW MyFirstModule.MfWhile (Item: MyFirstModule.LThing) BEGIN " +
+				"while $Item/Code != '' begin commit $Item; end while END", "MfWhile"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			run := func(eng Engine) string {
+				p := copyProject(t)
+				if _, e := Run(Legacy, p, setup); e != nil {
+					t.Fatalf("setup: %v", e)
+				}
+				if _, e := Run(eng, p, c.stmt); e != nil {
+					t.Fatalf("%s create: %v", eng, e)
+				}
+				s, e := MicroflowCanonBSON(p, "MyFirstModule", c.mf)
+				if e != nil {
+					t.Fatalf("%s canon: %v", eng, e)
+				}
+				return s
+			}
+			if leg, msd := run(Legacy), run(ModelSDK); leg != msd {
+				t.Errorf("%s divergence:\nlegacy:   %s\nmodelsdk: %s", c.name, leg, msd)
+			}
+		})
+	}
+}
+
 // TestWriteParity_Microflow_Splits validates the exclusive-split group: an if/else
 // (ExclusiveSplit + ExpressionSplitCondition + ExclusiveMerge + branch flows whose
 // cases serialize as EnumerationCase true/false), with supported branch activities.

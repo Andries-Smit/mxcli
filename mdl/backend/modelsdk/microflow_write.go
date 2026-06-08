@@ -204,8 +204,48 @@ func microflowObjectToGen(obj microflows.MicroflowObject) element.Element {
 		g.SetRelativeMiddlePoint(pointStr(o.Position))
 		g.SetSize(sizeStr(o.Size))
 		return g
+	case *microflows.LoopedActivity:
+		g := genMf.NewLoopedActivity()
+		g.SetID(element.ID(o.ID))
+		g.SetErrorHandlingType(string(o.ErrorHandlingType))
+		if ls := loopSourceToGen(o.LoopSource); ls != nil {
+			g.SetLoopSource(ls)
+		}
+		// Nested loop body: objects only (the gen/legacy ObjectCollection carries
+		// no inline Flows — loop-external flows live on the top-level Microflow).
+		if o.ObjectCollection != nil {
+			noc := genMf.NewMicroflowObjectCollection()
+			for _, obj := range o.ObjectCollection.Objects {
+				if e := microflowObjectToGen(obj); e != nil {
+					noc.AddObjects(e)
+				}
+			}
+			g.SetObjectCollection(noc)
+		}
+		g.SetRelativeMiddlePoint(pointStr(o.Position))
+		g.SetSize(sizeStr(o.Size))
+		return g
 	default:
 		return nil // unsupported object type (added in later activity groups)
+	}
+}
+
+// loopSourceToGen builds a loop's source (iterate-over-list or while-condition).
+func loopSourceToGen(ls microflows.LoopSource) element.Element {
+	switch s := ls.(type) {
+	case *microflows.IterableList:
+		g := genMf.NewIterableList()
+		g.SetID(element.ID(s.ID))
+		g.SetListVariableName(s.ListVariableName)
+		g.SetVariableName(s.VariableName)
+		return g
+	case *microflows.WhileLoopCondition:
+		g := genMf.NewWhileLoopCondition()
+		g.SetID(element.ID(s.ID))
+		g.SetWhileExpression(s.WhileExpression)
+		return g
+	default:
+		return nil
 	}
 }
 
@@ -456,42 +496,7 @@ func assignMicroflowIDs(m *genMf.Microflow) {
 	assignID(m.MicroflowReturnType())
 	assignID(m.ConcurrencyErrorMessage())
 	if oc, ok := m.ObjectCollection().(*genMf.MicroflowObjectCollection); ok {
-		assignID(oc)
-		for _, el := range oc.ObjectsItems() {
-			assignID(el)
-			if p, ok := el.(*genMf.MicroflowParameter); ok {
-				assignID(p.ParameterType())
-			}
-			if es, ok := el.(*genMf.ExclusiveSplit); ok {
-				assignID(es.SplitCondition())
-			}
-			if aa, ok := el.(*genMf.ActionActivity); ok {
-				act := aa.Action()
-				assignID(act)
-				switch a := act.(type) {
-				case *genMf.CreateObjectAction:
-					for _, it := range a.ItemsItems() {
-						assignID(it)
-					}
-				case *genMf.ChangeObjectAction:
-					for _, it := range a.ItemsItems() {
-						assignID(it)
-					}
-				case *genMf.RetrieveAction:
-					src := a.RetrieveSource()
-					assignID(src)
-					if db, ok := src.(*genMf.DatabaseRetrieveSource); ok {
-						assignID(db.Range())
-						if sl, ok := db.SortItemList().(*genMf.SortItemList); ok {
-							assignID(sl)
-							for _, it := range sl.ItemsItems() {
-								assignID(it)
-							}
-						}
-					}
-				}
-			}
-		}
+		assignObjectCollectionIDs(oc)
 	}
 	for _, el := range m.FlowsItems() {
 		assignID(el)
@@ -500,6 +505,57 @@ func assignMicroflowIDs(m *genMf.Microflow) {
 				assignID(cv)
 			}
 			assignID(sf.Line())
+		}
+	}
+}
+
+// assignObjectCollectionIDs assigns IDs to a collection's objects and their
+// sub-elements, recursing into loop bodies.
+func assignObjectCollectionIDs(oc *genMf.MicroflowObjectCollection) {
+	assignID(oc)
+	for _, el := range oc.ObjectsItems() {
+		assignFlowObjectIDs(el)
+	}
+}
+
+// assignFlowObjectIDs assigns the element's ID and walks its sub-elements
+// (parameter type, split condition, action items/sources, loop source + nested body).
+func assignFlowObjectIDs(el element.Element) {
+	assignID(el)
+	switch o := el.(type) {
+	case *genMf.MicroflowParameter:
+		assignID(o.ParameterType())
+	case *genMf.ExclusiveSplit:
+		assignID(o.SplitCondition())
+	case *genMf.LoopedActivity:
+		assignID(o.LoopSource())
+		if noc, ok := o.ObjectCollection().(*genMf.MicroflowObjectCollection); ok {
+			assignObjectCollectionIDs(noc)
+		}
+	case *genMf.ActionActivity:
+		act := o.Action()
+		assignID(act)
+		switch a := act.(type) {
+		case *genMf.CreateObjectAction:
+			for _, it := range a.ItemsItems() {
+				assignID(it)
+			}
+		case *genMf.ChangeObjectAction:
+			for _, it := range a.ItemsItems() {
+				assignID(it)
+			}
+		case *genMf.RetrieveAction:
+			src := a.RetrieveSource()
+			assignID(src)
+			if db, ok := src.(*genMf.DatabaseRetrieveSource); ok {
+				assignID(db.Range())
+				if sl, ok := db.SortItemList().(*genMf.SortItemList); ok {
+					assignID(sl)
+					for _, it := range sl.ItemsItems() {
+						assignID(it)
+					}
+				}
+			}
 		}
 	}
 }
