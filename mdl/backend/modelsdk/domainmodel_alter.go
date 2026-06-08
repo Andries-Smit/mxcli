@@ -132,6 +132,44 @@ func (b *Backend) UpdateEntity(domainModelID model.ID, entity *domainmodel.Entit
 	return b.persistDM(domainModelID, dm)
 }
 
+// DeleteAssociation removes an association from a domain model by ID. Used by
+// DROP ASSOCIATION and by the executor's CREATE OR MODIFY ASSOCIATION (delete +
+// recreate) path.
+func (b *Backend) DeleteAssociation(domainModelID, assocID model.ID) error {
+	if b.writer == nil {
+		return fmt.Errorf("DeleteAssociation: not connected for writing")
+	}
+	dm, err := b.loadDomainModelGen(domainModelID)
+	if err != nil {
+		return err
+	}
+	for i, el := range dm.AssociationsItems() {
+		if string(el.ID()) == string(assocID) {
+			dm.RemoveAssociations(i)
+			return b.persistDM(domainModelID, dm)
+		}
+	}
+	return fmt.Errorf("association not found: %s", assocID)
+}
+
+// DeleteCrossAssociation removes a cross-module association from a domain model by ID.
+func (b *Backend) DeleteCrossAssociation(domainModelID, assocID model.ID) error {
+	if b.writer == nil {
+		return fmt.Errorf("DeleteCrossAssociation: not connected for writing")
+	}
+	dm, err := b.loadDomainModelGen(domainModelID)
+	if err != nil {
+		return err
+	}
+	for i, el := range dm.CrossAssociationsItems() {
+		if string(el.ID()) == string(assocID) {
+			dm.RemoveCrossAssociations(i)
+			return b.persistDM(domainModelID, dm)
+		}
+	}
+	return fmt.Errorf("cross association not found: %s", assocID)
+}
+
 // DeleteEntity removes an entity and cascades association cleanup: associations
 // in the same DM and in every other DM that reference the entity (by
 // ParentPointer = FROM or ChildPointer = TO) are removed. Mirrors legacy
