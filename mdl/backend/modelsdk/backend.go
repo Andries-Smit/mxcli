@@ -15,8 +15,9 @@
 package modelsdkbackend
 
 import (
+	"fmt"
+
 	"github.com/mendixlabs/mxcli/mdl/backend"
-	"github.com/mendixlabs/mxcli/mdl/backend/mock"
 	"github.com/mendixlabs/mxcli/mdl/types"
 	"github.com/mendixlabs/mxcli/model"
 	"github.com/mendixlabs/mxcli/modelsdk/codec"
@@ -24,23 +25,32 @@ import (
 	mmpr "github.com/mendixlabs/mxcli/modelsdk/mpr"
 )
 
-// Compile-time guarantee that the read slice still satisfies the whole interface
-// (via the embedded mock for everything it doesn't override).
+// Compile-time guarantee that the backend satisfies the whole interface (via the
+// embedded `unimplemented` for every method it doesn't override).
 var _ backend.FullBackend = (*Backend)(nil)
 
-// Backend reads (and, for the Phase-2 slice, writes) a Mendix project through
-// the modelsdk engine.
+// Backend reads and writes a Mendix project through the modelsdk codec engine.
+// It embeds `unimplemented` (generated, see gen_unimplemented.go) so any
+// FullBackend method it has not yet ported fails loudly with errUnimplemented
+// rather than silently no-op'ing — ADR-0005 "guard, don't silently drop". As
+// real methods are added on *Backend they shadow the embedded stubs.
 type Backend struct {
-	*mock.MockBackend // stubs for every not-yet-implemented FullBackend method
-	reader            *mmpr.Reader
-	writer            *mmpr.Writer
-	path              string
+	unimplemented
+	reader *mmpr.Reader
+	writer *mmpr.Writer
+	path   string
 }
 
-// New constructs a read-slice backend. The embedded mock is non-nil so the
-// promoted stub methods are safe to call before/without overrides.
+// New constructs a modelsdk backend.
 func New() *Backend {
-	return &Backend{MockBackend: &mock.MockBackend{}}
+	return &Backend{}
+}
+
+// errUnimplemented is the error every not-yet-ported FullBackend method returns
+// (via the generated unimplemented embed). Loud failure beats the silent no-op
+// the embedded mock used to give — see ADR-0005 "guard, don't silently drop".
+func errUnimplemented(method string) error {
+	return fmt.Errorf("modelsdk engine: %s not implemented yet — rerun with MXCLI_ENGINE=legacy", method)
 }
 
 // --- ConnectionBackend ---

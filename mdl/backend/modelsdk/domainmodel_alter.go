@@ -132,6 +132,52 @@ func (b *Backend) UpdateEntity(domainModelID model.ID, entity *domainmodel.Entit
 	return b.persistDM(domainModelID, dm)
 }
 
+// UpdateDomainModel persists a whole mutated domain model (the executor's
+// read-modify-write path for ALTER ASSOCIATION, CREATE OR MODIFY ASSOCIATION,
+// and RENAME). It rebuilds the Entities and Associations lists from the semantic
+// model via the byte-faithful converters, preserving each element's identity.
+// CrossAssociations and Annotations are NOT represented in domainmodel.DomainModel,
+// so they are left as gen passthrough rather than dropped (ADR-0005: guard
+// fidelity — the existing raw bytes carry forward unchanged).
+func (b *Backend) UpdateDomainModel(dm *domainmodel.DomainModel) error {
+	if dm == nil {
+		return fmt.Errorf("UpdateDomainModel: nil domain model")
+	}
+	if b.writer == nil {
+		return fmt.Errorf("UpdateDomainModel: not connected for writing")
+	}
+	gdm, err := b.loadDomainModelGen(dm.ID)
+	if err != nil {
+		return err
+	}
+	moduleName := b.moduleNameFor(dm.ID)
+	major := b.majorVersion()
+
+	for i := len(gdm.EntitiesItems()) - 1; i >= 0; i-- {
+		gdm.RemoveEntities(i)
+	}
+	for _, e := range dm.Entities {
+		ge := entityToGen(e, moduleName, major)
+		ge.SetID(element.ID(e.ID))
+		assignEntityIDs(ge)
+		gdm.AddEntities(ge)
+	}
+
+	for i := len(gdm.AssociationsItems()) - 1; i >= 0; i-- {
+		gdm.RemoveAssociations(i)
+	}
+	for _, a := range dm.Associations {
+		ga := assocToGen(a)
+		if a.ID != "" {
+			ga.SetID(element.ID(a.ID))
+		}
+		assignAssociationIDs(ga)
+		gdm.AddAssociations(ga)
+	}
+
+	return b.persistDM(dm.ID, gdm)
+}
+
 // DeleteAssociation removes an association from a domain model by ID. Used by
 // DROP ASSOCIATION and by the executor's CREATE OR MODIFY ASSOCIATION (delete +
 // recreate) path.
