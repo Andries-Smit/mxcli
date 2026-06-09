@@ -122,8 +122,8 @@ parameter elements must be set by their leaf field (`/workflowName/text`), not
 replaced wholesale (PED rejects a whole-element set). Activity-level structural ops are wired via ref→index resolution (a shallow
 `/flow/activities` read matching caption/name, with `@N` disambiguation, top-level
 activities only): **INSERT** activity (ped add at index+1), **DROP** activity (ped
-remove at index), **REPLACE** activity (ped set at index, or remove+add for
-multiple). The outcome/path/branch/boundary-event ops and `SetActivityProperty`
+remove at index), **REPLACE** activity (remove the slot, then add — a whole-element
+set by index is rejected). The outcome/path/branch/boundary-event ops and `SetActivityProperty`
 remain stubbed.
 
 `CREATE MODULE` routes through `ped_create_module` (which flushes to disk

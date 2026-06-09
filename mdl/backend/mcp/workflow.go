@@ -508,13 +508,9 @@ func (m *mcpWorkflowMutator) ReplaceActivity(activityRef string, atPos int, acti
 		}
 		mapped = append(mapped, mm)
 	}
-	// Single replacement: set in place. Multiple: remove then add at the slot.
-	if len(mapped) == 1 {
-		return m.backend.pedUpdateDoc(workflowDocType, m.qn(), pedOpEntry{
-			Path:      fmt.Sprintf("/flow/activities/%d", idx),
-			Operation: pedOperation{Type: "set", Value: mapped[0]},
-		})
-	}
+	// Replace = remove the slot then add the new activities at it. (A set on
+	// /flow/activities/<idx> — a whole-element replace by index — is rejected by
+	// PED, like a whole-element set of a nested constructor.)
 	ops := []pedOpEntry{{Path: "/flow/activities", Operation: pedOperation{Type: "remove", Index: &idx}}}
 	for i, mm := range mapped {
 		at := idx + i

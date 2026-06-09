@@ -73,6 +73,9 @@ func (b *Backend) reconstructDomainModel(moduleName string, moduleID model.ID) (
 // dirty-saved-module path (real on-disk IDs) and the session-created-module path
 // (synthetic IDs), the latter having no on-disk domain model for the reader.
 func (b *Backend) reconstructDomainModelFromPED(moduleName string, dmID, containerID model.ID) (*domainmodel.DomainModel, error) {
+	dm := &domainmodel.DomainModel{ContainerID: containerID}
+	dm.ID = dmID
+
 	res, err := b.client.CallTool("ped_read_document", map[string]any{
 		"documentType": domainModelDocType,
 		"documentName": moduleName,
@@ -81,8 +84,15 @@ func (b *Backend) reconstructDomainModelFromPED(moduleName string, dmID, contain
 	if err != nil {
 		return nil, err
 	}
-	if res.IsError {
-		return nil, fmt.Errorf("reconstruct %s: %s", moduleName, res.Text)
+	// A module created over MCP this session can briefly be unreadable
+	// ("ERROR: Module ... not found", reported with isError:false per PED's
+	// convention) right after ped_create_module — the same propagation lag the
+	// write path retries on. Treat an unreadable module as having no entities yet
+	// (empty domain model) rather than failing/parsing the error text as JSON;
+	// the entity write itself retries until the module is mutable.
+	text := pedStripReminder(res.Text)
+	if res.IsError || strings.HasPrefix(strings.TrimSpace(text), "ERROR") {
+		return dm, nil
 	}
 
 	var doc struct {
@@ -91,14 +101,10 @@ func (b *Backend) reconstructDomainModelFromPED(moduleName string, dmID, contain
 			Result json.RawMessage `json:"result"`
 		} `json:"results"`
 	}
-	if err := json.Unmarshal([]byte(res.Text), &doc); err != nil {
-		return nil, fmt.Errorf("reconstruct %s: parse: %w", moduleName, err)
+	if err := json.Unmarshal([]byte(text), &doc); err != nil {
+		// Non-JSON, non-ERROR body — treat as empty rather than crash the create.
+		return dm, nil
 	}
-
-	dm := &domainmodel.DomainModel{
-		ContainerID: containerID,
-	}
-	dm.ID = dmID
 
 	var entityOrder []string // index -> entity synthetic ID (for $id(/entities/N) refs)
 
