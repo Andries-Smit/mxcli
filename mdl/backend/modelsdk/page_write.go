@@ -71,7 +71,7 @@ func pageToGen(page *pages.Page) (*genPg.Page, error) {
 	out.SetPopupResizable(page.PopupResizable)
 	out.SetAllowedRolesQualifiedNames(moduleRoleNames(page.AllowedRoles))
 	out.SetTitle(captionToGen(page.Title))
-	out.SetAppearance(newPageAppearance())
+	out.SetAppearance(newAppearance("", ""))
 
 	if page.LayoutCall != nil {
 		lc, err := layoutCallToGen(page.LayoutCall)
@@ -87,16 +87,6 @@ func pageToGen(page *pages.Page) (*genPg.Page, error) {
 	return out, nil
 }
 
-// newPageAppearance builds the empty Forms$Appearance every page carries.
-func newPageAppearance() *genPg.Appearance {
-	a := genPg.NewAppearance()
-	assignID(a)
-	a.SetClass("")
-	a.SetStyle("")
-	a.SetDynamicClasses("")
-	return a
-}
-
 // layoutCallToGen builds the Forms$LayoutCall (page → layout binding) with one
 // Forms$FormCallArgument per placeholder. Widget-bearing arguments are refused.
 func layoutCallToGen(lc *pages.LayoutCall) (*genPg.LayoutCall, error) {
@@ -104,14 +94,18 @@ func layoutCallToGen(lc *pages.LayoutCall) (*genPg.LayoutCall, error) {
 	assignID(out)
 	out.SetLayoutQualifiedName(lc.LayoutName)
 	for _, arg := range lc.Arguments {
-		if arg.Widget != nil {
-			return nil, fmt.Errorf("CreatePage: widget %T in placeholder %q not yet supported by the modelsdk engine — rerun with MXCLI_ENGINE=legacy", arg.Widget, arg.ParameterID)
-		}
 		ga := genPg.NewLayoutCallArgument()
 		// The gen mislabels this type; real BSON is Forms$FormCallArgument.
 		ga.SetTypeName("Forms$FormCallArgument")
 		assignID(ga)
 		ga.SetParameterQualifiedName(string(arg.ParameterID))
+		if arg.Widget != nil {
+			wg, err := widgetToGen(arg.Widget)
+			if err != nil {
+				return nil, err
+			}
+			ga.AddWidgets(wg)
+		}
 		out.AddArguments(ga)
 	}
 	return out, nil
