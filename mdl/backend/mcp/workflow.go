@@ -160,23 +160,60 @@ func mapWorkflowActivity(a workflows.WorkflowActivity) (map[string]any, error) {
 	case *workflows.EndWorkflowActivity:
 		return map[string]any{"$Type": "Workflows$EndWorkflowActivity", "name": act.Name, "caption": act.Caption}, nil
 	case *workflows.CallMicroflowTask:
-		if len(act.BoundaryEvents) > 0 {
-			return nil, fmt.Errorf("call-microflow workflow activity %q with boundary events is not yet supported by the MCP backend", act.Name)
-		}
 		outcomes, err := mapConditionOutcomes(act.Outcomes)
+		if err != nil {
+			return nil, err
+		}
+		bevents, err := mapBoundaryEvents(act.BoundaryEvents)
 		if err != nil {
 			return nil, err
 		}
 		// PED's element type is CallMicroflowActivity (the on-disk BSON $Type is
 		// the older CallMicroflowTask — they differ).
-		return map[string]any{
+		m := map[string]any{
 			"$Type":             "Workflows$CallMicroflowActivity",
 			"name":              act.Name,
 			"caption":           act.Caption,
 			"microflow":         act.Microflow,
 			"outcomes":          outcomes,
 			"parameterMappings": mapWorkflowParamMappings(act.ParameterMappings),
-		}, nil
+		}
+		if bevents != nil {
+			m["boundaryEvents"] = bevents
+		}
+		return m, nil
+	case *workflows.CallWorkflowActivity:
+		bevents, err := mapBoundaryEvents(act.BoundaryEvents)
+		if err != nil {
+			return nil, err
+		}
+		// PED's CallWorkflowActivity has no parameterExpression — Studio Pro binds
+		// the $WorkflowContext implicitly; only explicit parameterMappings are sent.
+		m := map[string]any{
+			"$Type":             "Workflows$CallWorkflowActivity",
+			"name":              act.Name,
+			"caption":           act.Caption,
+			"workflow":          act.Workflow,
+			"parameterMappings": mapWorkflowParamMappings(act.ParameterMappings),
+		}
+		if bevents != nil {
+			m["boundaryEvents"] = bevents
+		}
+		return m, nil
+	case *workflows.WaitForNotificationActivity:
+		bevents, err := mapBoundaryEvents(act.BoundaryEvents)
+		if err != nil {
+			return nil, err
+		}
+		m := map[string]any{
+			"$Type":   "Workflows$WaitForNotificationActivity",
+			"name":    act.Name,
+			"caption": act.Caption,
+		}
+		if bevents != nil {
+			m["boundaryEvents"] = bevents
+		}
+		return m, nil
 	case *workflows.WaitForTimerActivity:
 		return map[string]any{
 			"$Type":   "Workflows$WaitForTimerActivity",
@@ -221,29 +258,62 @@ func mapWorkflowActivity(a workflows.WorkflowActivity) (map[string]any, error) {
 			"outcomes":   outcomes,
 		}, nil
 	case *workflows.UserTask:
-		if act.IsMulti {
-			return nil, fmt.Errorf("multi user task %q is not yet supported by the MCP backend", act.Name)
-		}
-		if len(act.BoundaryEvents) > 0 {
-			return nil, fmt.Errorf("user task %q with boundary events is not yet supported by the MCP backend", act.Name)
-		}
-		outcomes, err := mapUserTaskOutcomes(act.Outcomes)
+		bevents, err := mapBoundaryEvents(act.BoundaryEvents)
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{
-			"$Type":                      "Workflows$SingleUserTaskActivity",
-			"name":                       act.Name,
-			"caption":                    act.Caption,
-			"taskPage":                   map[string]any{"$Type": "Workflows$PageReference", "page": act.Page},
-			"taskName":                   mapWorkflowStringTemplate(act.TaskName),
-			"taskDescription":            mapWorkflowStringTemplate(act.TaskDescription),
-			"dueDate":                    act.DueDate,
-			"userTargeting":              mapUserTargeting(act.UserSource),
-			"onCreatedEvent":             map[string]any{"$Type": "Workflows$NoEvent"},
-			"outcomes":                   outcomes,
-			"autoAssignSingleTargetUser": false,
-		}, nil
+		var m map[string]any
+		if act.IsMulti {
+			// MultiUserTaskActivity differs from the single variant: the page is a
+			// bare string (pageReference, not a taskPage element), there is no
+			// taskName/taskDescription/dueDate, participiantInput is required, and
+			// outcomes are plain value strings (not UserTaskOutcome elements — so a
+			// multi-task outcome carries no per-outcome sub-flow). Completion
+			// defaults (Consensus, Percentage threshold) are supplied by PED.
+			vals := make([]any, 0, len(act.Outcomes))
+			for _, oc := range act.Outcomes {
+				v := oc.Value
+				if v == "" {
+					v = oc.Caption
+				}
+				if oc.Flow != nil && len(oc.Flow.Activities) > 0 {
+					return nil, fmt.Errorf("multi user task %q outcome %q: per-outcome sub-flows are not supported via the MCP backend (PED models multi-task outcomes as plain values)", act.Name, v)
+				}
+				vals = append(vals, v)
+			}
+			m = map[string]any{
+				"$Type":             "Workflows$MultiUserTaskActivity",
+				"name":              act.Name,
+				"caption":           act.Caption,
+				"pageReference":     act.Page,
+				"participiantInput": "AllTargetUsers",
+				"userTargeting":     mapUserTargeting(act.UserSource),
+				"onCreatedEvent":    map[string]any{"$Type": "Workflows$NoEvent"},
+				"outcomes":          vals,
+			}
+		} else {
+			outcomes, err := mapUserTaskOutcomes(act.Outcomes)
+			if err != nil {
+				return nil, err
+			}
+			m = map[string]any{
+				"$Type":                      "Workflows$SingleUserTaskActivity",
+				"name":                       act.Name,
+				"caption":                    act.Caption,
+				"taskPage":                   map[string]any{"$Type": "Workflows$PageReference", "page": act.Page},
+				"taskName":                   mapWorkflowStringTemplate(act.TaskName),
+				"taskDescription":            mapWorkflowStringTemplate(act.TaskDescription),
+				"dueDate":                    act.DueDate,
+				"userTargeting":              mapUserTargeting(act.UserSource),
+				"onCreatedEvent":             map[string]any{"$Type": "Workflows$NoEvent"},
+				"outcomes":                   outcomes,
+				"autoAssignSingleTargetUser": false,
+			}
+		}
+		if bevents != nil {
+			m["boundaryEvents"] = bevents
+		}
+		return m, nil
 	default:
 		return nil, fmt.Errorf("workflow activity type %q is not yet supported by the MCP backend", a.ActivityType())
 	}
@@ -311,6 +381,30 @@ func mapConditionOutcomes(outcomes []workflows.ConditionOutcome) ([]any, error) 
 			m["flow"] = fm
 		}
 		out = append(out, m)
+	}
+	return out, nil
+}
+
+// mapBoundaryEvents maps an activity's boundary events (timers, each with an
+// optional handler sub-flow) onto their PED elements. Returns nil for none so
+// callers can omit the key.
+func mapBoundaryEvents(events []*workflows.BoundaryEvent) ([]any, error) {
+	if len(events) == 0 {
+		return nil, nil
+	}
+	out := make([]any, 0, len(events))
+	for _, be := range events {
+		el := boundaryEventElement(be.EventType, be.TimerDelay)
+		if be.Flow != nil {
+			fm, err := mapWorkflowFlowValue(be.Flow)
+			if err != nil {
+				return nil, err
+			}
+			if fm != nil {
+				el["flow"] = fm
+			}
+		}
+		out = append(out, el)
 	}
 	return out, nil
 }

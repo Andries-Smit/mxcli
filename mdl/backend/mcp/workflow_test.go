@@ -108,11 +108,71 @@ func TestMapUserTask(t *testing.T) {
 	}
 }
 
-func TestMapUserTask_MultiRejected(t *testing.T) {
-	ut := &workflows.UserTask{IsMulti: true}
-	ut.Name = "multi"
-	if _, err := mapWorkflowActivity(ut); err == nil {
-		t.Error("multi user task should be rejected for now")
+func TestMapMultiUserTask(t *testing.T) {
+	ut := &workflows.UserTask{
+		IsMulti:    true,
+		Page:       "M.TaskPage",
+		UserSource: &workflows.XPathBasedUserSource{XPath: "[true()]"},
+		Outcomes:   []*workflows.UserTaskOutcome{{Value: "Approved"}, {Value: "Denied"}},
+	}
+	ut.Name = "GroupApproval"
+	m, err := mapWorkflowActivity(ut)
+	if err != nil {
+		t.Fatalf("mapWorkflowActivity(MultiUserTask): %v", err)
+	}
+	// Multi differs from single: a bare string pageReference, no taskPage element.
+	if m["$Type"] != "Workflows$MultiUserTaskActivity" || m["pageReference"] != "M.TaskPage" {
+		t.Fatalf("multi user task: %+v", m)
+	}
+	if _, hasTaskPage := m["taskPage"]; hasTaskPage {
+		t.Error("multi user task must not carry a taskPage element")
+	}
+	if ocs, _ := m["outcomes"].([]any); len(ocs) != 2 {
+		t.Fatalf("outcomes: %+v", m["outcomes"])
+	}
+}
+
+func TestMapUserTaskWithBoundaryEvent(t *testing.T) {
+	ut := &workflows.UserTask{
+		Page: "M.TaskPage",
+		BoundaryEvents: []*workflows.BoundaryEvent{
+			{EventType: "InterruptingTimer", TimerDelay: "addHours([%CurrentDateTime%], 2)"},
+		},
+	}
+	ut.Name = "Review"
+	m, err := mapWorkflowActivity(ut)
+	if err != nil {
+		t.Fatalf("mapWorkflowActivity: %v", err)
+	}
+	be, _ := m["boundaryEvents"].([]any)
+	if len(be) != 1 {
+		t.Fatalf("boundaryEvents: %+v", m["boundaryEvents"])
+	}
+	e0, _ := be[0].(map[string]any)
+	if e0["$Type"] != "Workflows$InterruptingTimerBoundaryEvent" || e0["firstExecutionTime"] != "addHours([%CurrentDateTime%], 2)" {
+		t.Fatalf("boundary event: %+v", e0)
+	}
+}
+
+func TestMapCallWorkflowAndWaitForNotification(t *testing.T) {
+	cw := &workflows.CallWorkflowActivity{Workflow: "M.SubProc"}
+	cw.Name = "callSub"
+	m, err := mapWorkflowActivity(cw)
+	if err != nil {
+		t.Fatalf("CallWorkflow: %v", err)
+	}
+	if m["$Type"] != "Workflows$CallWorkflowActivity" || m["workflow"] != "M.SubProc" {
+		t.Fatalf("call workflow: %+v", m)
+	}
+
+	wn := &workflows.WaitForNotificationActivity{}
+	wn.Name = "wait"
+	m2, err := mapWorkflowActivity(wn)
+	if err != nil {
+		t.Fatalf("WaitForNotification: %v", err)
+	}
+	if m2["$Type"] != "Workflows$WaitForNotificationActivity" {
+		t.Fatalf("wait for notification: %+v", m2)
 	}
 }
 
@@ -207,8 +267,8 @@ func TestMapWaitForTimer(t *testing.T) {
 
 func TestMapWorkflowActivity_Unsupported(t *testing.T) {
 	// An activity type not yet mapped is rejected, not silently dropped.
-	w := &workflows.WaitForNotificationActivity{}
-	w.Name = "wait"
+	w := &workflows.WorkflowAnnotationActivity{Description: "note"}
+	w.Name = "annot"
 	if _, err := mapWorkflowActivity(w); err == nil {
 		t.Error("unmapped workflow activity should be rejected")
 	}

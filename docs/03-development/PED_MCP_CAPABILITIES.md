@@ -110,11 +110,20 @@ types, so a documentation edit on a dirty module is never mistaken for a type ch
 
 `CREATE WORKFLOW` maps the executor's workflow onto `Workflows$Workflow`
 (parameter + a linear `Workflows$Flow` of activities Start … End, connected via
-condition outcomes that may nest sub-flows). Activity-type coverage grows one at a
-time (currently Start/End, CallMicroflow with outcomes, single **UserTask** —
-task page, XPath/Microflow user targeting, task name/description, and named
-outcomes each with a recursive sub-flow), **Decision** (ExclusiveSplit: expression + boolean/enum outcomes), **ParallelSplit** (concurrent paths), **JumpTo** (loop back to a named activity), and **WaitForTimer** (delay); MultiUserTask,
-boundary events, CallWorkflow, WaitForNotification, etc. are rejected with a clear error. **Type-name gotcha:** PED's element type for the call-microflow
+condition outcomes that may nest sub-flows). Activity-type coverage: Start/End,
+**CallMicroflow** (outcomes), single **UserTask** (task page, XPath/Microflow user
+targeting, task name/description, named outcomes each with a recursive sub-flow),
+**Decision** (ExclusiveSplit: expression + boolean/enum outcomes), **ParallelSplit**
+(concurrent paths), **JumpTo**, **WaitForTimer**, **CallWorkflow** (sub-workflow
+ref + parameter mappings — PED binds `$WorkflowContext` implicitly, so there is no
+`parameterExpression` field), **WaitForNotification**, **MultiUserTask**, and
+**boundary events** (interrupting/non-interrupting timers, with handler sub-flows)
+on user-task and call-microflow activities. **MultiUserTask gotcha:** unlike the
+single variant, its `pageReference` is a bare string (not a `taskPage` element),
+`participiantInput` is required (defaulted to `AllTargetUsers`), and its `outcomes`
+are plain value strings — so a multi-task outcome carries no per-outcome sub-flow
+(one with activities is rejected rather than silently dropped). Still rejected:
+AIAgentTask, annotations, and other niche activity types (clear error each). **Type-name gotcha:** PED's element type for the call-microflow
 activity is `Workflows$CallMicroflowActivity`, NOT the on-disk BSON `$Type`
 `Workflows$CallMicroflowTask` — they differ; use `ped_get_schema
 Workflows$WorkflowActivity` to enumerate the valid concrete subtypes. Workflow
