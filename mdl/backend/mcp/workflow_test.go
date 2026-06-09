@@ -146,9 +146,9 @@ func TestMapDecision(t *testing.T) {
 
 func TestMapWorkflowActivity_Unsupported(t *testing.T) {
 	// An activity type not yet mapped is rejected, not silently dropped.
-	d := &workflows.ExclusiveSplitActivity{}
-	d.Name = "decide"
-	if _, err := mapWorkflowActivity(d); err == nil {
+	ps := &workflows.ParallelSplitActivity{}
+	ps.Name = "split"
+	if _, err := mapWorkflowActivity(ps); err == nil {
 		t.Error("unmapped workflow activity should be rejected")
 	}
 }
