@@ -40,9 +40,128 @@ func (b *Backend) CreateWorkflow(wf *workflows.Workflow) error {
 	return b.pedCheckDocument(workflowDocType, mod.Name+"."+wf.Name)
 }
 
-// UpdateWorkflow (CREATE OR REPLACE on an existing workflow) is not yet supported.
+// UpdateWorkflow handles CREATE OR REPLACE/MODIFY on an existing workflow. PED has
+// no document-replace tool, so it rewrites the document in place via
+// ped_update_document: the flow's activities are swapped (the new ones are appended,
+// then the originals removed — appending first avoids a transient empty flow, which
+// PED rejects) and the workflow-level property leaves are set. The document's $ID is
+// preserved (the executor passes it through), so references and the git diff stay
+// stable. exportLevel and overviewPage are not reapplied (no settable PED path, as
+// in ALTER WORKFLOW).
 func (b *Backend) UpdateWorkflow(wf *workflows.Workflow) error {
-	return fmt.Errorf("CREATE OR REPLACE WORKFLOW %q is not yet supported by the MCP backend", wf.Name)
+	mod, err := b.GetModule(wf.ContainerID)
+	if err != nil {
+		return fmt.Errorf("resolve module for workflow %q: %w", wf.Name, err)
+	}
+	qn := mod.Name + "." + wf.Name
+
+	flowVal, err := b.mapWorkflowFlow(wf.Flow)
+	if err != nil {
+		return err
+	}
+	// Replace only the *middle* activities: PED keeps the workflow's structural
+	// Start/End (it refuses to remove them) and auto-positions an index-less add by
+	// activity type, so we strip the executor's leading Start / trailing End and
+	// let PED place the new middles between the existing ones.
+	middles := stripStartEnd(flowVal["activities"].([]any))
+
+	n, err := b.workflowActivityCount(qn)
+	if err != nil {
+		return err
+	}
+
+	var ops []pedOpEntry
+	// Drop the original middle activities (indices 1..n-2, high→low; index 0 is
+	// Start and n-1 is End, both preserved — PED refuses to remove either). Then
+	// insert the new middles just after Start. Each insert targets index 1 (always
+	// valid, since Start holds index 0) — an index-less add appends *after* End, and
+	// an explicit incrementing index is validated against the array's *original*
+	// length so it can't grow the flow. Inserting in REVERSE order at index 1
+	// leaves the middles in their intended sequence.
+	for i := n - 2; i >= 1; i-- {
+		ops = append(ops, removeAtOp("/flow/activities", i))
+	}
+	for i := len(middles) - 1; i >= 0; i-- {
+		afterStart := 1
+		ops = append(ops, pedOpEntry{Path: "/flow/activities", Operation: pedOperation{Type: "add", Value: middles[i], Index: &afterStart}})
+	}
+
+	title := wf.WorkflowName
+	if title == "" {
+		title = wf.Name
+	}
+	set := func(path string, v any) {
+		ops = append(ops, pedOpEntry{Path: path, Operation: pedOperation{Type: "set", Value: v}})
+	}
+	set("/title", title)
+	set("/workflowName/text", wf.WorkflowName)
+	set("/workflowDescription/text", wf.WorkflowDescription)
+	set("/dueDate", wf.DueDate)
+	set("/documentation", wf.Documentation)
+	if wf.Parameter != nil {
+		set("/parameter/entity", wf.Parameter.EntityRef)
+	}
+
+	if err := b.pedUpdateDoc(workflowDocType, qn, ops...); err != nil {
+		return err
+	}
+	b.markDirty(mod.Name)
+	b.upsertSessionWorkflow(wf)
+	return b.pedCheckDocument(workflowDocType, qn)
+}
+
+// stripStartEnd drops a leading StartWorkflowActivity and trailing
+// EndWorkflowActivity from a mapped activity list, leaving the middle activities.
+func stripStartEnd(acts []any) []any {
+	activityType := func(a any) string {
+		m, _ := a.(map[string]any)
+		s, _ := m["$Type"].(string)
+		return s
+	}
+	if len(acts) > 0 && activityType(acts[0]) == "Workflows$StartWorkflowActivity" {
+		acts = acts[1:]
+	}
+	if len(acts) > 0 && activityType(acts[len(acts)-1]) == "Workflows$EndWorkflowActivity" {
+		acts = acts[:len(acts)-1]
+	}
+	return acts
+}
+
+// workflowActivityCount returns the number of top-level activities in a workflow's flow.
+func (b *Backend) workflowActivityCount(qn string) (int, error) {
+	res, err := b.client.CallTool("ped_read_document", map[string]any{
+		"documentType": workflowDocType,
+		"documentName": qn,
+		"paths":        []string{"/flow/activities"},
+	})
+	if err != nil {
+		return 0, err
+	}
+	text := pedStripReminder(res.Text)
+	if res.IsError {
+		return 0, fmt.Errorf("read %s flow: %s", qn, text)
+	}
+	var doc struct {
+		Results []struct {
+			Result []json.RawMessage `json:"result"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(text), &doc); err != nil || len(doc.Results) == 0 {
+		return 0, fmt.Errorf("parse %s flow: %v", qn, err)
+	}
+	return len(doc.Results[0].Result), nil
+}
+
+// upsertSessionWorkflow records (or replaces) a workflow in the session list so
+// later reads/ALTERs in the same run see the new content rather than the stale .mpr.
+func (b *Backend) upsertSessionWorkflow(wf *workflows.Workflow) {
+	for i, w := range b.sessionWorkflows {
+		if w.ID == wf.ID {
+			b.sessionWorkflows[i] = wf
+			return
+		}
+	}
+	b.sessionWorkflows = append(b.sessionWorkflows, wf)
 }
 
 // DeleteWorkflow drops a workflow via Concord's delete_document (PED has no delete

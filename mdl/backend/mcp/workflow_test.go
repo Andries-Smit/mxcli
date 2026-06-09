@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mendixlabs/mxcli/model"
 	"github.com/mendixlabs/mxcli/sdk/workflows"
 )
 
@@ -499,5 +500,80 @@ func TestWFSetActivityProperty(t *testing.T) {
 	_, m := wfMutatorFake(t)
 	if err := m.SetActivityProperty("ReviewOrder", 0, "targeting_microflow", "M.Pick"); err == nil {
 		t.Error("switching targeting kind from XPath to Microflow should be rejected")
+	}
+}
+
+func TestUpdateWorkflow_ReplacesFlowAndProperties(t *testing.T) {
+	f := newFakePED(t, func(name string, _ map[string]any) (string, bool) {
+		switch name {
+		case "ped_check_errors":
+			return "No errors found.", false
+		case "ped_read_document":
+			// The existing flow has 3 activities (Start, X, End).
+			return `{"results":[{"path":"/flow/activities","result":[
+				{"$Type":"Workflows$StartWorkflowActivity"},
+				{"$Type":"Workflows$CallMicroflowActivity"},
+				{"$Type":"Workflows$EndWorkflowActivity"}]}]}`, false
+		}
+		return "SUCCESS", false
+	})
+	mod := &model.Module{Name: "M"}
+	mod.ID = "mod1"
+	b := &Backend{client: f.connectClient(t), sessionModules: []*model.Module{mod}}
+
+	start := &workflows.StartWorkflowActivity{}
+	start.Name = "Start"
+	end := &workflows.EndWorkflowActivity{}
+	end.Name = "End"
+	y := &workflows.CallMicroflowTask{Microflow: "M.Y"}
+	y.Name = "Y"
+	wf := &workflows.Workflow{
+		Name: "WF", WorkflowName: "Display",
+		Parameter: &workflows.WorkflowParameter{EntityRef: "M.Ctx"},
+		Flow:      &workflows.Flow{Activities: []workflows.WorkflowActivity{start, y, end}},
+	}
+	wf.ContainerID = "mod1"
+	wf.ID = "wfid"
+
+	if err := b.UpdateWorkflow(wf); err != nil {
+		t.Fatalf("UpdateWorkflow: %v", err)
+	}
+	call, ok := f.callByName("ped_update_document")
+	if !ok {
+		t.Fatal("no ped_update_document sent")
+	}
+	ops, _ := call.Args["operations"].([]any)
+	var adds, removes int
+	for _, o := range ops {
+		op, _ := o.(map[string]any)["operation"].(map[string]any)
+		switch op["type"] {
+		case "add":
+			adds++
+			// Middles are inserted just after Start (index 1), in reverse order.
+			if idx, _ := op["index"].(float64); idx != 1 {
+				t.Errorf("flow-replace add must target index 1, got %v", op["index"])
+			}
+		case "remove":
+			removes++
+		}
+	}
+	// New flow [Start, Y, End] and existing [Start, X, End]: only the middle is
+	// replaced (Start/End preserved) -> 1 add + 1 remove.
+	if adds != 1 || removes != 1 {
+		t.Errorf("expected 1 middle add + 1 middle remove, got %d/%d", adds, removes)
+	}
+	raw, _ := json.Marshal(ops)
+	s := string(raw)
+	for _, want := range []string{
+		`"path":"/workflowName/text"`, `"value":"Display"`,
+		`"path":"/title"`,
+		`"path":"/parameter/entity"`, `"value":"M.Ctx"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("UpdateWorkflow ops missing %s: %s", want, s)
+		}
+	}
+	if len(b.sessionWorkflows) != 1 || b.sessionWorkflows[0].ID != "wfid" {
+		t.Errorf("session workflow not upserted: %+v", b.sessionWorkflows)
 	}
 }

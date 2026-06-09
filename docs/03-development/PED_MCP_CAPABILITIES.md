@@ -152,8 +152,19 @@ match→index first. **SetActivityProperty** sets primitive/reference leaves
 changing the *kind* of user targeting (XPath↔Microflow) is rejected because PED
 can't replace the nested element. So `ALTER WORKFLOW` is now complete over MCP
 (workflow-level SET + all activity-level structural and property ops); the only
-ALTER gaps are activities nested inside a sub-flow (top-level only) and CREATE
-OR REPLACE WORKFLOW.
+gap is editing activities nested inside a sub-flow (top-level only).
+
+**CREATE OR REPLACE WORKFLOW** rewrites an existing workflow in place via
+`ped_update_document` (PED has no document-replace tool), preserving the `$ID`.
+The workflow keeps its structural Start/End (PED refuses to remove either, and an
+index-less `add` lands *after* End in the array), so only the *middle* activities
+are swapped: the originals (indices 1..n-2) are removed, then the new middles are
+inserted just after Start. Each insert targets **index 1 in reverse order** — an
+explicit `add` index is validated against the array's *original* length (so an
+incrementing index can't grow the flow), but index 1 is always valid; reverse
+insertion leaves the middles in sequence. Workflow-level properties are set as in
+ALTER (title/workflowName/description/dueDate/documentation/parameter). Verified
+live (1-middle → 2-middle replace → `[Start, NewB, NewC, End]`, validates clean).
 
 `CREATE MODULE` routes through `ped_create_module` (which flushes to disk
 immediately) and registers the module in a session list merged into
