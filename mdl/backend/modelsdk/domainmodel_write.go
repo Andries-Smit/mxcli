@@ -136,7 +136,7 @@ func (b *Backend) CreateEntity(domainModelID model.ID, entity *domainmodel.Entit
 	if err != nil {
 		return err
 	}
-	ge := entityToGen(entity, b.moduleNameFor(domainModelID))
+	ge := entityToGen(entity, b.moduleNameFor(domainModelID), b.majorVersion())
 	assignEntityIDs(ge)
 	dm.AddEntities(ge)
 
@@ -178,11 +178,25 @@ func (b *Backend) loadDomainModelGen(id model.ID) (*genDm.DomainModel, error) {
 // generalization (NoGeneralization with persistability + system-attribute flags,
 // or a Generalization parent ref). Attributes/indexes/access rules come with the
 // domain-model breadth step.
-func entityToGen(e *domainmodel.Entity, moduleName string) *genDm.Entity {
+func entityToGen(e *domainmodel.Entity, moduleName string, major int) *genDm.Entity {
 	out := genDm.NewEntity()
 	out.SetName(e.Name)
 	out.SetDocumentation(e.Documentation)
 	out.SetLocation(fmt.Sprintf("%d;%d", e.Location.X, e.Location.Y))
+	// View entities carry an OqlViewEntitySource referencing their source document.
+	// Mendix <11 also stores the OQL inline on the source object; 11+ keeps it only
+	// on the ViewEntitySourceDocument (verified against the legacy serializer).
+	if e.Source == "DomainModels$OqlViewEntitySource" && e.SourceDocumentRef != "" {
+		src := genDm.NewOqlViewEntitySource()
+		if e.SourceObjectID != "" {
+			src.SetID(element.ID(e.SourceObjectID))
+		}
+		src.SetSourceDocumentQualifiedName(e.SourceDocumentRef)
+		if major < 11 {
+			src.SetOql(e.OqlQuery)
+		}
+		out.SetSource(src)
+	}
 	// ExportLevel is a mandatory scalar NewEntity's pending applyDefaults does not
 	// yet set (engalar tech-debt Fix 4). The entity GUID and the empty member
 	// arrays (Attributes/AccessRules/…) legacy also emits are NOT settable on the
@@ -438,15 +452,23 @@ func attributeToGen(a *domainmodel.Attribute) *genDm.Attribute {
 	out.SetExportLevel("Hidden")
 	out.SetType(attributeTypeToGen(a.Type))
 
-	// Studio Pro always serializes StoredValue.DefaultValue (empty string when no
-	// explicit default), so set it unconditionally to stay in parity.
-	sv := genDm.NewStoredValue()
-	def := ""
-	if a.Value != nil {
-		def = a.Value.DefaultValue
+	// View-entity attributes carry an OqlViewValue referencing the OQL column
+	// (not a StoredValue) — emitting StoredValue triggers CE6770 "View Entity out
+	// of sync". Otherwise Studio Pro always serializes StoredValue.DefaultValue
+	// (empty string when no explicit default), so set it unconditionally.
+	if a.Value != nil && a.Value.ViewReference != "" {
+		vv := genDm.NewOqlViewValue()
+		vv.SetReference(a.Value.ViewReference)
+		out.SetValue(vv)
+	} else {
+		sv := genDm.NewStoredValue()
+		def := ""
+		if a.Value != nil {
+			def = a.Value.DefaultValue
+		}
+		sv.SetDefaultValue(def)
+		out.SetValue(sv)
 	}
-	sv.SetDefaultValue(def)
-	out.SetValue(sv)
 	// Carry the domainmodel attribute ID onto the gen element so an index's
 	// AttributePointer (which references this same ID) resolves to it. assignID
 	// leaves non-empty IDs untouched; the canonical comparison masks IDs anyway.
@@ -496,6 +518,9 @@ func attributeTypeToGen(t domainmodel.AttributeType) element.Element {
 func assignEntityIDs(e *genDm.Entity) {
 	assignID(e)
 	assignID(e.Generalization())
+	if src := e.Source(); src != nil { // view/external entity source object (nil for plain entities)
+		assignID(src)
+	}
 	for _, el := range e.AttributesItems() {
 		assignID(el)
 		if a, ok := el.(*genDm.Attribute); ok {

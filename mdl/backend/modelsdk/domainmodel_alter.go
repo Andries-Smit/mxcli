@@ -112,7 +112,7 @@ func (b *Backend) UpdateEntity(domainModelID model.ID, entity *domainmodel.Entit
 		return fmt.Errorf("entity not found: %s", entity.ID)
 	}
 
-	ge := entityToGen(entity, b.moduleNameFor(domainModelID))
+	ge := entityToGen(entity, b.moduleNameFor(domainModelID), b.majorVersion())
 	ge.SetID(element.ID(entity.ID))
 	assignEntityIDs(ge)
 
