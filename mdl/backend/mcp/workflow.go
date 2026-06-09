@@ -124,15 +124,26 @@ func mapWorkflowStringTemplate(text string) map[string]any {
 }
 
 func (b *Backend) mapWorkflowFlow(flow *workflows.Flow) (map[string]any, error) {
-	acts := []any{}
-	if flow != nil {
-		for _, a := range flow.Activities {
-			m, err := mapWorkflowActivity(a)
-			if err != nil {
-				return nil, err
-			}
-			acts = append(acts, m)
+	if flow == nil {
+		return map[string]any{"$Type": "Workflows$Flow", "activities": []any{}}, nil
+	}
+	return mapWorkflowFlowValue(flow)
+}
+
+// mapWorkflowFlowValue maps a Workflows$Flow (the top-level flow or an outcome's
+// sub-flow) onto its pg form, recursing into each activity. Returns nil for a nil
+// flow so callers can omit the key.
+func mapWorkflowFlowValue(flow *workflows.Flow) (map[string]any, error) {
+	if flow == nil {
+		return nil, nil
+	}
+	acts := make([]any, 0, len(flow.Activities))
+	for _, a := range flow.Activities {
+		m, err := mapWorkflowActivity(a)
+		if err != nil {
+			return nil, err
 		}
+		acts = append(acts, m)
 	}
 	return map[string]any{"$Type": "Workflows$Flow", "activities": acts}, nil
 }
@@ -162,6 +173,23 @@ func mapWorkflowActivity(a workflows.WorkflowActivity) (map[string]any, error) {
 			"microflow":         act.Microflow,
 			"outcomes":          outcomes,
 			"parameterMappings": mapWorkflowParamMappings(act.ParameterMappings),
+		}, nil
+	case *workflows.ParallelSplitActivity:
+		outcomes := make([]any, 0, len(act.Outcomes))
+		for _, oc := range act.Outcomes {
+			m := map[string]any{"$Type": "Workflows$ParallelSplitOutcome"}
+			if fm, err := mapWorkflowFlowValue(oc.Flow); err != nil {
+				return nil, err
+			} else if fm != nil {
+				m["flow"] = fm
+			}
+			outcomes = append(outcomes, m)
+		}
+		return map[string]any{
+			"$Type":    "Workflows$ParallelSplitActivity",
+			"name":     act.Name,
+			"caption":  act.Caption,
+			"outcomes": outcomes,
 		}, nil
 	case *workflows.ExclusiveSplitActivity:
 		outcomes, err := mapConditionOutcomes(act.Outcomes)
@@ -230,16 +258,10 @@ func mapUserTaskOutcomes(outcomes []*workflows.UserTaskOutcome) ([]any, error) {
 			value = oc.Caption
 		}
 		m := map[string]any{"$Type": "Workflows$UserTaskOutcome", "value": value}
-		if oc.Flow != nil {
-			acts := make([]any, 0, len(oc.Flow.Activities))
-			for _, a := range oc.Flow.Activities {
-				am, err := mapWorkflowActivity(a)
-				if err != nil {
-					return nil, err
-				}
-				acts = append(acts, am)
-			}
-			m["flow"] = map[string]any{"$Type": "Workflows$Flow", "activities": acts}
+		if fm, err := mapWorkflowFlowValue(oc.Flow); err != nil {
+			return nil, err
+		} else if fm != nil {
+			m["flow"] = fm
 		}
 		out = append(out, m)
 	}
@@ -266,16 +288,10 @@ func mapConditionOutcomes(outcomes []workflows.ConditionOutcome) ([]any, error) 
 		default:
 			return nil, fmt.Errorf("workflow outcome type %T is not yet supported by the MCP backend", oc)
 		}
-		if flow != nil {
-			acts := make([]any, 0, len(flow.Activities))
-			for _, a := range flow.Activities {
-				am, err := mapWorkflowActivity(a)
-				if err != nil {
-					return nil, err
-				}
-				acts = append(acts, am)
-			}
-			m["flow"] = map[string]any{"$Type": "Workflows$Flow", "activities": acts}
+		if fm, err := mapWorkflowFlowValue(flow); err != nil {
+			return nil, err
+		} else if fm != nil {
+			m["flow"] = fm
 		}
 		out = append(out, m)
 	}

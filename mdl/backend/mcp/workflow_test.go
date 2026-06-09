@@ -144,11 +144,45 @@ func TestMapDecision(t *testing.T) {
 	}
 }
 
+func TestMapParallelSplit(t *testing.T) {
+	mk := func(mf string) *workflows.Flow {
+		c := &workflows.CallMicroflowTask{Microflow: mf}
+		c.Name = "c"
+		return &workflows.Flow{Activities: []workflows.WorkflowActivity{c}}
+	}
+	ps := &workflows.ParallelSplitActivity{Outcomes: []*workflows.ParallelSplitOutcome{
+		{Flow: mk("M.A")}, {Flow: mk("M.B")},
+	}}
+	ps.Name = "split"
+	m, err := mapWorkflowActivity(ps)
+	if err != nil {
+		t.Fatalf("mapWorkflowActivity(ParallelSplit): %v", err)
+	}
+	if m["$Type"] != "Workflows$ParallelSplitActivity" {
+		t.Fatalf("parallel split: %+v", m)
+	}
+	ocs, _ := m["outcomes"].([]any)
+	if len(ocs) != 2 {
+		t.Fatalf("outcomes: %+v", ocs)
+	}
+	for i, want := range []string{"M.A", "M.B"} {
+		oc := ocs[i].(map[string]any)
+		if oc["$Type"] != "Workflows$ParallelSplitOutcome" {
+			t.Fatalf("outcome[%d]: %+v", i, oc)
+		}
+		flow := oc["flow"].(map[string]any)
+		act := flow["activities"].([]any)[0].(map[string]any)
+		if act["microflow"] != want {
+			t.Fatalf("path[%d] microflow = %v, want %s", i, act["microflow"], want)
+		}
+	}
+}
+
 func TestMapWorkflowActivity_Unsupported(t *testing.T) {
 	// An activity type not yet mapped is rejected, not silently dropped.
-	ps := &workflows.ParallelSplitActivity{}
-	ps.Name = "split"
-	if _, err := mapWorkflowActivity(ps); err == nil {
+	j := &workflows.JumpToActivity{}
+	j.Name = "jump"
+	if _, err := mapWorkflowActivity(j); err == nil {
 		t.Error("unmapped workflow activity should be rejected")
 	}
 }
