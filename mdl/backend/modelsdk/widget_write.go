@@ -27,6 +27,16 @@ func init() {
 	codec.RegisterTypeDefaults("Forms$ClientTemplate", codec.TypeDefaults{
 		MandatoryListMarkers: map[string]int32{"Parameters": 2},
 	})
+	// LayoutGrid and its rows carry a null ConditionalVisibilitySettings; the grid,
+	// rows, and columns all use the typed-array marker 2 in their parent lists.
+	for _, t := range []string{"Forms$LayoutGrid", "Forms$LayoutGridRow"} {
+		codec.RegisterTypeDefaults(t, codec.TypeDefaults{
+			NullFields: []string{"ConditionalVisibilitySettings"},
+		})
+	}
+	codec.RegisterListMarker("Forms$LayoutGrid", 2)
+	codec.RegisterListMarker("Forms$LayoutGridRow", 2)
+	codec.RegisterListMarker("Forms$LayoutGridColumn", 2)
 }
 
 // widgetToGen converts a model widget to its gen element, recursing into
@@ -57,9 +67,77 @@ func widgetToGen(w pages.Widget) (element.Element, error) {
 		g.SetContent(clientTemplateToGen(x.Content))
 		return g, nil
 
+	case *pages.LayoutGrid:
+		g := genPg.NewLayoutGrid()
+		applyWidgetBase(g, &x.BaseWidget)
+		g.SetWidth("FullWidth")
+		for _, row := range x.Rows {
+			rg, err := layoutGridRowToGen(row)
+			if err != nil {
+				return nil, err
+			}
+			g.AddRows(rg)
+		}
+		return g, nil
+
 	default:
 		return nil, fmt.Errorf("CreatePage: widget %T not yet supported by the modelsdk engine — rerun with MXCLI_ENGINE=legacy", w)
 	}
+}
+
+// layoutGridRowToGen converts a LayoutGridRow (alignment defaults match the
+// legacy serializer; not a full widget, so no name/tabindex).
+func layoutGridRowToGen(row *pages.LayoutGridRow) (element.Element, error) {
+	g := genPg.NewLayoutGridRow()
+	if row.ID != "" {
+		g.SetID(element.ID(row.ID))
+	}
+	assignID(g)
+	g.SetAppearance(newAppearance("", ""))
+	g.SetHorizontalAlignment("None")
+	g.SetSpacingBetweenColumns(true)
+	g.SetVerticalAlignment("None")
+	for _, col := range row.Columns {
+		cg, err := layoutGridColumnToGen(col)
+		if err != nil {
+			return nil, err
+		}
+		g.AddColumns(cg)
+	}
+	return g, nil
+}
+
+// layoutGridColumnToGen converts a LayoutGridColumn. Weights default to -1 (auto,
+// via columnWeight); PreviewWidth is always -1 — matching the legacy serializer.
+func layoutGridColumnToGen(col *pages.LayoutGridColumn) (element.Element, error) {
+	g := genPg.NewLayoutGridColumn()
+	if col.ID != "" {
+		g.SetID(element.ID(col.ID))
+	}
+	assignID(g)
+	g.SetAppearance(newAppearance("", ""))
+	g.SetWeight(int32(columnWeight(col.Weight)))
+	g.SetTabletWeight(int32(columnWeight(col.TabletWeight)))
+	g.SetPhoneWeight(int32(columnWeight(col.PhoneWeight)))
+	g.SetPreviewWidth(-1)
+	g.SetVerticalAlignment("None")
+	for _, w := range col.Widgets {
+		wg, err := widgetToGen(w)
+		if err != nil {
+			return nil, err
+		}
+		g.AddWidgets(wg)
+	}
+	return g, nil
+}
+
+// columnWeight maps an unset weight (0) to -1 (auto-fill), matching the legacy
+// serializer's columnWeight.
+func columnWeight(w int) int32 {
+	if w == 0 {
+		return -1
+	}
+	return int32(w)
 }
 
 // widgetBaseGen is the shared setter surface of a gen widget element.
