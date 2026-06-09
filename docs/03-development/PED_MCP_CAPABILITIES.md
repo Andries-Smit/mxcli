@@ -102,7 +102,7 @@ MICROFLOW` (broad activity + control-flow coverage), `CREATE PAGE` + `ALTER PAGE
 condition outcomes that may nest sub-flows). Activity-type coverage grows one at a
 time (currently Start/End, CallMicroflow with outcomes, single **UserTask** —
 task page, XPath/Microflow user targeting, task name/description, and named
-outcomes each with a recursive sub-flow), **Decision** (ExclusiveSplit: expression + boolean/enum outcomes), **ParallelSplit** (concurrent paths), **JumpTo** (loop back to a named activity), and **WaitForTimer** (delay expression); MultiUserTask,
+outcomes each with a recursive sub-flow), **Decision** (ExclusiveSplit: expression + boolean/enum outcomes), **ParallelSplit** (concurrent paths), **JumpTo** (loop back to a named activity), and **WaitForTimer** (delay); MultiUserTask,
 JumpTo, WaitForTimer, boundary events, etc. and `ALTER WORKFLOW` are rejected with
 a clear error. **Type-name gotcha:** PED's element type for the call-microflow
 activity is `Workflows$CallMicroflowActivity`, NOT the on-disk BSON `$Type`
@@ -112,6 +112,17 @@ documents are addressed by qualified name (`<module>.<workflow>`), not a bare
 name. Entity references into a session-created module (a workflow's context
 entity, a microflow parameter) resolve because `ListDomainModels`/`GetDomainModel`
 reconstruct the session module's live entities from PED.
+
+**ALTER WORKFLOW** uses `ped_update_document` path operations (NOT the page-style
+read-modify-whole-tree, because `ped_read_document` collapses nested workflow
+elements to their `$Type`). Implemented: workflow-level SET — `display` →
+`/workflowName/text` + `/title`, `description` → `/workflowDescription/text`,
+`due_date` → `/dueDate`, `parameter` → `/parameter/entity`. Note nested template/
+parameter elements must be set by their leaf field (`/workflowName/text`), not
+replaced wholesale (PED rejects a whole-element set). The activity/outcome/path/
+branch/boundary-event ops are not yet wired (they need ref→array-index resolution
+via a shallow `/flow/activities` read; `pedOperation` does support add/remove by
+index) and return a clear error.
 
 `CREATE MODULE` routes through `ped_create_module` (which flushes to disk
 immediately) and registers the module in a session list merged into

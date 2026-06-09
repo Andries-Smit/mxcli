@@ -5,6 +5,7 @@ package mcp
 import (
 	"fmt"
 
+	"github.com/mendixlabs/mxcli/mdl/backend"
 	"github.com/mendixlabs/mxcli/model"
 	"github.com/mendixlabs/mxcli/sdk/workflows"
 )
@@ -322,4 +323,126 @@ func mapWorkflowParamMappings(pms []*workflows.ParameterMapping) []any {
 		})
 	}
 	return out
+}
+
+// ALTER WORKFLOW (in-place edits). Unlike ALTER PAGE (pg_read_page returns the
+// full widget tree), ped_read_document collapses nested workflow elements to
+// their $Type, so the page-style read-modify-whole-tree approach does not work
+// for workflows. Instead the mutator applies ped_update_document path ops. This
+// first increment covers the workflow-level SET properties (which need no
+// activity-index resolution); the activity/outcome/path/branch/boundary-event
+// ops are not yet mapped and return a clear error.
+
+// OpenWorkflowForMutation loads a workflow and returns a mutator that applies its
+// edits via ped_update_document on Save.
+func (b *Backend) OpenWorkflowForMutation(unitID model.ID) (backend.WorkflowMutator, error) {
+	wf, err := b.GetWorkflow(unitID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve workflow %s for mutation: %w", unitID, err)
+	}
+	modName, err := b.moduleNameForContainer(wf.ContainerID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve module for workflow %q: %w", wf.Name, err)
+	}
+	return &mcpWorkflowMutator{backend: b, moduleName: modName, workflowName: wf.Name}, nil
+}
+
+type mcpWorkflowMutator struct {
+	backend      *Backend
+	moduleName   string
+	workflowName string
+	ops          []pedOpEntry
+}
+
+var _ backend.WorkflowMutator = (*mcpWorkflowMutator)(nil)
+
+func (m *mcpWorkflowMutator) set(path string, value any) {
+	m.ops = append(m.ops, pedOpEntry{Path: path, Operation: pedOperation{Type: "set", Value: value}})
+}
+
+// SetProperty sets a workflow-level scalar/template property.
+func (m *mcpWorkflowMutator) SetProperty(prop, value string) error {
+	switch prop {
+	case "display":
+		// workflowName is a StringTemplate that already exists; set its text field
+		// (replacing the whole element is rejected). title mirrors the display name.
+		m.set("/workflowName/text", value)
+		m.set("/title", value)
+	case "description":
+		m.set("/workflowDescription/text", value)
+	case "due_date":
+		m.set("/dueDate", value)
+	default:
+		return fmt.Errorf("ALTER WORKFLOW SET %s is not yet supported by the MCP backend", prop)
+	}
+	return nil
+}
+
+// SetPropertyWithEntity sets a workflow-level property that references an entity.
+func (m *mcpWorkflowMutator) SetPropertyWithEntity(prop, value, entity string) error {
+	switch prop {
+	case "parameter":
+		// The parameter element already exists; set its entity by-name reference
+		// (replacing the whole element is rejected, like workflowName).
+		m.set("/parameter/entity", entity)
+		return nil
+	default:
+		return fmt.Errorf("ALTER WORKFLOW SET %s is not yet supported by the MCP backend", prop)
+	}
+}
+
+// Save flushes the accumulated property sets to Studio Pro and validates.
+func (m *mcpWorkflowMutator) Save() error {
+	if len(m.ops) == 0 {
+		return nil
+	}
+	qn := m.moduleName + "." + m.workflowName
+	if err := m.backend.pedUpdateDoc(workflowDocType, qn, m.ops...); err != nil {
+		return err
+	}
+	m.backend.markDirty(m.moduleName)
+	return m.backend.pedCheckDocument(workflowDocType, qn)
+}
+
+// --- activity/outcome/path/branch/boundary-event ops: not yet supported ---
+
+func (m *mcpWorkflowMutator) errUnsupported(op string) error {
+	return fmt.Errorf("ALTER WORKFLOW %s is not yet supported by the MCP backend (workflow-level SET is)", op)
+}
+
+func (m *mcpWorkflowMutator) SetActivityProperty(string, int, string, string) error {
+	return m.errUnsupported("activity property changes")
+}
+func (m *mcpWorkflowMutator) InsertAfterActivity(string, int, []workflows.WorkflowActivity) error {
+	return m.errUnsupported("INSERT activity")
+}
+func (m *mcpWorkflowMutator) DropActivity(string, int) error {
+	return m.errUnsupported("DROP activity")
+}
+func (m *mcpWorkflowMutator) ReplaceActivity(string, int, []workflows.WorkflowActivity) error {
+	return m.errUnsupported("REPLACE activity")
+}
+func (m *mcpWorkflowMutator) InsertOutcome(string, int, string, []workflows.WorkflowActivity) error {
+	return m.errUnsupported("INSERT outcome")
+}
+func (m *mcpWorkflowMutator) DropOutcome(string, int, string) error {
+	return m.errUnsupported("DROP outcome")
+}
+func (m *mcpWorkflowMutator) InsertPath(string, int, string, []workflows.WorkflowActivity) error {
+	return m.errUnsupported("INSERT path")
+}
+func (m *mcpWorkflowMutator) DropPath(string, int, string) error {
+	return m.errUnsupported("DROP path")
+}
+func (m *mcpWorkflowMutator) InsertBranch(string, int, string, []workflows.WorkflowActivity) error {
+	return m.errUnsupported("INSERT branch")
+}
+func (m *mcpWorkflowMutator) DropBranch(string, int, string) error {
+	return m.errUnsupported("DROP branch")
+}
+func (m *mcpWorkflowMutator) InsertBoundaryEvent(string, int, string, string, []workflows.WorkflowActivity) error {
+	return m.errUnsupported("INSERT boundary event")
+}
+func (m *mcpWorkflowMutator) DropBoundaryEvent(string, int) error {
+	return m.errUnsupported("DROP boundary event")
 }

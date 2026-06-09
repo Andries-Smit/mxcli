@@ -210,3 +210,39 @@ func TestMapWorkflowActivity_Unsupported(t *testing.T) {
 		t.Error("unmapped workflow activity should be rejected")
 	}
 }
+
+func TestWorkflowMutator_SetProperties(t *testing.T) {
+	m := &mcpWorkflowMutator{backend: &Backend{}, moduleName: "M", workflowName: "WF"}
+	if err := m.SetProperty("display", "New Name"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetProperty("description", "New Desc"); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetPropertyWithEntity("parameter", "$ctx", "M.NewCtx"); err != nil {
+		t.Fatal(err)
+	}
+	// Expect ops: /workflowName/text, /title, /workflowDescription/text, /parameter/entity.
+	got := map[string]any{}
+	for _, op := range m.ops {
+		got[op.Path] = op.Operation.Value
+	}
+	want := map[string]any{
+		"/workflowName/text":        "New Name",
+		"/title":                    "New Name",
+		"/workflowDescription/text": "New Desc",
+		"/parameter/entity":         "M.NewCtx",
+	}
+	for path, v := range want {
+		if got[path] != v {
+			t.Errorf("op %s = %v, want %v", path, got[path], v)
+		}
+	}
+	// Unsupported workflow-level property and activity ops are rejected.
+	if err := m.SetProperty("export_level", "api"); err == nil {
+		t.Error("SET export_level should be rejected")
+	}
+	if err := m.DropActivity("x", 0); err == nil {
+		t.Error("DropActivity should be rejected")
+	}
+}
