@@ -11,7 +11,6 @@ import (
 	genDm "github.com/mendixlabs/mxcli/modelsdk/gen/domainmodels"
 	mmpr "github.com/mendixlabs/mxcli/modelsdk/mpr"
 	"github.com/mendixlabs/mxcli/modelsdk/mprread"
-	"github.com/mendixlabs/mxcli/sdk/domainmodel"
 )
 
 // MoveEnumeration reparents an enumeration unit to its (already-updated) target
@@ -37,26 +36,6 @@ func (b *Backend) MoveConstant(c *model.Constant) error {
 	return b.writer.MoveUnit(string(c.ID), string(c.ContainerID))
 }
 
-// --- Guarded gaps -----------------------------------------------------------
-// These operations are not yet implemented on the codec path. They are guarded
-// (per ADR-0005: refuse rather than silently drop) so the modelsdk engine fails
-// honestly instead of leaving a half-applied/broken model. Full implementations
-// are tracked in docs/plans/2026-06-05-adopt-modelsdk-engine.md.
-
-const errModelSDKUnsupported = "%s: not yet supported by the modelsdk engine (needs %s) — use the legacy engine"
-
-// MoveEntity is cross-domain-model: it removes the entity from the source DM,
-// adds it to the target DM, and converts dangling associations to cross-module
-// associations. Pending CreateCrossAssociation + reference rewrites.
-func (b *Backend) MoveEntity(entity *domainmodel.Entity, sourceDMID, targetDMID model.ID, sourceModuleName, targetModuleName string) ([]string, error) {
-	return nil, fmt.Errorf(errModelSDKUnsupported, "MoveEntity", "cross-DM move + cross-association conversion")
-}
-
-// CreateCrossAssociation creates a cross-module association (ParentID by-id +
-// remote child by qualified name + delete behaviors). Pending the converter.
-func (b *Backend) CreateCrossAssociation(domainModelID model.ID, ca *domainmodel.CrossModuleAssociation) error {
-	return fmt.Errorf(errModelSDKUnsupported, "CreateCrossAssociation", "cross-association converter")
-}
 
 // CreateViewEntitySourceDocument creates the OQL source document (a top-level
 // unit) that backs a view entity. The entity's OqlViewEntitySource references it
