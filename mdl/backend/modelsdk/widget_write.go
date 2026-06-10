@@ -108,6 +108,15 @@ func init() {
 		},
 	})
 	codec.RegisterListMarker("Forms$DatePicker", 2)
+	// TextArea: TextBox-like null slots (+ native accessibility).
+	codec.RegisterTypeDefaults("Forms$TextArea", codec.TypeDefaults{
+		NullFields: []string{
+			"AttributeRef", "ScreenReaderLabel", "SourceVariable", "LabelTemplate",
+			"ConditionalVisibilitySettings", "ConditionalEditabilitySettings",
+			"NativeAccessibilitySettings",
+		},
+	})
+	codec.RegisterListMarker("Forms$TextArea", 2)
 }
 
 // widgetToGen converts a model widget to its gen element, recursing into
@@ -243,6 +252,39 @@ func widgetToGen(w pages.Widget) (element.Element, error) {
 			return nil, err
 		}
 		g.SetAction(act)
+		return g, nil
+
+	case *pages.TextArea:
+		g := genPg.NewTextArea()
+		applyWidgetBase(g, &x.BaseWidget)
+		g.SetAriaRequired(false)
+		g.SetAutoFocus(false)
+		if ref := attributeRefToGen(x.AttributePath); ref != nil {
+			g.SetAttributeRef(ref)
+		}
+		g.SetCounterMessage(captionToGen(x.CounterMessage))
+		g.SetEditable("Always")
+		if x.Label != "" {
+			g.SetLabelTemplate(textAsClientTemplate(textFromString(x.Label)))
+		}
+		g.SetMaxLengthCode(-1)
+		lines := int32(x.Rows)
+		if lines == 0 {
+			lines = 5
+		}
+		g.SetNumberOfLines(lines)
+		onChangeTA, err := clientActionToGen(x.OnChangeAction)
+		if err != nil {
+			return nil, err
+		}
+		g.SetOnChangeAction(onChangeTA)
+		g.SetOnEnterAction(noActionGen())
+		g.SetOnLeaveAction(noActionGen())
+		g.SetPlaceholderTemplate(textAsClientTemplate(x.Placeholder))
+		g.SetReadOnlyStyle("Inherit")
+		g.SetSubmitBehaviour("OnEndEditing")
+		g.SetSubmitOnInputDelay(300)
+		g.SetValidation(widgetValidationToGen())
 		return g, nil
 
 	case *pages.DatePicker:
