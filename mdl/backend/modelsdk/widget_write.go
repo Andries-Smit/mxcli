@@ -140,6 +140,10 @@ func init() {
 	codec.RegisterTypeDefaults("Forms$FormSettings", codec.TypeDefaults{
 		MandatoryListMarkers: map[string]int32{"ParameterMappings": 2},
 	})
+	// create_object action: EntityRef is null when no entity is specified.
+	codec.RegisterTypeDefaults("Forms$CreateObjectClientAction", codec.TypeDefaults{
+		NullFields: []string{"EntityRef"},
+	})
 }
 
 // widgetToGen converts a model widget to its gen element, recursing into
@@ -710,6 +714,17 @@ func dataViewSourceToGen(ds pages.DataSource) (element.Element, error) {
 	}
 }
 
+// formSettingsToGen builds the Forms$FormSettings (PageSettings) shared by the
+// page-opening actions: target page by-name, empty parameter mappings, empty
+// title override.
+func formSettingsToGen(pageName string) element.Element {
+	ps := genPg.NewPageSettings()
+	assignID(ps)
+	ps.SetPageQualifiedName(pageName)
+	ps.SetTitleOverride(clientTemplateToGen(nil))
+	return ps
+}
+
 // clientActionToGen converts a widget client action. Simple actions are supported;
 // the page/microflow/nanoflow/create-object actions (which carry settings sub-
 // objects) are refused loudly for now.
@@ -746,11 +761,24 @@ func clientActionToGen(a pages.ClientAction) (element.Element, error) {
 		assignID(g)
 		g.SetDisabledDuringExecution(true)
 		g.SetNumberOfPagesToClose2("")
-		ps := genPg.NewPageSettings()
-		assignID(ps)
-		ps.SetPageQualifiedName(x.PageName)
-		ps.SetTitleOverride(clientTemplateToGen(nil))
-		g.SetPageSettings(ps)
+		g.SetPageSettings(formSettingsToGen(x.PageName))
+		return g, nil
+	case *pages.CreateObjectClientAction:
+		// create_object → Forms$CreateObjectClientAction (entity ref + page settings).
+		g := genPg.NewCreateObjectClientAction()
+		if x.ID != "" {
+			g.SetID(element.ID(x.ID))
+		}
+		assignID(g)
+		g.SetDisabledDuringExecution(true)
+		g.SetNumberOfPagesToClose2("")
+		if x.EntityName != "" {
+			ref := genDm.NewDirectEntityRef()
+			assignID(ref)
+			ref.SetEntityQualifiedName(x.EntityName)
+			g.SetEntityRef(ref)
+		}
+		g.SetPageSettings(formSettingsToGen(x.PageName))
 		return g, nil
 	default:
 		return nil, fmt.Errorf("CreatePage: client action %T not yet supported by the modelsdk engine — rerun with MXCLI_ENGINE=legacy", a)
