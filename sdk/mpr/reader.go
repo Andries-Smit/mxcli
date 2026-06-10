@@ -39,6 +39,12 @@ type Reader struct {
 	// Cache for unit metadata to avoid repeated file reads
 	unitCache      []cachedUnit
 	unitCacheValid bool
+
+	// Lazily-built index of (unit $Type + qualified name) → unit, so name
+	// lookups are O(1) instead of re-scanning and re-parsing every unit per
+	// call (the source-catalog build does thousands of such lookups).
+	nameIndex      map[string]nameIndexEntry
+	nameIndexBuilt bool
 }
 
 // cachedUnit stores metadata about a unit for fast filtering.

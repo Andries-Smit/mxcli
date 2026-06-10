@@ -3,8 +3,11 @@
 package catalog
 
 import (
+	"fmt"
 	"runtime"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 // sourceItem represents a single element to generate MDL source for.
@@ -110,11 +113,30 @@ func (b *Builder) buildSource() error {
 		return nil
 	}
 
-	// Phase 2: Generate MDL source in parallel
+	// Phase 2: Generate MDL source in parallel. This is the slow phase on large
+	// projects (one describe per document), so report progress periodically —
+	// from a single ticker goroutine, the only caller of report() during the
+	// run, so the progress sink isn't written concurrently.
 	numWorkers := max(min(runtime.NumCPU(), 8), 1)
 
 	results := make([]sourceResult, len(items))
 	work := make(chan int, len(items))
+
+	var done atomic.Int64
+	total := len(items)
+	stop := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				b.report(fmt.Sprintf("source %d/%d documents", done.Load(), total), int(done.Load()))
+			}
+		}
+	}()
 
 	var wg sync.WaitGroup
 	for range numWorkers {
@@ -125,6 +147,7 @@ func (b *Builder) buildSource() error {
 				if err == nil && text != "" {
 					results[idx] = sourceResult{item, text}
 				}
+				done.Add(1)
 			}
 		})
 	}
@@ -134,6 +157,7 @@ func (b *Builder) buildSource() error {
 	}
 	close(work)
 	wg.Wait()
+	close(stop)
 
 	// Phase 3: Insert results into FTS5 table (serial — SQLite constraint)
 	stmt, err := b.tx.Prepare(`
