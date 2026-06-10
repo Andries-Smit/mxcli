@@ -132,6 +132,15 @@ func init() {
 	})
 	codec.RegisterListMarker("Forms$NavigationList", 2)
 	codec.RegisterListMarker("Forms$NavigationListItem", 2)
+	// SnippetCallWidget: null visibility; the inner SnippetCall always emits its
+	// (empty) ParameterMappings array.
+	codec.RegisterTypeDefaults("Forms$SnippetCallWidget", codec.TypeDefaults{
+		NullFields: []string{"ConditionalVisibilitySettings"},
+	})
+	codec.RegisterListMarker("Forms$SnippetCallWidget", 2)
+	codec.RegisterTypeDefaults("Forms$SnippetCall", codec.TypeDefaults{
+		MandatoryLists: []string{"ParameterMappings"},
+	})
 	// show_page action (Forms$FormAction) + its FormSettings always emit their
 	// (empty) typed-array lists with marker 2.
 	codec.RegisterTypeDefaults("Forms$FormAction", codec.TypeDefaults{
@@ -377,6 +386,18 @@ func widgetToGen(w pages.Widget) (element.Element, error) {
 		g.SetOnChangeAction(onChange)
 		g.SetOnEnterAction(noActionGen())
 		g.SetValidation(widgetValidationToGen())
+		return g, nil
+
+	case *pages.SnippetCallWidget:
+		g := genPg.NewSnippetCallWidget()
+		applyWidgetBase(g, &x.BaseWidget)
+		if len(x.ParameterMappings) > 0 {
+			return nil, fmt.Errorf("CreatePage: parameterised snippet call %q not yet supported by the modelsdk engine — rerun with MXCLI_ENGINE=legacy", x.Name)
+		}
+		call := genPg.NewSnippetCall()
+		assignID(call)
+		call.SetSnippetQualifiedName(x.SnippetName)
+		g.SetSnippetCall(call)
 		return g, nil
 
 	case *pages.NavigationList:
