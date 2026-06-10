@@ -97,11 +97,23 @@ The port can change between Studio Pro sessions — confirm with `lsof` on the h
 ## How the mxcli MCP backend uses this surface
 
 Implemented (11.11): `CREATE MODULE`, `CREATE/ALTER/DROP ENTITY`,
-`CREATE/DROP ASSOCIATION`, `CREATE ENUMERATION`, `CREATE VIEW ENTITY`, `CREATE
+`CREATE/DROP ASSOCIATION`, `CREATE ENUMERATION`, `CREATE/ALTER/DROP CONSTANT`,
+`CREATE VIEW ENTITY`, `CREATE
 MICROFLOW` (broad activity + control-flow coverage), `CREATE PAGE` + `ALTER PAGE`
 (INSERT/DROP/REPLACE/SET property/DataSource/Layout), and `CREATE WORKFLOW` +
 `DROP WORKFLOW` + `ALTER WORKFLOW`, with a dirty-set read router that makes
 in-session edits visible.
+
+**CREATE/ALTER CONSTANT** maps onto `Constants$Constant` ({name, type,
+defaultValue, exposedToClient}). Two PED-shape facts: the constructor `type` is a
+plain enum string limited to **String / Integer / Decimal / Boolean / DateTime**
+(Long / Enumeration / Binary are rejected, not coerced), and there is **no
+documentation field** (dropped). CREATE OR MODIFY sets the `defaultValue` and
+`exposedToClient` leaves in place; a *type* change is rejected because the model's
+`type` is a nested `DataTypes$*Type` element PED can't set directly (same constraint
+as an attribute's type — `UpdateConstant` reads the live type and refuses a
+mismatch). DROP goes through Concord's `delete_document` (no PED delete tool), like
+enumerations.
 
 **CREATE MICROFLOW** maps a broad set of actions (variable/object/list changes,
 create/commit/delete/rollback, aggregate, list operations, retrieve, call

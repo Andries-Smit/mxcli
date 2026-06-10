@@ -79,6 +79,11 @@ type Backend struct {
 	// enough; no live reconstruction is needed.
 	sessionEnums []*model.Enumeration
 
+	// sessionConstants holds constants created over MCP this session, merged into
+	// ListConstants/GetConstant (same rationale as sessionEnums: duplicate
+	// detection for CREATE OR MODIFY, and resolving a just-created constant for DROP).
+	sessionConstants []*model.Constant
+
 	// sessionMicroflows holds microflows created over MCP this session, merged
 	// into ListMicroflows/GetMicroflow for the same reason as sessionEnums
 	// (duplicate detection and create-then-reference within one run).

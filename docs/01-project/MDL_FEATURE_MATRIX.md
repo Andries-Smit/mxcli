@@ -52,7 +52,7 @@ live distinction is **MPR vs MCP**.
 | **View Entities** | Y | Y | Y | P | CREATE; CREATE OR REPLACE fails (no delete-document); DROP orphans the source doc |
 | **Workflows** | Y | Y | Y | Y | **Complete** — CREATE / CREATE OR REPLACE / DROP / ALTER, all activity types & ops, any nesting depth |
 | **Java Actions** | Y | Y | Y | N | Not wired |
-| **Constants** | Y | Y | Y | N | Not wired |
+| **Constants** | Y | Y | Y | P | CREATE / CREATE OR MODIFY (value + exposed-to-client) / DROP (via Concord); type limited to String/Integer/Decimal/Boolean/DateTime; in-place type change rejected; documentation not carried |
 | **OData Clients / Services** | Y | Y | Y | N | Not wired |
 | **External Entities** | Y | Y | Y | N | Not wired |
 | **Business Events** | Y | Y | Y | N | Not wired |
