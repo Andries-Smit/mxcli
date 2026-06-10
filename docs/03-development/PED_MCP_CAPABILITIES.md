@@ -15,7 +15,11 @@ whenever a new Studio Pro version is onboarded (procedure at the bottom).
 
 This is a developer reference. It is the sibling of
 [`WIDGET_BSON_VERSION_COMPATIBILITY.md`](WIDGET_BSON_VERSION_COMPATIBILITY.md)
-for the MCP transport instead of on-disk BSON.
+for the MCP transport instead of on-disk BSON. For the **cross-layer** view —
+how MCP coverage compares to the MPR backend, MDL, and the Mendix platform — see
+the Backend Coverage section of
+[`../01-project/MDL_FEATURE_MATRIX.md`](../01-project/MDL_FEATURE_MATRIX.md); this
+document is the MCP column's deep-dive.
 
 > **Provenance.** Every row below was captured live with `cmd/mcpprobe` against a
 > running Studio Pro, not copied from documentation. Raw fixtures live in

@@ -1,9 +1,86 @@
 # MDL Feature Completeness Matrix
 
-This document tracks the implementation status of each MDL language feature across all support dimensions.
-When adding a new MDL feature, use this matrix as a checklist to ensure complete coverage.
+This document tracks the implementation status of each MDL feature along **two axes**:
+
+1. **Backend coverage** (the section right below) — what each *capability layer* can do:
+   Mendix platform → MDL language → MPR backend (on-disk writer) → MCP backend
+   (live Studio Pro via PED). This answers "can I do X, and through which path?"
+2. **Tooling dimensions** (from *Core Document Types* onward) — for each MDL feature,
+   which facets are wired (SHOW/DESCRIBE/CREATE/ALTER, examples, tests, catalog, LSP,
+   skills, help, …). This answers "is feature X fully built out as an MDL feature?"
+
+When adding a new MDL feature, use **both** as a checklist to ensure complete coverage.
 
 **Legend:** Y = Yes | N = No | P = Partial | - = Not Applicable
+
+## Backend Coverage (Mendix / MDL / MPR / MCP)
+
+The capability layers are a **nested subset stack** — each can do at most what the layer
+above it offers:
+
+> **Mendix** (the platform metamodel) ⊇ **MDL** (the subset the language expresses) ⊇
+> **MPR** (on-disk BSON writer — the mature default) **&** **MCP** (live PED path — newer, narrower).
+
+Cells are coverage-level only (Y/P/N); the **detail lives in each layer's canonical home**,
+linked from the notes — this matrix never restates it:
+
+- **Mendix** ceiling and the metamodel domains MDL does *not* yet expose (REST, mappings,
+  47 of 52 domains): [`SDK_EQUIVALENCE.md`](SDK_EQUIVALENCE.md).
+- **MDL** syntax for each feature: [`MDL_QUICK_REFERENCE.md`](MDL_QUICK_REFERENCE.md).
+- **MCP** per-feature shapes, gaps, and Studio-Pro-version surface:
+  [`../03-development/PED_MCP_CAPABILITIES.md`](../03-development/PED_MCP_CAPABILITIES.md).
+- **MPR** is the reference backend the executor was built on; it realizes everything MDL
+  expresses (read `sdk/mpr/` and `mdl/backend/mpr/` for specifics).
+
+`Mendix` and `MDL` are `Y` for every row below *by construction* (a row exists only because
+MDL expresses a Mendix feature); they are kept as columns to make the stack explicit. The
+live distinction is **MPR vs MCP**.
+
+### Core document types
+
+| Feature | Mendix | MDL | MPR | MCP | MCP notes (detail → PED_MCP_CAPABILITIES.md) |
+|---------|:------:|:---:|:---:|:---:|----------------------------------------------|
+| **Modules** | Y | Y | Y | P | CREATE only (flushes to disk); no module DROP |
+| **Entities** | Y | Y | Y | Y | CREATE/DROP; ALTER add/drop/rename/docs — MODIFY *type* rejected (PED can't migrate) |
+| **Associations** | Y | Y | Y | P | Within-module CREATE/DROP; no custom delete behavior; cross-module / external N |
+| **Enumerations** | Y | Y | Y | P | CREATE; DROP via Concord; ALTER (modify values) N |
+| **Microflows** | Y | Y | Y | P | Broad CREATE (most actions + control flow); rejects show-page, cast, retrieve sort/range, inheritance/rule splits |
+| **Nanoflows** | Y | Y | Y | N | Not wired (reads delegate to the local `.mpr`) |
+| **Pages** | Y | Y | Y | P | CREATE + ALTER via `pg_*`; widget/data-source coverage grows one type at a time |
+| **Snippets** | Y | Y | Y | P | ALTER via the page mutator; CREATE not wired |
+| **Layouts** | Y | Y | Y | N | Not wired (reads delegate to the local `.mpr`) |
+| **View Entities** | Y | Y | Y | P | CREATE; CREATE OR REPLACE fails (no delete-document); DROP orphans the source doc |
+| **Workflows** | Y | Y | Y | Y | **Complete** — CREATE / CREATE OR REPLACE / DROP / ALTER, all activity types & ops, any nesting depth |
+| **Java Actions** | Y | Y | Y | N | Not wired |
+| **Constants** | Y | Y | Y | N | Not wired |
+| **OData Clients / Services** | Y | Y | Y | N | Not wired |
+| **External Entities** | Y | Y | Y | N | Not wired |
+| **Business Events** | Y | Y | Y | N | Not wired |
+| **Navigation** | Y | Y | Y | N | Not wired |
+| **Project Settings** | Y | Y | Y | N | Not wired |
+
+### Security
+
+| Feature | Mendix | MDL | MPR | MCP | MCP notes |
+|---------|:------:|:---:|:---:|:---:|-----------|
+| **Module / user roles, demo users, project security, entity / microflow / nanoflow / page access** | Y | Y | Y | N | **Not authorable via MCP** — PED's document tools reject every `Security$*` type and Concord exposes security *reads* only; neither server has a write path. |
+
+### Project organization
+
+| Feature | Mendix | MDL | MPR | MCP | MCP notes |
+|---------|:------:|:---:|:---:|:---:|-----------|
+| **Folders** | Y | Y | Y | N | Not wired |
+| **MOVE** | Y | Y | Y | N | Not wired |
+
+### External SQL, import, catalog & analysis
+
+| Feature | MPR | MCP | Notes |
+|---------|:---:|:---:|-------|
+| **External SQL / import / generate connector / catalog / lint / report / search** | - | - | Backend-agnostic: these operate on external databases, the app's runtime DB, or a read-only catalog built from the project — **not** the model-write backend. Available regardless of MPR vs MCP. |
+
+> **Maintenance:** when a feature gains MCP support, flip its **MCP** cell and tighten the note;
+> when MDL gains a feature Mendix has but MDL didn't (closing an `SDK_EQUIVALENCE` gap), add a row.
+> Keep cells coverage-level — push specifics to the linked homes.
 
 ## Core Document Types
 
