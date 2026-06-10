@@ -5,17 +5,25 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
+	modelsdk "github.com/mendixlabs/mxcli"
+	"github.com/mendixlabs/mxcli/mdl/catalog"
 	"github.com/mendixlabs/mxcli/mdl/executor"
 	"github.com/mendixlabs/mxcli/mdl/visitor"
 	"github.com/spf13/cobra"
 )
 
 var describeCmd = &cobra.Command{
-	Use:   "describe <type> <name>",
+	Use:   "describe [<type>] <name>",
 	Short: "Describe a project element",
 	Long: `Describe an element from a Mendix project in MDL syntax.
+
+The <type> is optional for a qualified document name: 'describe MyModule.Customer'
+auto-detects the document type. Pass the type explicitly to disambiguate (a name
+can match both an entity and a document, for example) or for forms that have no
+single qualified name (module, settings, navigation, module role).
 
 Types:
   module           Describe a module (all contents)
@@ -54,6 +62,8 @@ Types:
   systemoverview   Module dependency graph (requires --format elk)
 
 Example:
+  mxcli describe -p app.mpr MyModule.Customer          # type auto-detected
+  mxcli describe -p app.mpr MyModule.ProcessOrder      # type auto-detected
   mxcli describe -p app.mpr module MyModule
   mxcli describe -p app.mpr entity MyModule.Customer
   mxcli describe -p app.mpr microflow MyModule.ProcessOrder
@@ -72,12 +82,30 @@ Example:
   mxcli describe -p app.mpr consumed mcp service MyModule.FilesystemMCP
   mxcli describe -p app.mpr data transformer MyModule.TransformCustomer
 `,
-	Args: cobra.MinimumNArgs(2),
+	Args: cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		projectPath, _ := cmd.Flags().GetString("project")
 		if projectPath == "" {
 			fmt.Fprintln(os.Stderr, "Error: --project (-p) is required")
 			os.Exit(1)
+		}
+
+		// Type auto-detection: with a single argument (a name, no type), look up
+		// the document's type from the project and prepend it so the rest of the
+		// dispatch is unchanged.
+		if len(args) == 1 {
+			detected, candidates, err := resolveDescribeType(projectPath, args[0])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				fmt.Fprintf(os.Stderr, "hint: pass the type explicitly, e.g. 'describe <type> %s'\n", args[0])
+				os.Exit(1)
+			}
+			if len(candidates) > 0 {
+				fmt.Fprintf(os.Stderr, "Error: %q is ambiguous — it matches: %s\n", args[0], strings.Join(candidates, ", "))
+				fmt.Fprintf(os.Stderr, "Specify the type, e.g. 'describe %s %s'\n", candidates[0], args[0])
+				os.Exit(1)
+			}
+			args = append([]string{detected}, args...)
 		}
 
 		// Support multi-word types: "business event service Module.Name" → type="BUSINESS EVENT SERVICE", name="Module.Name"
@@ -251,4 +279,170 @@ Example:
 			}
 		}
 	},
+}
+
+// objectTypeToDescribe maps a catalog `objects` view ObjectType to the `describe`
+// keyword. Only directly describable types with a `Module.Name` shape are listed.
+var objectTypeToDescribe = map[string]string{
+	"MODULE":                 "module",
+	"ENTITY":                 "entity",
+	"EXTERNAL_ENTITY":        "entity",
+	"MICROFLOW":              "microflow",
+	"NANOFLOW":               "nanoflow",
+	"PAGE":                   "page",
+	"SNIPPET":                "snippet",
+	"LAYOUT":                 "layout",
+	"ENUMERATION":            "enumeration",
+	"CONSTANT":               "constant",
+	"JAVA_ACTION":            "javaaction",
+	"WORKFLOW":               "workflow",
+	"JSON_STRUCTURE":         "jsonstructure",
+	"IMPORT_MAPPING":         "importmapping",
+	"EXPORT_MAPPING":         "exportmapping",
+	"ODATA_CLIENT":           "odataclient",
+	"ODATA_SERVICE":          "odataservice",
+	"REST_CLIENT":            "restclient",
+	"BUSINESS_EVENT_SERVICE": "businesseventservice",
+	"DATABASE_CONNECTION":    "databaseconnection",
+}
+
+// unitTypeToDescribe maps a top-level unit's BSON $Type to the `describe`
+// keyword. Used by the live-reader fallback. Only directly describable document
+// types are listed (page templates, building blocks, rules, etc. are absent so
+// they don't resolve).
+var unitTypeToDescribe = map[string]string{
+	"Microflows$Microflow":         "microflow",
+	"Microflows$Nanoflow":          "nanoflow",
+	"Forms$Page":                   "page",
+	"Forms$Snippet":                "snippet",
+	"Forms$Layout":                 "layout",
+	"Enumerations$Enumeration":     "enumeration",
+	"Constants$Constant":           "constant",
+	"JavaActions$JavaAction":       "javaaction",
+	"JsonStructures$JsonStructure": "jsonstructure",
+	"ImportMappings$ImportMapping": "importmapping",
+	"ExportMappings$ExportMapping": "exportmapping",
+	"Images$ImageCollection":       "imagecollection",
+	"Workflows$Workflow":           "workflow",
+}
+
+// resolveDescribeType auto-detects the `describe` type for a qualified document
+// name. It prefers the catalog cache (an O(1) index, when `.mxcli/catalog.db`
+// exists) and falls back to a live project scan when the catalog is absent or
+// has no entry for the name (e.g. a document added since the last build). It
+// returns the single matching type, the candidate list when the name is
+// ambiguous (an entity and a document can share a name), or an error when
+// nothing matches.
+func resolveDescribeType(projectPath, name string) (string, []string, error) {
+	matches := resolveViaCatalog(projectPath, name)
+	if len(matches) == 0 {
+		var err error
+		matches, err = resolveViaReader(projectPath, name)
+		if err != nil {
+			return "", nil, err
+		}
+	}
+	return chooseDescribeType(name, matches)
+}
+
+// chooseDescribeType collapses raw matches (which may contain duplicates and
+// empty strings) into a single type, a candidate list, or a not-found error.
+func chooseDescribeType(name string, matches []string) (string, []string, error) {
+	seen := map[string]bool{}
+	var uniq []string
+	for _, m := range matches {
+		if m != "" && !seen[m] {
+			seen[m] = true
+			uniq = append(uniq, m)
+		}
+	}
+	switch len(uniq) {
+	case 0:
+		return "", nil, fmt.Errorf("no describable document named %q found in the project", name)
+	case 1:
+		return uniq[0], nil, nil
+	default:
+		return "", uniq, nil
+	}
+}
+
+// resolveViaCatalog looks the name up in the catalog cache. Returns nil (so the
+// caller falls back to a live scan) when the catalog is missing, unreadable, or
+// has no matching row. Best-effort: any error is treated as a miss.
+func resolveViaCatalog(projectPath, name string) []string {
+	dbPath := filepath.Join(filepath.Dir(projectPath), ".mxcli", "catalog.db")
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil
+	}
+	cat, err := catalog.NewFromFile(dbPath)
+	if err != nil {
+		return nil
+	}
+	defer cat.Close()
+
+	q := "'" + strings.ReplaceAll(name, "'", "''") + "'"
+	var out []string
+	// Documents (the objects union view).
+	if res, err := cat.Query("SELECT DISTINCT ObjectType FROM objects WHERE QualifiedName = " + q); err == nil {
+		for _, row := range res.Rows {
+			if len(row) > 0 {
+				out = append(out, objectTypeToDescribe[fmt.Sprintf("%v", row[0])])
+			}
+		}
+	}
+	// Associations are not in the objects view; check their table directly.
+	if res, err := cat.Query("SELECT 1 FROM associations WHERE QualifiedName = " + q + " LIMIT 1"); err == nil && res.Count > 0 {
+		out = append(out, "association")
+	}
+	return out
+}
+
+// resolveViaReader scans the live project for the name. Authoritative but slower
+// than the catalog (it enumerates documents). Covers top-level documents plus
+// entities and associations (including cross-module associations).
+func resolveViaReader(projectPath, name string) ([]string, error) {
+	reader, err := modelsdk.Open(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	var out []string
+	// Top-level documents (microflow, page, snippet, enumeration, ...).
+	if units, err := reader.ListRawUnits(""); err == nil {
+		for _, u := range units {
+			if u.QualifiedName == name {
+				out = append(out, unitTypeToDescribe[u.Type])
+			}
+		}
+	}
+
+	// Entities and associations live inside the domain model, keyed by module.
+	moduleName := map[string]string{}
+	if modules, err := reader.ListModules(); err == nil {
+		for _, m := range modules {
+			moduleName[string(m.ID)] = m.Name
+		}
+	}
+	if dms, err := reader.ListDomainModels(); err == nil {
+		for _, dm := range dms {
+			mn := moduleName[string(dm.ContainerID)]
+			for _, e := range dm.Entities {
+				if mn+"."+e.Name == name {
+					out = append(out, "entity")
+				}
+			}
+			for _, a := range dm.Associations {
+				if mn+"."+a.Name == name {
+					out = append(out, "association")
+				}
+			}
+			for _, a := range dm.CrossAssociations {
+				if mn+"."+a.Name == name {
+					out = append(out, "association")
+				}
+			}
+		}
+	}
+	return out, nil
 }
