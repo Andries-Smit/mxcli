@@ -8,6 +8,7 @@ import (
 	"github.com/mendixlabs/mxcli/model"
 	"github.com/mendixlabs/mxcli/modelsdk/codec"
 	"github.com/mendixlabs/mxcli/modelsdk/element"
+	genDm "github.com/mendixlabs/mxcli/modelsdk/gen/domainmodels"
 	genPg "github.com/mendixlabs/mxcli/modelsdk/gen/pages"
 	genTexts "github.com/mendixlabs/mxcli/modelsdk/gen/texts"
 	"github.com/mendixlabs/mxcli/sdk/pages"
@@ -54,6 +55,17 @@ func init() {
 		NullFields: []string{"AttributeRef", "SourceVariable"},
 	})
 	codec.RegisterListMarker("Forms$ClientTemplateParameter", 2)
+	// DataView: null visibility/editability settings; Widgets/FooterWidgets always
+	// emitted with marker 2 (even empty). A page-context DataViewSource has null
+	// EntityRef/SourceVariable when unbound.
+	codec.RegisterTypeDefaults("Forms$DataView", codec.TypeDefaults{
+		NullFields:           []string{"ConditionalVisibilitySettings", "ConditionalEditabilitySettings"},
+		MandatoryListMarkers: map[string]int32{"Widgets": 2, "FooterWidgets": 2},
+	})
+	codec.RegisterListMarker("Forms$DataView", 2)
+	codec.RegisterTypeDefaults("Forms$DataViewSource", codec.TypeDefaults{
+		NullFields: []string{"EntityRef", "SourceVariable"},
+	})
 }
 
 // widgetToGen converts a model widget to its gen element, recursing into
@@ -94,6 +106,37 @@ func widgetToGen(w pages.Widget) (element.Element, error) {
 				return nil, err
 			}
 			g.AddRows(rg)
+		}
+		return g, nil
+
+	case *pages.DataView:
+		g := genPg.NewDataView()
+		applyWidgetBase(g, &x.BaseWidget)
+		ds, err := dataViewSourceToGen(x.DataSource)
+		if err != nil {
+			return nil, err
+		}
+		g.SetDataSource(ds)
+		g.SetEditability(editability(x.ReadOnly))
+		g.SetReadOnlyStyle("Control")
+		g.SetShowFooter(x.ShowFooter)
+		if x.LabelWidth != nil {
+			g.SetLabelWidth(int32(*x.LabelWidth))
+		}
+		g.SetNoEntityMessage(captionToGen(x.NoEntityMessage))
+		for _, c := range x.Widgets {
+			cg, err := widgetToGen(c)
+			if err != nil {
+				return nil, err
+			}
+			g.AddWidgets(cg)
+		}
+		for _, c := range x.FooterWidgets {
+			cg, err := widgetToGen(c)
+			if err != nil {
+				return nil, err
+			}
+			g.AddFooterWidgets(cg)
 		}
 		return g, nil
 
@@ -276,6 +319,50 @@ func newFormattingInfo() element.Element {
 	f.SetEnumFormat("Text")
 	f.SetGroupDigits(false)
 	return f
+}
+
+// editability maps a read-only flag to the Forms editability enum.
+func editability(readOnly bool) string {
+	if readOnly {
+		return "Never"
+	}
+	return "Always"
+}
+
+// dataViewSourceToGen builds a DataView's data source. The page-context source
+// (Forms$DataViewSource: entity ref + page/snippet parameter) is supported; flow
+// and database sources (which carry settings sub-objects) are refused for now.
+func dataViewSourceToGen(ds pages.DataSource) (element.Element, error) {
+	src := genPg.NewDataViewSource()
+	src.SetForceFullObjects(false)
+	switch d := ds.(type) {
+	case nil:
+		// empty DataViewSource — DataView requires a non-null source object
+	case *pages.DataViewSource:
+		if d.ID != "" {
+			src.SetID(element.ID(d.ID))
+		}
+		if d.EntityName != "" {
+			ref := genDm.NewDirectEntityRef()
+			assignID(ref)
+			ref.SetEntityQualifiedName(d.EntityName)
+			src.SetEntityRef(ref)
+		}
+		if d.ParameterName != "" {
+			pv := genPg.NewPageVariable()
+			assignID(pv)
+			if d.IsSnippetParameter {
+				pv.SetSnippetParameterQualifiedName(d.ParameterName)
+			} else {
+				pv.SetPageParameterQualifiedName(d.ParameterName)
+			}
+			src.SetSourceVariable(pv)
+		}
+	default:
+		return nil, fmt.Errorf("CreatePage: DataView source %T not yet supported by the modelsdk engine — rerun with MXCLI_ENGINE=legacy", ds)
+	}
+	assignID(src)
+	return src, nil
 }
 
 // clientActionToGen converts a widget client action. Simple actions are supported;
