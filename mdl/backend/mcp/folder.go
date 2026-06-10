@@ -22,6 +22,14 @@ import (
 //     (moduleName, folderPath) pair and pass folderPath to ped_create_document.
 //   - DeleteFolder and MoveFolder (and the per-document Move* family) are rejected:
 //     PED exposes no folder delete and no document re-parent.
+//
+// Why MOVE is not faked via delete-then-recreate: re-parenting must preserve the
+// document's $ID so existing references (call-microflow actions, page/navigation
+// references, …) stay valid — exactly what the MPR/modelsdk engine does in place.
+// Recreating would mint a NEW $ID, dangling those references and producing a
+// different project state for the same MDL. The backend abstraction requires both
+// engines to yield equivalent results, so a lookalike MOVE is worse than an honest
+// rejection.
 
 // CreateFolder records a pending folder. PED can't create an empty one, but the
 // folder is realized when a document is created into it (see resolveDocContainer).

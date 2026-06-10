@@ -70,7 +70,7 @@ live distinction is **MPR vs MCP**.
 | Feature | Mendix | MDL | MPR | MCP | MCP notes |
 |---------|:------:|:---:|:---:|:---:|-----------|
 | **Folders** | Y | Y | Y | P | Documents can be **created into** a folder (`create <doc> … folder 'A/B'`, nested ok — the folder auto-materializes). Empty `CREATE FOLDER`, `DROP FOLDER`, `MOVE FOLDER` rejected (PED can't create-empty / delete / re-parent). Pages land at the module root (`pg_write_page` has no folderPath). |
-| **MOVE** | Y | Y | Y | N | Blocked — PED can't re-parent an existing document (a document's `folderPath` is not settable). Place documents in folders at *create* time instead. |
+| **MOVE** | Y | Y | Y | N | Blocked — PED can't re-parent an existing document (`folderPath` is not settable). *Not* faked via delete+recreate: that would change the document's `$ID`, dangling references and diverging from the MPR engine's in-place re-parent (backends must yield equivalent project state). Place documents in folders at *create* time instead. |
 
 ### External SQL, import, catalog & analysis
 
