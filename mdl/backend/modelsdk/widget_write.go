@@ -148,6 +148,11 @@ func init() {
 	})
 	codec.RegisterListMarker("Forms$ListView", 2)
 	codec.RegisterListMarker("Forms$ListViewTemplate", 2)
+	// GroupBox: container with caption/header; null visibility; marker 2.
+	codec.RegisterTypeDefaults("Forms$GroupBox", codec.TypeDefaults{
+		NullFields: []string{"ConditionalVisibilitySettings"},
+	})
+	codec.RegisterListMarker("Forms$GroupBox", 2)
 	// show_page action (Forms$FormAction) + its FormSettings always emit their
 	// (empty) typed-array lists with marker 2.
 	codec.RegisterTypeDefaults("Forms$FormAction", codec.TypeDefaults{
@@ -393,6 +398,21 @@ func widgetToGen(w pages.Widget) (element.Element, error) {
 		g.SetOnChangeAction(onChange)
 		g.SetOnEnterAction(noActionGen())
 		g.SetValidation(widgetValidationToGen())
+		return g, nil
+
+	case *pages.GroupBox:
+		g := genPg.NewGroupBox()
+		applyWidgetBase(g, &x.BaseWidget)
+		g.SetCaption(clientTemplateToGen(x.Caption))
+		g.SetCollapsible(orDefaultStr(x.Collapsible, "No"))
+		g.SetHeaderMode(orDefaultStr(x.HeaderMode, "Div"))
+		for _, w := range x.Widgets {
+			wg, err := widgetToGen(w)
+			if err != nil {
+				return nil, err
+			}
+			g.AddWidgets(wg)
+		}
 		return g, nil
 
 	case *pages.ListView:
