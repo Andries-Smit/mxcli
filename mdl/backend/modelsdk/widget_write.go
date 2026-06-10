@@ -85,6 +85,14 @@ func init() {
 		NullFields: []string{"ConditionalVisibilitySettings", "ConditionalEditabilitySettings"},
 	})
 	codec.RegisterListMarker("CustomWidgets$CustomWidget", 2)
+	// RadioButtonGroup (the MDL `radiobuttons` widget): same null-slot set as TextBox.
+	codec.RegisterTypeDefaults("Forms$RadioButtonGroup", codec.TypeDefaults{
+		NullFields: []string{
+			"AttributeRef", "ScreenReaderLabel", "SourceVariable", "LabelTemplate",
+			"ConditionalVisibilitySettings", "ConditionalEditabilitySettings",
+		},
+	})
+	codec.RegisterListMarker("Forms$RadioButtonGroup", 2)
 }
 
 // widgetToGen converts a model widget to its gen element, recursing into
@@ -220,6 +228,28 @@ func widgetToGen(w pages.Widget) (element.Element, error) {
 			return nil, err
 		}
 		g.SetAction(act)
+		return g, nil
+
+	case *pages.RadioButtons:
+		g := genPg.NewRadioButtonGroup()
+		applyWidgetBase(g, &x.BaseWidget)
+		g.SetAriaRequired(false)
+		if ref := attributeRefToGen(x.AttributePath); ref != nil {
+			g.SetAttributeRef(ref)
+		}
+		g.SetEditable("Always")
+		if x.Label != "" {
+			g.SetLabelTemplate(textAsClientTemplate(textFromString(x.Label)))
+		}
+		g.SetReadOnlyStyle("Inherit")
+		g.SetRenderHorizontal(x.RenderDirection != pages.RenderDirectionVertical)
+		onChange, err := clientActionToGen(x.OnChangeAction)
+		if err != nil {
+			return nil, err
+		}
+		g.SetOnChangeAction(onChange)
+		g.SetOnEnterAction(noActionGen())
+		g.SetValidation(widgetValidationToGen())
 		return g, nil
 
 	case *pages.CustomWidget:
