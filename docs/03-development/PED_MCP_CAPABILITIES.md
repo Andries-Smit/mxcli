@@ -99,6 +99,20 @@ MICROFLOW` (broad activity + control-flow coverage), `CREATE PAGE` + `ALTER PAGE
 `DROP WORKFLOW` + `ALTER WORKFLOW`, with a dirty-set read router that makes
 in-session edits visible.
 
+**CREATE MICROFLOW** maps a broad set of actions (variable/object/list changes,
+create/commit/delete/rollback, aggregate, list operations, retrieve, call
+micro/nano/java/**javascript** action, log/validation/download/close-page,
+**show home page**) and list operations (head/tail/filter/find/sort/union/
+intersect/subtract, **contains**, **equals**). Some actions can't be expressed
+through PED's *simplified* action constructors and are rejected rather than
+mis-built: **show page** (the constructor omits the target page — pages go through
+`pg_*`), **cast** (the `CastAction` constructor exposes only `outputVariableName`,
+not the input variable or target type), and **retrieve sorting / custom range** and
+the **list-range** operation (PED's `byDatabaseQuery` input is `entity` +
+`xPathConstraint` + `takeOnlyFirst` only, and `Microflows$Range` exposes no
+settable fields). These would need a post-create element update PED's simplified
+constructors don't support.
+
 **ALTER ENTITY** diffs the executor's rebuilt entity against the live model
 (name-keyed) and routes by the diff's shape: adds-only → ADD ATTRIBUTE, removes-only
 → DROP ATTRIBUTE, one-add-one-remove → **RENAME** (set the `name` leaf in place,

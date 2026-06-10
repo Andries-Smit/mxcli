@@ -454,6 +454,8 @@ func mapMicroflowAction(a microflows.MicroflowAction) (map[string]any, error) {
 		return m, nil
 	case *microflows.ShowPageAction:
 		return nil, fmt.Errorf("show page is not supported by the MCP backend — PED's ShowPageAction constructor does not expose the target page (pages are handled by the pg_* tools, not PED)")
+	case *microflows.ShowHomePageAction:
+		return map[string]any{"$Type": "Microflows$ShowHomePageAction"}, nil
 	case *microflows.NanoflowCallAction:
 		if act.NanoflowCall == nil || act.NanoflowCall.Nanoflow == "" {
 			return nil, fmt.Errorf("call nanoflow: missing target nanoflow")
@@ -505,6 +507,34 @@ func mapMicroflowAction(a microflows.MicroflowAction) (map[string]any, error) {
 		}
 		if act.ResultVariableName != "" {
 			m["outputVariableName"] = act.ResultVariableName
+		}
+		return m, nil
+	case *microflows.JavaScriptActionCallAction:
+		if act.JavaScriptAction == "" {
+			return nil, fmt.Errorf("call javascript action: missing target javascript action")
+		}
+		mappings := make([]any, 0, len(act.ParameterMappings))
+		for _, pm := range act.ParameterMappings {
+			pv, err := mapCodeActionParameterValue(pm.Value)
+			if err != nil {
+				return nil, err
+			}
+			mappings = append(mappings, map[string]any{
+				"$Type":          "Microflows$JavaScriptActionParameterMapping",
+				"parameter":      pm.Parameter,
+				"parameterValue": pv,
+			})
+		}
+		m := map[string]any{
+			"$Type":             "Microflows$JavaScriptActionCallAction",
+			"javaScriptAction":  act.JavaScriptAction,
+			"useReturnVariable": act.UseReturnVariable,
+		}
+		if len(mappings) > 0 {
+			m["parameterMappings"] = mappings
+		}
+		if act.OutputVariableName != "" {
+			m["outputVariableName"] = act.OutputVariableName
 		}
 		return m, nil
 	case *microflows.MicroflowCallAction:
@@ -672,6 +702,18 @@ func mapListOperation(op microflows.ListOperation) (map[string]any, error) {
 		return binary("Microflows$Intersect", o.ListVariable1, o.ListVariable2), nil
 	case *microflows.SubtractOperation:
 		return binary("Microflows$Subtract", o.ListVariable1, o.ListVariable2), nil
+	case *microflows.ContainsOperation:
+		return map[string]any{
+			"$Type":                          "Microflows$Contains",
+			"listVariableName":               o.ListVariable,
+			"secondListOrObjectVariableName": o.ObjectVariable,
+		}, nil
+	case *microflows.EqualsOperation:
+		return map[string]any{
+			"$Type":                          "Microflows$ListEquals",
+			"listVariableName":               o.ListVariable1,
+			"secondListOrObjectVariableName": o.ListVariable2,
+		}, nil
 	default:
 		return nil, fmt.Errorf("list operation %T is not yet supported by the MCP backend", op)
 	}

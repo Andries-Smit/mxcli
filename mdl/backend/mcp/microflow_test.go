@@ -524,3 +524,51 @@ func TestMfVariableType(t *testing.T) {
 		t.Error("object variable type should be rejected (primitives only)")
 	}
 }
+
+func TestMapMicroflowAction_ShowHomePageAndJavaScript(t *testing.T) {
+	home, err := mapMicroflowAction(&microflows.ShowHomePageAction{})
+	if err != nil || home["$Type"] != "Microflows$ShowHomePageAction" {
+		t.Fatalf("show home page: %+v / %v", home, err)
+	}
+
+	js, err := mapMicroflowAction(&microflows.JavaScriptActionCallAction{
+		JavaScriptAction:  "MyMod.JS_DoThing",
+		UseReturnVariable: true,
+		ParameterMappings: []*microflows.JavaScriptActionParameterMapping{
+			{Parameter: "MyMod.JS_DoThing.Input", Value: &microflows.BasicCodeActionParameterValue{Argument: "$N"}},
+		},
+		OutputVariableName: "Result",
+	})
+	if err != nil {
+		t.Fatalf("js action: %v", err)
+	}
+	if js["$Type"] != "Microflows$JavaScriptActionCallAction" || js["javaScriptAction"] != "MyMod.JS_DoThing" {
+		t.Fatalf("js action shell: %+v", js)
+	}
+	if js["outputVariableName"] != "Result" || js["useReturnVariable"] != true {
+		t.Fatalf("js action output: %+v", js)
+	}
+	pms, _ := js["parameterMappings"].([]any)
+	if len(pms) != 1 || pms[0].(map[string]any)["$Type"] != "Microflows$JavaScriptActionParameterMapping" {
+		t.Fatalf("js param mappings: %+v", js["parameterMappings"])
+	}
+
+	// Missing target is rejected.
+	if _, err := mapMicroflowAction(&microflows.JavaScriptActionCallAction{}); err == nil {
+		t.Error("js action with no target should be rejected")
+	}
+}
+
+func TestMapListOperation_ContainsAndEquals(t *testing.T) {
+	c, err := mapListOperation(&microflows.ContainsOperation{ListVariable: "Orders", ObjectVariable: "Order"})
+	if err != nil || c["$Type"] != "Microflows$Contains" ||
+		c["listVariableName"] != "Orders" || c["secondListOrObjectVariableName"] != "Order" {
+		t.Fatalf("contains: %+v / %v", c, err)
+	}
+
+	e, err := mapListOperation(&microflows.EqualsOperation{ListVariable1: "A", ListVariable2: "B"})
+	if err != nil || e["$Type"] != "Microflows$ListEquals" ||
+		e["listVariableName"] != "A" || e["secondListOrObjectVariableName"] != "B" {
+		t.Fatalf("equals: %+v / %v", e, err)
+	}
+}
