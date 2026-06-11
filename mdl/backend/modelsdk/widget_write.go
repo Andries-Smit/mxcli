@@ -693,7 +693,14 @@ func clientTemplateParameterToGen(p *pages.ClientTemplateParameter) element.Elem
 	assignID(g)
 	g.SetExpression(p.Expression)
 	if p.AttributeRef != "" {
-		g.SetAttributePath(p.AttributeRef)
+		// The parameter's value source is a DomainModels$AttributeRef sub-object,
+		// NOT the AttributePath scalar — Studio Pro reads AttributeRef and reports
+		// CE0402 "No value specified" if it is null. Matches legacy.
+		if ref := attributeRefToGen(p.AttributeRef); ref != nil {
+			g.SetAttributeRef(ref)
+		} else {
+			g.SetAttributePath(p.AttributeRef)
+		}
 	}
 	g.SetFormattingInfo(newFormattingInfo())
 	return g
