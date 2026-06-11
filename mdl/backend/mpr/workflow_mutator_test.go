@@ -9,6 +9,8 @@ import (
 	"github.com/mendixlabs/mxcli/sdk/workflows"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+
+	"github.com/mendixlabs/mxcli/mdl/backend/bsonnav"
 )
 
 // makeWorkflowDoc builds a minimal workflow BSON document for testing.
@@ -85,14 +87,14 @@ func TestWorkflowMutator_SetProperty_Display(t *testing.T) {
 		t.Fatalf("SetProperty display failed: %v", err)
 	}
 
-	if got := dGetString(m.rawData, "Title"); got != "New Title" {
+	if got := bsonnav.DGetString(m.rawData, "Title"); got != "New Title" {
 		t.Errorf("Title = %q, want %q", got, "New Title")
 	}
-	wfName := dGetDoc(m.rawData, "WorkflowName")
+	wfName := bsonnav.DGetDoc(m.rawData, "WorkflowName")
 	if wfName == nil {
 		t.Fatal("WorkflowName is nil")
 	}
-	if got := dGetString(wfName, "Text"); got != "New Title" {
+	if got := bsonnav.DGetString(wfName, "Text"); got != "New Title" {
 		t.Errorf("WorkflowName.Text = %q, want %q", got, "New Title")
 	}
 }
@@ -112,14 +114,14 @@ func TestWorkflowMutator_SetProperty_Display_NilSubDoc(t *testing.T) {
 		t.Fatalf("SetProperty display with nil sub-doc failed: %v", err)
 	}
 
-	if got := dGetString(m.rawData, "Title"); got != "Created Title" {
+	if got := bsonnav.DGetString(m.rawData, "Title"); got != "Created Title" {
 		t.Errorf("Title = %q, want %q", got, "Created Title")
 	}
-	wfName := dGetDoc(m.rawData, "WorkflowName")
+	wfName := bsonnav.DGetDoc(m.rawData, "WorkflowName")
 	if wfName == nil {
 		t.Fatal("WorkflowName should have been auto-created")
 	}
-	if got := dGetString(wfName, "Text"); got != "Created Title" {
+	if got := bsonnav.DGetString(wfName, "Text"); got != "Created Title" {
 		t.Errorf("WorkflowName.Text = %q, want %q", got, "Created Title")
 	}
 }
@@ -132,11 +134,11 @@ func TestWorkflowMutator_SetProperty_Description(t *testing.T) {
 		t.Fatalf("SetProperty description failed: %v", err)
 	}
 
-	wfDesc := dGetDoc(m.rawData, "WorkflowDescription")
+	wfDesc := bsonnav.DGetDoc(m.rawData, "WorkflowDescription")
 	if wfDesc == nil {
 		t.Fatal("WorkflowDescription is nil")
 	}
-	if got := dGetString(wfDesc, "Text"); got != "Updated desc" {
+	if got := bsonnav.DGetString(wfDesc, "Text"); got != "Updated desc" {
 		t.Errorf("WorkflowDescription.Text = %q, want %q", got, "Updated desc")
 	}
 }
@@ -156,11 +158,11 @@ func TestWorkflowMutator_SetProperty_Description_NilSubDoc(t *testing.T) {
 		t.Fatalf("SetProperty description with nil sub-doc failed: %v", err)
 	}
 
-	wfDesc := dGetDoc(m.rawData, "WorkflowDescription")
+	wfDesc := bsonnav.DGetDoc(m.rawData, "WorkflowDescription")
 	if wfDesc == nil {
 		t.Fatal("WorkflowDescription should have been auto-created")
 	}
-	if got := dGetString(wfDesc, "Text"); got != "New desc" {
+	if got := bsonnav.DGetString(wfDesc, "Text"); got != "New desc" {
 		t.Errorf("WorkflowDescription.Text = %q, want %q", got, "New desc")
 	}
 }
@@ -186,7 +188,7 @@ func TestWorkflowMutator_SetProperty_ExportLevel(t *testing.T) {
 	if err := m.SetProperty("export_level", "Hidden"); err != nil {
 		t.Fatalf("SetProperty EXPORT_LEVEL failed: %v", err)
 	}
-	if got := dGetString(m.rawData, "ExportLevel"); got != "Hidden" {
+	if got := bsonnav.DGetString(m.rawData, "ExportLevel"); got != "Hidden" {
 		t.Errorf("ExportLevel = %q, want %q", got, "Hidden")
 	}
 }
@@ -202,7 +204,7 @@ func TestWorkflowMutator_FindActivity_Found(t *testing.T) {
 	if err != nil {
 		t.Fatalf("findActivityByCaption failed: %v", err)
 	}
-	if got := dGetString(result, "Caption"); got != "Approve" {
+	if got := bsonnav.DGetString(result, "Caption"); got != "Approve" {
 		t.Errorf("Caption = %q, want %q", got, "Approve")
 	}
 }
@@ -215,7 +217,7 @@ func TestWorkflowMutator_FindActivity_ByName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("findActivityByCaption by name failed: %v", err)
 	}
-	if got := dGetString(result, "Name"); got != "ReviewTask" {
+	if got := bsonnav.DGetString(result, "Name"); got != "ReviewTask" {
 		t.Errorf("Name = %q, want %q", got, "ReviewTask")
 	}
 }
@@ -256,7 +258,7 @@ func TestWorkflowMutator_FindActivity_AtPosition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("findActivityByCaption @2 failed: %v", err)
 	}
-	if got := dGetString(result, "Name"); got != "task2" {
+	if got := bsonnav.DGetString(result, "Name"); got != "task2" {
 		t.Errorf("Name = %q, want %q", got, "task2")
 	}
 }
@@ -286,13 +288,13 @@ func TestWorkflowMutator_DropActivity(t *testing.T) {
 		t.Fatalf("DropActivity failed: %v", err)
 	}
 
-	flow := dGetDoc(m.rawData, "Flow")
-	activities := dGetArrayElements(dGet(flow, "Activities"))
+	flow := bsonnav.DGetDoc(m.rawData, "Flow")
+	activities := bsonnav.DGetArrayElements(bsonnav.DGet(flow, "Activities"))
 	if len(activities) != 2 {
 		t.Fatalf("Expected 2 activities after drop, got %d", len(activities))
 	}
-	name0 := dGetString(activities[0].(bson.D), "Caption")
-	name1 := dGetString(activities[1].(bson.D), "Caption")
+	name0 := bsonnav.DGetString(activities[0].(bson.D), "Caption")
+	name1 := bsonnav.DGetString(activities[1].(bson.D), "Caption")
 	if name0 != "Review" {
 		t.Errorf("First activity caption = %q, want %q", name0, "Review")
 	}
@@ -323,7 +325,7 @@ func TestWorkflowMutator_DropBoundaryEvent_Single(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	events := dGetArrayElements(dGet(actDoc, "BoundaryEvents"))
+	events := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "BoundaryEvents"))
 	if len(events) != 0 {
 		t.Errorf("Expected 0 boundary events after drop, got %d", len(events))
 	}
@@ -340,12 +342,12 @@ func TestWorkflowMutator_DropBoundaryEvent_Multiple(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	events := dGetArrayElements(dGet(actDoc, "BoundaryEvents"))
+	events := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "BoundaryEvents"))
 	if len(events) != 1 {
 		t.Fatalf("Expected 1 boundary event after drop, got %d", len(events))
 	}
 	remaining := events[0].(bson.D)
-	if got := dGetString(remaining, "$Type"); got != "Workflows$NonInterruptingTimerBoundaryEvent" {
+	if got := bsonnav.DGetString(remaining, "$Type"); got != "Workflows$NonInterruptingTimerBoundaryEvent" {
 		t.Errorf("Remaining event type = %q, want NonInterruptingTimerBoundaryEvent", got)
 	}
 }
@@ -441,7 +443,7 @@ func TestWorkflowMutator_SetActivityProperty_DueDate(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	if got := dGetString(actDoc, "DueDate"); got != "${PT48H}" {
+	if got := bsonnav.DGetString(actDoc, "DueDate"); got != "${PT48H}" {
 		t.Errorf("DueDate = %q, want %q", got, "${PT48H}")
 	}
 }
@@ -539,11 +541,11 @@ func makeVoidConditionOutcome() bson.D {
 
 // getActivities returns the activity BSON docs from the workflow flow.
 func getActivities(doc bson.D) []bson.D {
-	flow := dGetDoc(doc, "Flow")
+	flow := bsonnav.DGetDoc(doc, "Flow")
 	if flow == nil {
 		return nil
 	}
-	elems := dGetArrayElements(dGet(flow, "Activities"))
+	elems := bsonnav.DGetArrayElements(bsonnav.DGet(flow, "Activities"))
 	var result []bson.D
 	for _, e := range elems {
 		if d, ok := e.(bson.D); ok {
@@ -571,14 +573,14 @@ func TestWorkflowMutator_InsertAfterActivity(t *testing.T) {
 	if len(acts) != 3 {
 		t.Fatalf("Expected 3 activities, got %d", len(acts))
 	}
-	if got := dGetString(acts[0], "Caption"); got != "First" {
+	if got := bsonnav.DGetString(acts[0], "Caption"); got != "First" {
 		t.Errorf("acts[0].Caption = %q, want First", got)
 	}
 	// Inserted activity should be at position 1
-	if got := dGetString(acts[1], "Name"); got != "inserted" {
+	if got := bsonnav.DGetString(acts[1], "Name"); got != "inserted" {
 		t.Errorf("acts[1].Name = %q, want inserted", got)
 	}
-	if got := dGetString(acts[2], "Caption"); got != "Last" {
+	if got := bsonnav.DGetString(acts[2], "Caption"); got != "Last" {
 		t.Errorf("acts[2].Caption = %q, want Last", got)
 	}
 }
@@ -611,16 +613,16 @@ func TestWorkflowMutator_ReplaceActivity(t *testing.T) {
 	if len(acts) != 4 {
 		t.Fatalf("Expected 4 activities, got %d", len(acts))
 	}
-	if got := dGetString(acts[0], "Caption"); got != "First" {
+	if got := bsonnav.DGetString(acts[0], "Caption"); got != "First" {
 		t.Errorf("acts[0] = %q, want First", got)
 	}
-	if got := dGetString(acts[1], "Name"); got != "repA" {
+	if got := bsonnav.DGetString(acts[1], "Name"); got != "repA" {
 		t.Errorf("acts[1].Name = %q, want repA", got)
 	}
-	if got := dGetString(acts[2], "Name"); got != "repB" {
+	if got := bsonnav.DGetString(acts[2], "Name"); got != "repB" {
 		t.Errorf("acts[2].Name = %q, want repB", got)
 	}
-	if got := dGetString(acts[3], "Caption"); got != "Last" {
+	if got := bsonnav.DGetString(acts[3], "Caption"); got != "Last" {
 		t.Errorf("acts[3] = %q, want Last", got)
 	}
 }
@@ -646,7 +648,7 @@ func TestWorkflowMutator_InsertOutcome(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	if len(outcomes) != 1 {
 		t.Fatalf("Expected 1 outcome, got %d", len(outcomes))
 	}
@@ -654,10 +656,10 @@ func TestWorkflowMutator_InsertOutcome(t *testing.T) {
 	if !ok {
 		t.Fatal("Outcome is not bson.D")
 	}
-	if got := dGetString(oDoc, "Value"); got != "Approved" {
+	if got := bsonnav.DGetString(oDoc, "Value"); got != "Approved" {
 		t.Errorf("Outcome Value = %q, want Approved", got)
 	}
-	if got := dGetString(oDoc, "$Type"); got != "Workflows$UserTaskOutcome" {
+	if got := bsonnav.DGetString(oDoc, "$Type"); got != "Workflows$UserTaskOutcome" {
 		t.Errorf("Outcome $Type = %q, want Workflows$UserTaskOutcome", got)
 	}
 }
@@ -672,12 +674,12 @@ func TestWorkflowMutator_InsertOutcome_WithActivities(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	if len(outcomes) != 1 {
 		t.Fatalf("Expected 1 outcome, got %d", len(outcomes))
 	}
 	oDoc := outcomes[0].(bson.D)
-	flow := dGetDoc(oDoc, "Flow")
+	flow := bsonnav.DGetDoc(oDoc, "Flow")
 	if flow == nil {
 		t.Fatal("Expected Flow on outcome with activities")
 	}
@@ -706,12 +708,12 @@ func TestWorkflowMutator_DropOutcome_ByValue(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	if len(outcomes) != 1 {
 		t.Fatalf("Expected 1 remaining outcome, got %d", len(outcomes))
 	}
 	oDoc := outcomes[0].(bson.D)
-	if got := dGetString(oDoc, "Value"); got != "Reject" {
+	if got := bsonnav.DGetString(oDoc, "Value"); got != "Reject" {
 		t.Errorf("Remaining outcome = %q, want Reject", got)
 	}
 }
@@ -727,7 +729,7 @@ func TestWorkflowMutator_DropOutcome_Default(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	if len(outcomes) != 1 {
 		t.Fatalf("Expected 1 remaining outcome, got %d", len(outcomes))
 	}
@@ -747,12 +749,12 @@ func TestWorkflowMutator_InsertPath(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Split", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	if len(outcomes) != 1 {
 		t.Fatalf("Expected 1 path, got %d", len(outcomes))
 	}
 	oDoc := outcomes[0].(bson.D)
-	if got := dGetString(oDoc, "$Type"); got != "Workflows$ParallelSplitOutcome" {
+	if got := bsonnav.DGetString(oDoc, "$Type"); got != "Workflows$ParallelSplitOutcome" {
 		t.Errorf("Path $Type = %q, want Workflows$ParallelSplitOutcome", got)
 	}
 }
@@ -768,9 +770,9 @@ func TestWorkflowMutator_InsertPath_WithActivities(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Split", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	oDoc := outcomes[0].(bson.D)
-	flow := dGetDoc(oDoc, "Flow")
+	flow := bsonnav.DGetDoc(oDoc, "Flow")
 	if flow == nil {
 		t.Fatal("Expected Flow on path with activities")
 	}
@@ -798,7 +800,7 @@ func TestWorkflowMutator_DropPath_ByCaption(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Split", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	if len(outcomes) != 1 {
 		t.Fatalf("Expected 1 remaining path, got %d", len(outcomes))
 	}
@@ -823,12 +825,12 @@ func TestWorkflowMutator_DropPath_EmptyCaption_DropsLast(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Split", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	if len(outcomes) != 1 {
 		t.Fatalf("Expected 1 remaining path, got %d", len(outcomes))
 	}
 	oDoc := outcomes[0].(bson.D)
-	if got := dGetString(oDoc, "Tag"); got != "first" {
+	if got := bsonnav.DGetString(oDoc, "Tag"); got != "first" {
 		t.Errorf("Remaining path Tag = %q, want first", got)
 	}
 }
@@ -860,15 +862,15 @@ func TestWorkflowMutator_InsertBranch_True(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Decision", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	if len(outcomes) != 1 {
 		t.Fatalf("Expected 1 branch, got %d", len(outcomes))
 	}
 	oDoc := outcomes[0].(bson.D)
-	if got := dGetString(oDoc, "$Type"); got != "Workflows$BooleanConditionOutcome" {
+	if got := bsonnav.DGetString(oDoc, "$Type"); got != "Workflows$BooleanConditionOutcome" {
 		t.Errorf("Branch $Type = %q, want BooleanConditionOutcome", got)
 	}
-	if v, ok := dGet(oDoc, "Value").(bool); !ok || !v {
+	if v, ok := bsonnav.DGet(oDoc, "Value").(bool); !ok || !v {
 		t.Error("Expected Value=true on boolean branch")
 	}
 }
@@ -882,9 +884,9 @@ func TestWorkflowMutator_InsertBranch_False(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Decision", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	oDoc := outcomes[0].(bson.D)
-	if v, ok := dGet(oDoc, "Value").(bool); !ok || v {
+	if v, ok := bsonnav.DGet(oDoc, "Value").(bool); !ok || v {
 		t.Error("Expected Value=false on boolean branch")
 	}
 }
@@ -898,9 +900,9 @@ func TestWorkflowMutator_InsertBranch_Default(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Decision", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	oDoc := outcomes[0].(bson.D)
-	if got := dGetString(oDoc, "$Type"); got != "Workflows$VoidConditionOutcome" {
+	if got := bsonnav.DGetString(oDoc, "$Type"); got != "Workflows$VoidConditionOutcome" {
 		t.Errorf("Branch $Type = %q, want VoidConditionOutcome", got)
 	}
 }
@@ -914,12 +916,12 @@ func TestWorkflowMutator_InsertBranch_Enum(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Decision", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	oDoc := outcomes[0].(bson.D)
-	if got := dGetString(oDoc, "$Type"); got != "Workflows$EnumerationValueConditionOutcome" {
+	if got := bsonnav.DGetString(oDoc, "$Type"); got != "Workflows$EnumerationValueConditionOutcome" {
 		t.Errorf("Branch $Type = %q, want EnumerationValueConditionOutcome", got)
 	}
-	if got := dGetString(oDoc, "Value"); got != "MyModule.Status.Active" {
+	if got := bsonnav.DGetString(oDoc, "Value"); got != "MyModule.Status.Active" {
 		t.Errorf("Branch Value = %q, want MyModule.Status.Active", got)
 	}
 }
@@ -934,9 +936,9 @@ func TestWorkflowMutator_InsertBranch_WithActivities(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Decision", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	oDoc := outcomes[0].(bson.D)
-	flow := dGetDoc(oDoc, "Flow")
+	flow := bsonnav.DGetDoc(oDoc, "Flow")
 	if flow == nil {
 		t.Fatal("Expected Flow on branch with activities")
 	}
@@ -957,12 +959,12 @@ func TestWorkflowMutator_DropBranch_True(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Decision", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	if len(outcomes) != 1 {
 		t.Fatalf("Expected 1 remaining, got %d", len(outcomes))
 	}
 	oDoc := outcomes[0].(bson.D)
-	if v, ok := dGet(oDoc, "Value").(bool); !ok || v {
+	if v, ok := bsonnav.DGet(oDoc, "Value").(bool); !ok || v {
 		t.Error("Remaining branch should be false")
 	}
 }
@@ -978,7 +980,7 @@ func TestWorkflowMutator_DropBranch_False(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Decision", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	if len(outcomes) != 1 {
 		t.Fatalf("Expected 1 remaining, got %d", len(outcomes))
 	}
@@ -995,12 +997,12 @@ func TestWorkflowMutator_DropBranch_Default(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Decision", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	if len(outcomes) != 1 {
 		t.Fatalf("Expected 1 remaining, got %d", len(outcomes))
 	}
 	oDoc := outcomes[0].(bson.D)
-	if got := dGetString(oDoc, "Value"); got != "Active" {
+	if got := bsonnav.DGetString(oDoc, "Value"); got != "Active" {
 		t.Errorf("Remaining = %q, want Active", got)
 	}
 }
@@ -1016,12 +1018,12 @@ func TestWorkflowMutator_DropBranch_Enum(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Decision", 0)
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	if len(outcomes) != 1 {
 		t.Fatalf("Expected 1 remaining, got %d", len(outcomes))
 	}
 	oDoc := outcomes[0].(bson.D)
-	if got := dGetString(oDoc, "Value"); got != "Inactive" {
+	if got := bsonnav.DGetString(oDoc, "Value"); got != "Inactive" {
 		t.Errorf("Remaining = %q, want Inactive", got)
 	}
 }
@@ -1053,15 +1055,15 @@ func TestWorkflowMutator_InsertBoundaryEvent_InterruptingTimer(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	events := dGetArrayElements(dGet(actDoc, "BoundaryEvents"))
+	events := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "BoundaryEvents"))
 	if len(events) != 1 {
 		t.Fatalf("Expected 1 event, got %d", len(events))
 	}
 	eDoc := events[0].(bson.D)
-	if got := dGetString(eDoc, "$Type"); got != "Workflows$InterruptingTimerBoundaryEvent" {
+	if got := bsonnav.DGetString(eDoc, "$Type"); got != "Workflows$InterruptingTimerBoundaryEvent" {
 		t.Errorf("Event $Type = %q, want InterruptingTimerBoundaryEvent", got)
 	}
-	if got := dGetString(eDoc, "FirstExecutionTime"); got != "PT1H" {
+	if got := bsonnav.DGetString(eDoc, "FirstExecutionTime"); got != "PT1H" {
 		t.Errorf("FirstExecutionTime = %q, want PT1H", got)
 	}
 }
@@ -1076,9 +1078,9 @@ func TestWorkflowMutator_InsertBoundaryEvent_NonInterruptingTimer(t *testing.T) 
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	events := dGetArrayElements(dGet(actDoc, "BoundaryEvents"))
+	events := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "BoundaryEvents"))
 	eDoc := events[0].(bson.D)
-	if got := dGetString(eDoc, "$Type"); got != "Workflows$NonInterruptingTimerBoundaryEvent" {
+	if got := bsonnav.DGetString(eDoc, "$Type"); got != "Workflows$NonInterruptingTimerBoundaryEvent" {
 		t.Errorf("Event $Type = %q, want NonInterruptingTimerBoundaryEvent", got)
 	}
 	// NonInterrupting should have Recurrence field
@@ -1104,9 +1106,9 @@ func TestWorkflowMutator_InsertBoundaryEvent_WithActivities(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	events := dGetArrayElements(dGet(actDoc, "BoundaryEvents"))
+	events := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "BoundaryEvents"))
 	eDoc := events[0].(bson.D)
-	flow := dGetDoc(eDoc, "Flow")
+	flow := bsonnav.DGetDoc(eDoc, "Flow")
 	if flow == nil {
 		t.Fatal("Expected Flow on boundary event with activities")
 	}
@@ -1122,7 +1124,7 @@ func TestWorkflowMutator_InsertBoundaryEvent_NoDelay(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	events := dGetArrayElements(dGet(actDoc, "BoundaryEvents"))
+	events := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "BoundaryEvents"))
 	eDoc := events[0].(bson.D)
 	for _, e := range eDoc {
 		if e.Key == "FirstExecutionTime" {
@@ -1146,11 +1148,11 @@ func TestWorkflowMutator_SetActivityProperty_Page_New(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	taskPage := dGetDoc(actDoc, "TaskPage")
+	taskPage := bsonnav.DGetDoc(actDoc, "TaskPage")
 	if taskPage == nil {
 		t.Fatal("Expected TaskPage to be set")
 	}
-	if got := dGetString(taskPage, "Page"); got != "MyModule.TaskPage" {
+	if got := bsonnav.DGetString(taskPage, "Page"); got != "MyModule.TaskPage" {
 		t.Errorf("Page = %q, want MyModule.TaskPage", got)
 	}
 }
@@ -1168,11 +1170,11 @@ func TestWorkflowMutator_SetActivityProperty_Page_MissingKey(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	taskPage := dGetDoc(actDoc, "TaskPage")
+	taskPage := bsonnav.DGetDoc(actDoc, "TaskPage")
 	if taskPage == nil {
 		t.Fatal("TaskPage should be set even when key was absent")
 	}
-	if got := dGetString(taskPage, "Page"); got != "MyModule.TaskPage" {
+	if got := bsonnav.DGetString(taskPage, "Page"); got != "MyModule.TaskPage" {
 		t.Errorf("Page = %q, want MyModule.TaskPage", got)
 	}
 }
@@ -1215,11 +1217,11 @@ func TestWorkflowMutator_SetActivityProperty_Page_MissingKey_NestedSubFlow(t *te
 	}
 
 	actDoc, _ := m.findActivityByCaption("NestedReview", 0)
-	taskPage := dGetDoc(actDoc, "TaskPage")
+	taskPage := bsonnav.DGetDoc(actDoc, "TaskPage")
 	if taskPage == nil {
 		t.Fatal("TaskPage should be set on nested activity even when key was absent")
 	}
-	if got := dGetString(taskPage, "Page"); got != "MyModule.NestedPage" {
+	if got := bsonnav.DGetString(taskPage, "Page"); got != "MyModule.NestedPage" {
 		t.Errorf("Page = %q, want MyModule.NestedPage", got)
 	}
 
@@ -1228,7 +1230,7 @@ func TestWorkflowMutator_SetActivityProperty_Page_MissingKey_NestedSubFlow(t *te
 	if parentDoc == nil {
 		t.Fatal("parent decision activity should still exist")
 	}
-	if outcomes := dGet(parentDoc, "Outcomes"); outcomes == nil {
+	if outcomes := bsonnav.DGet(parentDoc, "Outcomes"); outcomes == nil {
 		t.Fatal("parent decision Outcomes should still be present")
 	}
 }
@@ -1247,8 +1249,8 @@ func TestWorkflowMutator_SetActivityProperty_Page_Existing(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	taskPage := dGetDoc(actDoc, "TaskPage")
-	if got := dGetString(taskPage, "Page"); got != "NewModule.NewPage" {
+	taskPage := bsonnav.DGetDoc(actDoc, "TaskPage")
+	if got := bsonnav.DGetString(taskPage, "Page"); got != "NewModule.NewPage" {
 		t.Errorf("Page = %q, want NewModule.NewPage", got)
 	}
 }
@@ -1267,8 +1269,8 @@ func TestWorkflowMutator_SetActivityProperty_Description(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	taskDesc := dGetDoc(actDoc, "TaskDescription")
-	if got := dGetString(taskDesc, "Text"); got != "new desc" {
+	taskDesc := bsonnav.DGetDoc(actDoc, "TaskDescription")
+	if got := bsonnav.DGetString(taskDesc, "Text"); got != "new desc" {
 		t.Errorf("Text = %q, want 'new desc'", got)
 	}
 }
@@ -1283,14 +1285,14 @@ func TestWorkflowMutator_SetActivityProperty_TargetingMicroflow(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	targeting := dGetDoc(actDoc, "UserTargeting")
+	targeting := bsonnav.DGetDoc(actDoc, "UserTargeting")
 	if targeting == nil {
 		t.Fatal("Expected UserTargeting to be set")
 	}
-	if got := dGetString(targeting, "$Type"); got != "Workflows$MicroflowUserTargeting" {
+	if got := bsonnav.DGetString(targeting, "$Type"); got != "Workflows$MicroflowUserTargeting" {
 		t.Errorf("$Type = %q, want MicroflowUserTargeting", got)
 	}
-	if got := dGetString(targeting, "Microflow"); got != "MyModule.AssignReviewer" {
+	if got := bsonnav.DGetString(targeting, "Microflow"); got != "MyModule.AssignReviewer" {
 		t.Errorf("Microflow = %q, want MyModule.AssignReviewer", got)
 	}
 }
@@ -1305,11 +1307,11 @@ func TestWorkflowMutator_SetActivityProperty_TargetingXPath(t *testing.T) {
 	}
 
 	actDoc, _ := m.findActivityByCaption("Review", 0)
-	targeting := dGetDoc(actDoc, "UserTargeting")
+	targeting := bsonnav.DGetDoc(actDoc, "UserTargeting")
 	if targeting == nil {
 		t.Fatal("Expected UserTargeting to be set")
 	}
-	if got := dGetString(targeting, "$Type"); got != "Workflows$XPathUserTargeting" {
+	if got := bsonnav.DGetString(targeting, "$Type"); got != "Workflows$XPathUserTargeting" {
 		t.Errorf("$Type = %q, want XPathUserTargeting", got)
 	}
 }
@@ -1327,11 +1329,11 @@ func TestWorkflowMutator_SetPropertyWithEntity_OverviewPage(t *testing.T) {
 		t.Fatalf("SetPropertyWithEntity OVERVIEW_PAGE failed: %v", err)
 	}
 
-	adminPage := dGetDoc(m.rawData, "AdminPage")
+	adminPage := bsonnav.DGetDoc(m.rawData, "AdminPage")
 	if adminPage == nil {
 		t.Fatal("Expected AdminPage to be set")
 	}
-	if got := dGetString(adminPage, "Page"); got != "MyModule.OverviewPage" {
+	if got := bsonnav.DGetString(adminPage, "Page"); got != "MyModule.OverviewPage" {
 		t.Errorf("Page = %q, want MyModule.OverviewPage", got)
 	}
 }
@@ -1347,7 +1349,7 @@ func TestWorkflowMutator_SetPropertyWithEntity_OverviewPage_Clear(t *testing.T) 
 		t.Fatalf("SetPropertyWithEntity clear failed: %v", err)
 	}
 
-	if v := dGet(m.rawData, "AdminPage"); v != nil {
+	if v := bsonnav.DGet(m.rawData, "AdminPage"); v != nil {
 		t.Error("Expected AdminPage to be nil after clear")
 	}
 }
@@ -1361,11 +1363,11 @@ func TestWorkflowMutator_SetPropertyWithEntity_Parameter_New(t *testing.T) {
 		t.Fatalf("SetPropertyWithEntity parameter failed: %v", err)
 	}
 
-	param := dGetDoc(m.rawData, "Parameter")
+	param := bsonnav.DGetDoc(m.rawData, "Parameter")
 	if param == nil {
 		t.Fatal("Expected Parameter to be set")
 	}
-	if got := dGetString(param, "Entity"); got != "MyModule.Order" {
+	if got := bsonnav.DGetString(param, "Entity"); got != "MyModule.Order" {
 		t.Errorf("Entity = %q, want MyModule.Order", got)
 	}
 }
@@ -1384,8 +1386,8 @@ func TestWorkflowMutator_SetPropertyWithEntity_Parameter_Update(t *testing.T) {
 		t.Fatalf("SetPropertyWithEntity parameter update failed: %v", err)
 	}
 
-	param := dGetDoc(m.rawData, "Parameter")
-	if got := dGetString(param, "Entity"); got != "NewModule.NewEntity" {
+	param := bsonnav.DGetDoc(m.rawData, "Parameter")
+	if got := bsonnav.DGetString(param, "Entity"); got != "NewModule.NewEntity" {
 		t.Errorf("Entity = %q, want NewModule.NewEntity", got)
 	}
 }
@@ -1401,7 +1403,7 @@ func TestWorkflowMutator_SetPropertyWithEntity_Parameter_Clear(t *testing.T) {
 		t.Fatalf("SetPropertyWithEntity parameter clear failed: %v", err)
 	}
 
-	if v := dGet(m.rawData, "Parameter"); v != nil {
+	if v := bsonnav.DGet(m.rawData, "Parameter"); v != nil {
 		t.Error("Expected Parameter to be nil after clear")
 	}
 }

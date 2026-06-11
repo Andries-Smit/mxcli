@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-package mprbackend
+package pagemutator
 
 import (
 	"strings"
@@ -10,6 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/mendixlabs/mxcli/mdl/backend"
+	"github.com/mendixlabs/mxcli/mdl/backend/bsonnav"
 	"github.com/mendixlabs/mxcli/model"
 )
 
@@ -59,8 +60,8 @@ func TestFindBsonWidget_TopLevel(t *testing.T) {
 	if result == nil {
 		t.Fatal("Expected to find txtName")
 	}
-	if dGetString(result.widget, "Name") != "txtName" {
-		t.Errorf("Expected name 'txtName', got %q", dGetString(result.widget, "Name"))
+	if bsonnav.DGetString(result.widget, "Name") != "txtName" {
+		t.Errorf("Expected name 'txtName', got %q", bsonnav.DGetString(result.widget, "Name"))
 	}
 	if result.index != 0 {
 		t.Errorf("Expected index 0, got %d", result.index)
@@ -76,8 +77,8 @@ func TestFindBsonWidget_Nested(t *testing.T) {
 	if result == nil {
 		t.Fatal("Expected to find txtInner inside container")
 	}
-	if dGetString(result.widget, "Name") != "txtInner" {
-		t.Errorf("Expected name 'txtInner', got %q", dGetString(result.widget, "Name"))
+	if bsonnav.DGetString(result.widget, "Name") != "txtInner" {
+		t.Errorf("Expected name 'txtInner', got %q", bsonnav.DGetString(result.widget, "Name"))
 	}
 }
 
@@ -97,24 +98,24 @@ func TestDropWidget_Single(t *testing.T) {
 	w3 := makeWidget("txtPhone", "Pages$TextBox")
 	rawData := makeRawPage(w1, w2, w3)
 
-	m := &mprPageMutator{rawData: rawData, widgetFinder: findBsonWidget}
+	m := &Mutator{rawData: rawData, widgetFinder: findBsonWidget}
 	refs := []backend.WidgetRef{{Widget: "txtEmail"}}
 	if err := m.DropWidget(refs); err != nil {
 		t.Fatalf("DropWidget failed: %v", err)
 	}
 
 	// Verify txtEmail was removed
-	formCall := dGetDoc(rawData, "FormCall")
-	args := dGetArrayElements(dGet(formCall, "Arguments"))
+	formCall := bsonnav.DGetDoc(rawData, "FormCall")
+	args := bsonnav.DGetArrayElements(bsonnav.DGet(formCall, "Arguments"))
 	argDoc := args[0].(bson.D)
-	widgets := dGetArrayElements(dGet(argDoc, "Widgets"))
+	widgets := bsonnav.DGetArrayElements(bsonnav.DGet(argDoc, "Widgets"))
 
 	if len(widgets) != 2 {
 		t.Fatalf("Expected 2 widgets after drop, got %d", len(widgets))
 	}
 
-	name0 := dGetString(widgets[0].(bson.D), "Name")
-	name1 := dGetString(widgets[1].(bson.D), "Name")
+	name0 := bsonnav.DGetString(widgets[0].(bson.D), "Name")
+	name1 := bsonnav.DGetString(widgets[1].(bson.D), "Name")
 	if name0 != "txtName" {
 		t.Errorf("Expected first widget 'txtName', got %q", name0)
 	}
@@ -129,22 +130,22 @@ func TestDropWidget_Multiple(t *testing.T) {
 	w3 := makeWidget("c", "Pages$TextBox")
 	rawData := makeRawPage(w1, w2, w3)
 
-	m := &mprPageMutator{rawData: rawData, widgetFinder: findBsonWidget}
+	m := &Mutator{rawData: rawData, widgetFinder: findBsonWidget}
 	refs := []backend.WidgetRef{{Widget: "a"}, {Widget: "c"}}
 	if err := m.DropWidget(refs); err != nil {
 		t.Fatalf("DropWidget failed: %v", err)
 	}
 
-	formCall := dGetDoc(rawData, "FormCall")
-	args := dGetArrayElements(dGet(formCall, "Arguments"))
+	formCall := bsonnav.DGetDoc(rawData, "FormCall")
+	args := bsonnav.DGetArrayElements(bsonnav.DGet(formCall, "Arguments"))
 	argDoc := args[0].(bson.D)
-	widgets := dGetArrayElements(dGet(argDoc, "Widgets"))
+	widgets := bsonnav.DGetArrayElements(bsonnav.DGet(argDoc, "Widgets"))
 
 	if len(widgets) != 1 {
 		t.Fatalf("Expected 1 widget after dropping a and c, got %d", len(widgets))
 	}
 
-	name := dGetString(widgets[0].(bson.D), "Name")
+	name := bsonnav.DGetString(widgets[0].(bson.D), "Name")
 	if name != "b" {
 		t.Errorf("Expected remaining widget 'b', got %q", name)
 	}
@@ -154,7 +155,7 @@ func TestDropWidget_NotFound(t *testing.T) {
 	w1 := makeWidget("txtName", "Pages$TextBox")
 	rawData := makeRawPage(w1)
 
-	m := &mprPageMutator{rawData: rawData, widgetFinder: findBsonWidget}
+	m := &Mutator{rawData: rawData, widgetFinder: findBsonWidget}
 	refs := []backend.WidgetRef{{Widget: "nonexistent"}}
 	err := m.DropWidget(refs)
 	if err == nil {
@@ -168,7 +169,7 @@ func TestDropWidget_Nested(t *testing.T) {
 	container := makeContainerWidget("ctn1", inner1, inner2)
 	rawData := makeRawPage(container)
 
-	m := &mprPageMutator{rawData: rawData, widgetFinder: findBsonWidget}
+	m := &Mutator{rawData: rawData, widgetFinder: findBsonWidget}
 	refs := []backend.WidgetRef{{Widget: "txtInner1"}}
 	if err := m.DropWidget(refs); err != nil {
 		t.Fatalf("DropWidget failed: %v", err)
@@ -191,7 +192,7 @@ func TestSetWidgetProperty_Name(t *testing.T) {
 	w1 := makeWidget("txtOld", "Pages$TextBox")
 	rawData := makeRawPage(w1)
 
-	m := &mprPageMutator{rawData: rawData, widgetFinder: findBsonWidget}
+	m := &Mutator{rawData: rawData, widgetFinder: findBsonWidget}
 	if err := m.SetWidgetProperty("txtOld", "Name", "txtNew"); err != nil {
 		t.Fatalf("SetWidgetProperty failed: %v", err)
 	}
@@ -211,7 +212,7 @@ func TestSetWidgetProperty_ButtonStyle(t *testing.T) {
 	}
 	rawData := makeRawPage(w1)
 
-	m := &mprPageMutator{rawData: rawData, widgetFinder: findBsonWidget}
+	m := &Mutator{rawData: rawData, widgetFinder: findBsonWidget}
 	if err := m.SetWidgetProperty("btnSave", "ButtonStyle", "Success"); err != nil {
 		t.Fatalf("SetWidgetProperty failed: %v", err)
 	}
@@ -220,8 +221,8 @@ func TestSetWidgetProperty_ButtonStyle(t *testing.T) {
 	if result == nil {
 		t.Fatal("Expected to find btnSave")
 	}
-	if dGetString(result.widget, "ButtonStyle") != "Success" {
-		t.Errorf("Expected ButtonStyle='Success', got %v", dGet(result.widget, "ButtonStyle"))
+	if bsonnav.DGetString(result.widget, "ButtonStyle") != "Success" {
+		t.Errorf("Expected ButtonStyle='Success', got %v", bsonnav.DGet(result.widget, "ButtonStyle"))
 	}
 }
 
@@ -229,7 +230,7 @@ func TestSetWidgetProperty_WidgetNotFound(t *testing.T) {
 	w1 := makeWidget("txtName", "Pages$TextBox")
 	rawData := makeRawPage(w1)
 
-	m := &mprPageMutator{rawData: rawData, widgetFinder: findBsonWidget}
+	m := &Mutator{rawData: rawData, widgetFinder: findBsonWidget}
 	err := m.SetWidgetProperty("nonexistent", "Name", "new")
 	if err == nil {
 		t.Fatal("Expected error for nonexistent widget")
@@ -267,7 +268,7 @@ func TestSetWidgetProperty_PluggableWidget(t *testing.T) {
 	}
 	rawData := makeRawPage(w1)
 
-	m := &mprPageMutator{rawData: rawData, widgetFinder: findBsonWidget}
+	m := &Mutator{rawData: rawData, widgetFinder: findBsonWidget}
 	if err := m.SetWidgetProperty("cb1", "showLabel", false); err != nil {
 		t.Fatalf("SetWidgetProperty failed: %v", err)
 	}
@@ -276,12 +277,12 @@ func TestSetWidgetProperty_PluggableWidget(t *testing.T) {
 	if result == nil {
 		t.Fatal("Expected to find cb1")
 	}
-	obj := dGetDoc(result.widget, "Object")
-	props := dGetArrayElements(dGet(obj, "Properties"))
+	obj := bsonnav.DGetDoc(result.widget, "Object")
+	props := bsonnav.DGetArrayElements(bsonnav.DGet(obj, "Properties"))
 	propDoc := props[0].(bson.D)
-	valDoc := dGetDoc(propDoc, "Value")
-	if dGetString(valDoc, "PrimitiveValue") != "no" {
-		t.Errorf("Expected PrimitiveValue='no', got %v", dGet(valDoc, "PrimitiveValue"))
+	valDoc := bsonnav.DGetDoc(propDoc, "Value")
+	if bsonnav.DGetString(valDoc, "PrimitiveValue") != "no" {
+		t.Errorf("Expected PrimitiveValue='no', got %v", bsonnav.DGet(valDoc, "PrimitiveValue"))
 	}
 }
 
@@ -289,9 +290,9 @@ func TestDSetArray_PreservesMarker(t *testing.T) {
 	parent := bson.D{
 		{Key: "Widgets", Value: bson.A{int32(2), "a", "b"}},
 	}
-	dSetArray(parent, "Widgets", []any{"x", "y"})
+	bsonnav.DSetArray(parent, "Widgets", []any{"x", "y"})
 
-	result := toBsonA(dGet(parent, "Widgets"))
+	result := bsonnav.ToBsonA(bsonnav.DGet(parent, "Widgets"))
 	if len(result) != 3 {
 		t.Fatalf("Expected 3 elements (marker + 2), got %d", len(result))
 	}
@@ -307,9 +308,9 @@ func TestDSetArray_NoMarker(t *testing.T) {
 	parent := bson.D{
 		{Key: "Widgets", Value: bson.A{"a", "b"}},
 	}
-	dSetArray(parent, "Widgets", []any{"x"})
+	bsonnav.DSetArray(parent, "Widgets", []any{"x"})
 
-	result := toBsonA(dGet(parent, "Widgets"))
+	result := bsonnav.ToBsonA(bsonnav.DGet(parent, "Widgets"))
 	if len(result) != 1 {
 		t.Fatalf("Expected 1 element, got %d", len(result))
 	}
@@ -389,8 +390,8 @@ func TestFindBsonWidgetInSnippet_TopLevel(t *testing.T) {
 	if result == nil {
 		t.Fatal("Expected to find txtName in snippet")
 	}
-	if dGetString(result.widget, "Name") != "txtName" {
-		t.Errorf("Expected 'txtName', got %q", dGetString(result.widget, "Name"))
+	if bsonnav.DGetString(result.widget, "Name") != "txtName" {
+		t.Errorf("Expected 'txtName', got %q", bsonnav.DGetString(result.widget, "Name"))
 	}
 }
 
@@ -430,18 +431,18 @@ func TestDropWidget_Snippet(t *testing.T) {
 	w2 := makeWidget("txtEmail", "Pages$TextBox")
 	rawData := makeRawSnippet(w1, w2)
 
-	m := &mprPageMutator{rawData: rawData, widgetFinder: findBsonWidgetInSnippet}
+	m := &Mutator{rawData: rawData, widgetFinder: findBsonWidgetInSnippet}
 	refs := []backend.WidgetRef{{Widget: "txtEmail"}}
 	if err := m.DropWidget(refs); err != nil {
 		t.Fatalf("DropWidget failed: %v", err)
 	}
 
 	// Verify txtEmail was removed
-	widgets := dGetArrayElements(dGet(rawData, "Widgets"))
+	widgets := bsonnav.DGetArrayElements(bsonnav.DGet(rawData, "Widgets"))
 	if len(widgets) != 1 {
 		t.Fatalf("Expected 1 widget after drop, got %d", len(widgets))
 	}
-	name := dGetString(widgets[0].(bson.D), "Name")
+	name := bsonnav.DGetString(widgets[0].(bson.D), "Name")
 	if name != "txtName" {
 		t.Errorf("Expected remaining widget 'txtName', got %q", name)
 	}
@@ -455,7 +456,7 @@ func TestSetWidgetProperty_Snippet(t *testing.T) {
 	}
 	rawData := makeRawSnippet(w1)
 
-	m := &mprPageMutator{rawData: rawData, widgetFinder: findBsonWidgetInSnippet}
+	m := &Mutator{rawData: rawData, widgetFinder: findBsonWidgetInSnippet}
 	if err := m.SetWidgetProperty("btnAction", "ButtonStyle", "Danger"); err != nil {
 		t.Fatalf("SetWidgetProperty failed: %v", err)
 	}
@@ -464,8 +465,8 @@ func TestSetWidgetProperty_Snippet(t *testing.T) {
 	if result == nil {
 		t.Fatal("Expected to find btnAction")
 	}
-	if dGetString(result.widget, "ButtonStyle") != "Danger" {
-		t.Errorf("Expected ButtonStyle='Danger', got %v", dGet(result.widget, "ButtonStyle"))
+	if bsonnav.DGetString(result.widget, "ButtonStyle") != "Danger" {
+		t.Errorf("Expected ButtonStyle='Danger', got %v", bsonnav.DGet(result.widget, "ButtonStyle"))
 	}
 }
 
@@ -683,7 +684,7 @@ func TestFindWidget(t *testing.T) {
 	w1 := makeWidget("txtName", "Pages$TextBox")
 	rawData := makeRawPage(w1)
 
-	m := &mprPageMutator{rawData: rawData, widgetFinder: findBsonWidget}
+	m := &Mutator{rawData: rawData, widgetFinder: findBsonWidget}
 	if !m.FindWidget("txtName") {
 		t.Error("Expected FindWidget to return true for existing widget")
 	}
@@ -709,7 +710,7 @@ func TestParamScope(t *testing.T) {
 		}},
 	}
 
-	m := &mprPageMutator{rawData: rawData, widgetFinder: findBsonWidget}
+	m := &Mutator{rawData: rawData, widgetFinder: findBsonWidget}
 	ids, names := m.ParamScope()
 
 	if len(ids) != 1 {
@@ -749,8 +750,8 @@ func makePageWithLayout(layoutQN string, params ...string) bson.D {
 	}
 }
 
-func makePageMutator(rawData bson.D) *mprPageMutator {
-	return &mprPageMutator{rawData: rawData, containerType: "page", widgetFinder: findBsonWidget}
+func makePageMutator(rawData bson.D) *Mutator {
+	return &Mutator{rawData: rawData, containerType: "page", widgetFinder: findBsonWidget}
 }
 
 func TestSetLayout_Basic(t *testing.T) {
@@ -761,16 +762,16 @@ func TestSetLayout_Basic(t *testing.T) {
 		t.Fatalf("SetLayout failed: %v", err)
 	}
 
-	formCall := dGetDoc(m.rawData, "FormCall")
-	if got := dGetString(formCall, "Form"); got != "MyModule.NewLayout" {
+	formCall := bsonnav.DGetDoc(m.rawData, "FormCall")
+	if got := bsonnav.DGetString(formCall, "Form"); got != "MyModule.NewLayout" {
 		t.Errorf("Form = %q, want MyModule.NewLayout", got)
 	}
 
 	// Verify parameters were remapped
-	args := dGetArrayElements(dGet(formCall, "Arguments"))
+	args := bsonnav.DGetArrayElements(bsonnav.DGet(formCall, "Arguments"))
 	for _, a := range args {
 		aDoc := a.(bson.D)
-		param := dGetString(aDoc, "Parameter")
+		param := bsonnav.DGetString(aDoc, "Parameter")
 		if !strings.HasPrefix(param, "MyModule.NewLayout.") {
 			t.Errorf("Parameter %q should start with MyModule.NewLayout.", param)
 		}
@@ -789,12 +790,12 @@ func TestSetLayout_WithParamMappings(t *testing.T) {
 		t.Fatalf("SetLayout with mappings failed: %v", err)
 	}
 
-	formCall := dGetDoc(m.rawData, "FormCall")
-	args := dGetArrayElements(dGet(formCall, "Arguments"))
+	formCall := bsonnav.DGetDoc(m.rawData, "FormCall")
+	args := bsonnav.DGetArrayElements(bsonnav.DGet(formCall, "Arguments"))
 	paramValues := make(map[string]bool)
 	for _, a := range args {
 		aDoc := a.(bson.D)
-		paramValues[dGetString(aDoc, "Parameter")] = true
+		paramValues[bsonnav.DGetString(aDoc, "Parameter")] = true
 	}
 	if !paramValues["MyModule.NewLayout.MainArea"] {
 		t.Error("Expected MyModule.NewLayout.MainArea in remapped params")
@@ -813,15 +814,15 @@ func TestSetLayout_SameLayout_Noop(t *testing.T) {
 	}
 
 	// Should be a no-op — form unchanged
-	formCall := dGetDoc(m.rawData, "FormCall")
-	if got := dGetString(formCall, "Form"); got != "MyModule.SameLayout" {
+	formCall := bsonnav.DGetDoc(m.rawData, "FormCall")
+	if got := bsonnav.DGetString(formCall, "Form"); got != "MyModule.SameLayout" {
 		t.Errorf("Form = %q, want MyModule.SameLayout", got)
 	}
 }
 
 func TestSetLayout_Snippet_Error(t *testing.T) {
 	page := makePageWithLayout("MyModule.Layout", "Content")
-	m := &mprPageMutator{rawData: page, containerType: "snippet", widgetFinder: findBsonWidget}
+	m := &Mutator{rawData: page, containerType: "snippet", widgetFinder: findBsonWidget}
 
 	err := m.SetLayout("MyModule.NewLayout", nil)
 	if err == nil {
@@ -872,7 +873,7 @@ func makePropTypeID116(b byte) primitive.Binary {
 
 func TestDeriveColumnNameBson_AttributeBinding(t *testing.T) {
 	typeID := makePropTypeID116(0x01)
-	propKeyMap := map[string]string{extractBinaryIDFromDoc(typeID): "attribute"}
+	propKeyMap := map[string]string{bsonnav.ExtractBinaryIDFromDoc(typeID): "attribute"}
 
 	colDoc := bson.D{
 		{Key: "Properties", Value: bson.A{
@@ -894,7 +895,7 @@ func TestDeriveColumnNameBson_AttributeBinding(t *testing.T) {
 
 func TestDeriveColumnNameBson_CaptionFallback(t *testing.T) {
 	typeID := makePropTypeID116(0x02)
-	propKeyMap := map[string]string{extractBinaryIDFromDoc(typeID): "header"}
+	propKeyMap := map[string]string{bsonnav.ExtractBinaryIDFromDoc(typeID): "header"}
 
 	colDoc := bson.D{
 		{Key: "Properties", Value: bson.A{
@@ -923,7 +924,7 @@ func TestDeriveColumnNameBson_CaptionFallback(t *testing.T) {
 
 func TestDeriveColumnNameBson_AllSpecialCharCaptionFallsBackToColN(t *testing.T) {
 	typeID := makePropTypeID116(0x03)
-	propKeyMap := map[string]string{extractBinaryIDFromDoc(typeID): "header"}
+	propKeyMap := map[string]string{bsonnav.ExtractBinaryIDFromDoc(typeID): "header"}
 
 	colDoc := bson.D{
 		{Key: "Properties", Value: bson.A{

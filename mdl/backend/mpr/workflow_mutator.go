@@ -9,6 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 
 	"github.com/mendixlabs/mxcli/mdl/backend"
+	"github.com/mendixlabs/mxcli/mdl/backend/bsonnav"
 	"github.com/mendixlabs/mxcli/mdl/bsonutil"
 	"github.com/mendixlabs/mxcli/model"
 	"github.com/mendixlabs/mxcli/sdk/mpr"
@@ -57,7 +58,7 @@ func (b *MprBackend) openWorkflowForMutation(unitID model.ID) (backend.WorkflowM
 func (m *mprWorkflowMutator) SetProperty(prop string, value string) error {
 	switch strings.ToLower(prop) {
 	case "display":
-		wfName := dGetDoc(m.rawData, "WorkflowName")
+		wfName := bsonnav.DGetDoc(m.rawData, "WorkflowName")
 		if wfName == nil {
 			newName := bson.D{
 				{Key: "$ID", Value: bsonutil.NewIDBsonBinary()},
@@ -66,13 +67,13 @@ func (m *mprWorkflowMutator) SetProperty(prop string, value string) error {
 			}
 			m.rawData = append(m.rawData, bson.E{Key: "WorkflowName", Value: newName})
 		} else {
-			dSet(wfName, "Text", value)
+			bsonnav.DSet(wfName, "Text", value)
 		}
-		dSet(m.rawData, "Title", value)
+		bsonnav.DSet(m.rawData, "Title", value)
 		return nil
 
 	case "description":
-		wfDesc := dGetDoc(m.rawData, "WorkflowDescription")
+		wfDesc := bsonnav.DGetDoc(m.rawData, "WorkflowDescription")
 		if wfDesc == nil {
 			newDesc := bson.D{
 				{Key: "$ID", Value: bsonutil.NewIDBsonBinary()},
@@ -81,16 +82,16 @@ func (m *mprWorkflowMutator) SetProperty(prop string, value string) error {
 			}
 			m.rawData = append(m.rawData, bson.E{Key: "WorkflowDescription", Value: newDesc})
 		} else {
-			dSet(wfDesc, "Text", value)
+			bsonnav.DSet(wfDesc, "Text", value)
 		}
 		return nil
 
 	case "export_level":
-		dSet(m.rawData, "ExportLevel", value)
+		bsonnav.DSet(m.rawData, "ExportLevel", value)
 		return nil
 
 	case "due_date":
-		dSet(m.rawData, "DueDate", value)
+		bsonnav.DSet(m.rawData, "DueDate", value)
 		return nil
 
 	default:
@@ -102,14 +103,14 @@ func (m *mprWorkflowMutator) SetPropertyWithEntity(prop string, value string, en
 	switch prop {
 	case "overview_page":
 		if value == "" {
-			dSet(m.rawData, "AdminPage", nil)
+			bsonnav.DSet(m.rawData, "AdminPage", nil)
 		} else {
 			pageRef := bson.D{
 				{Key: "$ID", Value: bsonutil.NewIDBsonBinary()},
 				{Key: "$Type", Value: "Workflows$PageReference"},
 				{Key: "Page", Value: value},
 			}
-			dSet(m.rawData, "AdminPage", pageRef)
+			bsonnav.DSet(m.rawData, "AdminPage", pageRef)
 		}
 		return nil
 
@@ -123,9 +124,9 @@ func (m *mprWorkflowMutator) SetPropertyWithEntity(prop string, value string, en
 			}
 			return nil
 		}
-		param := dGetDoc(m.rawData, "Parameter")
+		param := bsonnav.DGetDoc(m.rawData, "Parameter")
 		if param != nil {
-			dSet(param, "Entity", entity)
+			bsonnav.DSet(param, "Entity", entity)
 		} else {
 			newParam := bson.D{
 				{Key: "$ID", Value: bsonutil.NewIDBsonBinary()},
@@ -160,10 +161,10 @@ func (m *mprWorkflowMutator) SetActivityProperty(activityRef string, atPos int, 
 
 	switch strings.ToLower(prop) {
 	case "page":
-		taskPage := dGetDoc(actDoc, "TaskPage")
+		taskPage := bsonnav.DGetDoc(actDoc, "TaskPage")
 		if taskPage != nil {
 			// TaskPage exists and has a value — update the Page field in place.
-			dSet(taskPage, "Page", value)
+			bsonnav.DSet(taskPage, "Page", value)
 			return nil
 		}
 		pageRef := bson.D{
@@ -171,7 +172,7 @@ func (m *mprWorkflowMutator) SetActivityProperty(activityRef string, atPos int, 
 			{Key: "$Type", Value: "Workflows$PageReference"},
 			{Key: "Page", Value: value},
 		}
-		if !dSet(actDoc, "TaskPage", pageRef) {
+		if !bsonnav.DSet(actDoc, "TaskPage", pageRef) {
 			// TaskPage key absent — append to activity and replace in BSON tree.
 			actDoc = append(actDoc, bson.E{Key: "TaskPage", Value: pageRef})
 			m.replaceActivity(actDoc)
@@ -179,9 +180,9 @@ func (m *mprWorkflowMutator) SetActivityProperty(activityRef string, atPos int, 
 		return nil
 
 	case "description":
-		taskDesc := dGetDoc(actDoc, "TaskDescription")
+		taskDesc := bsonnav.DGetDoc(actDoc, "TaskDescription")
 		if taskDesc != nil {
-			dSet(taskDesc, "Text", value)
+			bsonnav.DSet(taskDesc, "Text", value)
 		}
 		return nil
 
@@ -191,7 +192,7 @@ func (m *mprWorkflowMutator) SetActivityProperty(activityRef string, atPos int, 
 			{Key: "$Type", Value: "Workflows$MicroflowUserTargeting"},
 			{Key: "Microflow", Value: value},
 		}
-		dSet(actDoc, "UserTargeting", userTargeting)
+		bsonnav.DSet(actDoc, "UserTargeting", userTargeting)
 		return nil
 
 	case "targeting_xpath":
@@ -200,11 +201,11 @@ func (m *mprWorkflowMutator) SetActivityProperty(activityRef string, atPos int, 
 			{Key: "$Type", Value: "Workflows$XPathUserTargeting"},
 			{Key: "XPathConstraint", Value: value},
 		}
-		dSet(actDoc, "UserTargeting", userTargeting)
+		bsonnav.DSet(actDoc, "UserTargeting", userTargeting)
 		return nil
 
 	case "due_date":
-		dSet(actDoc, "DueDate", value)
+		bsonnav.DSet(actDoc, "DueDate", value)
 		return nil
 
 	default:
@@ -226,7 +227,7 @@ func (m *mprWorkflowMutator) InsertAfterActivity(activityRef string, atPos int, 
 	newArr = append(newArr, newBsonActs...)
 	newArr = append(newArr, acts[insertIdx:]...)
 
-	dSetArray(containingFlow, "Activities", newArr)
+	bsonnav.DSetArray(containingFlow, "Activities", newArr)
 	return nil
 }
 
@@ -240,7 +241,7 @@ func (m *mprWorkflowMutator) DropActivity(activityRef string, atPos int) error {
 	newArr = append(newArr, acts[:idx]...)
 	newArr = append(newArr, acts[idx+1:]...)
 
-	dSetArray(containingFlow, "Activities", newArr)
+	bsonnav.DSetArray(containingFlow, "Activities", newArr)
 	return nil
 }
 
@@ -257,7 +258,7 @@ func (m *mprWorkflowMutator) ReplaceActivity(activityRef string, atPos int, acti
 	newArr = append(newArr, newBsonActs...)
 	newArr = append(newArr, acts[idx+1:]...)
 
-	dSetArray(containingFlow, "Activities", newArr)
+	bsonnav.DSetArray(containingFlow, "Activities", newArr)
 	return nil
 }
 
@@ -285,9 +286,9 @@ func (m *mprWorkflowMutator) InsertOutcome(activityRef string, atPos int, outcom
 		bson.E{Key: "Value", Value: outcomeName},
 	)
 
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	outcomes = append(outcomes, outcomeDoc)
-	dSetArray(actDoc, "Outcomes", outcomes)
+	bsonnav.DSetArray(actDoc, "Outcomes", outcomes)
 	return nil
 }
 
@@ -297,7 +298,7 @@ func (m *mprWorkflowMutator) DropOutcome(activityRef string, atPos int, outcomeN
 		return err
 	}
 
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	found := false
 	var kept []any
 	for _, elem := range outcomes {
@@ -306,8 +307,8 @@ func (m *mprWorkflowMutator) DropOutcome(activityRef string, atPos int, outcomeN
 			kept = append(kept, elem)
 			continue
 		}
-		value := dGetString(oDoc, "Value")
-		typeName := dGetString(oDoc, "$Type")
+		value := bsonnav.DGetString(oDoc, "Value")
+		typeName := bsonnav.DGetString(oDoc, "$Type")
 		matched := value == outcomeName
 		if !matched && strings.EqualFold(outcomeName, "Default") && typeName == "Workflows$VoidConditionOutcome" {
 			matched = true
@@ -321,7 +322,7 @@ func (m *mprWorkflowMutator) DropOutcome(activityRef string, atPos int, outcomeN
 	if !found {
 		return fmt.Errorf("outcome %q not found on activity %q", outcomeName, activityRef)
 	}
-	dSetArray(actDoc, "Outcomes", kept)
+	bsonnav.DSetArray(actDoc, "Outcomes", kept)
 	return nil
 }
 
@@ -346,9 +347,9 @@ func (m *mprWorkflowMutator) InsertPath(activityRef string, atPos int, pathCapti
 
 	pathDoc = append(pathDoc, bson.E{Key: "PersistentId", Value: bsonutil.NewIDBsonBinary()})
 
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	outcomes = append(outcomes, pathDoc)
-	dSetArray(actDoc, "Outcomes", outcomes)
+	bsonnav.DSetArray(actDoc, "Outcomes", outcomes)
 	return nil
 }
 
@@ -358,10 +359,10 @@ func (m *mprWorkflowMutator) DropPath(activityRef string, atPos int, pathCaption
 		return err
 	}
 
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	if pathCaption == "" && len(outcomes) > 0 {
 		outcomes = outcomes[:len(outcomes)-1]
-		dSetArray(actDoc, "Outcomes", outcomes)
+		bsonnav.DSetArray(actDoc, "Outcomes", outcomes)
 		return nil
 	}
 
@@ -379,7 +380,7 @@ func (m *mprWorkflowMutator) DropPath(activityRef string, atPos int, pathCaption
 	newOutcomes := make([]any, 0, len(outcomes)-1)
 	newOutcomes = append(newOutcomes, outcomes[:pathIdx]...)
 	newOutcomes = append(newOutcomes, outcomes[pathIdx+1:]...)
-	dSetArray(actDoc, "Outcomes", newOutcomes)
+	bsonnav.DSetArray(actDoc, "Outcomes", newOutcomes)
 	return nil
 }
 
@@ -424,9 +425,9 @@ func (m *mprWorkflowMutator) InsertBranch(activityRef string, atPos int, conditi
 		outcomeDoc = append(outcomeDoc, bson.E{Key: "Flow", Value: m.buildSubFlowBson(activities)})
 	}
 
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	outcomes = append(outcomes, outcomeDoc)
-	dSetArray(actDoc, "Outcomes", outcomes)
+	bsonnav.DSetArray(actDoc, "Outcomes", outcomes)
 	return nil
 }
 
@@ -436,7 +437,7 @@ func (m *mprWorkflowMutator) DropBranch(activityRef string, atPos int, branchNam
 		return err
 	}
 
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	found := false
 	var kept []any
 	for _, elem := range outcomes {
@@ -446,18 +447,18 @@ func (m *mprWorkflowMutator) DropBranch(activityRef string, atPos int, branchNam
 			continue
 		}
 		if !found {
-			typeName := dGetString(oDoc, "$Type")
+			typeName := bsonnav.DGetString(oDoc, "$Type")
 			switch strings.ToLower(branchName) {
 			case "true":
 				if typeName == "Workflows$BooleanConditionOutcome" {
-					if v, ok := dGet(oDoc, "Value").(bool); ok && v {
+					if v, ok := bsonnav.DGet(oDoc, "Value").(bool); ok && v {
 						found = true
 						continue
 					}
 				}
 			case "false":
 				if typeName == "Workflows$BooleanConditionOutcome" {
-					if v, ok := dGet(oDoc, "Value").(bool); ok && !v {
+					if v, ok := bsonnav.DGet(oDoc, "Value").(bool); ok && !v {
 						found = true
 						continue
 					}
@@ -468,7 +469,7 @@ func (m *mprWorkflowMutator) DropBranch(activityRef string, atPos int, branchNam
 					continue
 				}
 			default:
-				value := dGetString(oDoc, "Value")
+				value := bsonnav.DGetString(oDoc, "Value")
 				if value == branchName {
 					found = true
 					continue
@@ -480,7 +481,7 @@ func (m *mprWorkflowMutator) DropBranch(activityRef string, atPos int, branchNam
 	if !found {
 		return fmt.Errorf("branch %q not found on activity %q", branchName, activityRef)
 	}
-	dSetArray(actDoc, "Outcomes", kept)
+	bsonnav.DSetArray(actDoc, "Outcomes", kept)
 	return nil
 }
 
@@ -522,9 +523,9 @@ func (m *mprWorkflowMutator) InsertBoundaryEvent(activityRef string, atPos int, 
 		eventDoc = append(eventDoc, bson.E{Key: "Recurrence", Value: nil})
 	}
 
-	events := dGetArrayElements(dGet(actDoc, "BoundaryEvents"))
+	events := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "BoundaryEvents"))
 	events = append(events, eventDoc)
-	dSetArray(actDoc, "BoundaryEvents", events)
+	bsonnav.DSetArray(actDoc, "BoundaryEvents", events)
 	return nil
 }
 
@@ -534,13 +535,13 @@ func (m *mprWorkflowMutator) DropBoundaryEvent(activityRef string, atPos int) er
 		return err
 	}
 
-	events := dGetArrayElements(dGet(actDoc, "BoundaryEvents"))
+	events := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "BoundaryEvents"))
 	if len(events) == 0 {
 		return fmt.Errorf("activity %q has no boundary events", activityRef)
 	}
 
 	// Drop the first boundary event silently.
-	dSetArray(actDoc, "BoundaryEvents", events[1:])
+	bsonnav.DSetArray(actDoc, "BoundaryEvents", events[1:])
 	return nil
 }
 
@@ -565,11 +566,11 @@ func (m *mprWorkflowMutator) Save() error {
 // document, because the slice header returned by findActivityByCaption cannot
 // propagate appends back to the parent bson.A.
 func (m *mprWorkflowMutator) replaceActivity(updated bson.D) {
-	actID := extractBinaryIDFromDoc(dGet(updated, "$ID"))
+	actID := bsonnav.ExtractBinaryIDFromDoc(bsonnav.DGet(updated, "$ID"))
 	if actID == "" {
 		return
 	}
-	flow := dGetDoc(m.rawData, "Flow")
+	flow := bsonnav.DGetDoc(m.rawData, "Flow")
 	if flow == nil {
 		return
 	}
@@ -577,13 +578,13 @@ func (m *mprWorkflowMutator) replaceActivity(updated bson.D) {
 }
 
 func replaceActivityRecursive(flow bson.D, actID string, updated bson.D) bool {
-	elements := dGetArrayElements(dGet(flow, "Activities"))
+	elements := bsonnav.DGetArrayElements(bsonnav.DGet(flow, "Activities"))
 	for i, elem := range elements {
 		actDoc, ok := elem.(bson.D)
 		if !ok {
 			continue
 		}
-		if extractBinaryIDFromDoc(dGet(actDoc, "$ID")) == actID {
+		if bsonnav.ExtractBinaryIDFromDoc(bsonnav.DGet(actDoc, "$ID")) == actID {
 			elements[i] = updated
 			return true
 		}
@@ -598,7 +599,7 @@ func replaceActivityRecursive(flow bson.D, actID string, updated bson.D) bool {
 
 // findActivityByCaption searches the workflow for an activity matching caption.
 func (m *mprWorkflowMutator) findActivityByCaption(caption string, atPosition int) (bson.D, error) {
-	flow := dGetDoc(m.rawData, "Flow")
+	flow := bsonnav.DGetDoc(m.rawData, "Flow")
 	if flow == nil {
 		return nil, fmt.Errorf("workflow has no Flow")
 	}
@@ -629,14 +630,14 @@ func (m *mprWorkflowMutator) findActivityByCaption(caption string, atPosition in
 
 // findActivitiesRecursive collects all activities matching caption in a flow and nested sub-flows.
 func findActivitiesRecursive(flow bson.D, caption string, matches *[]bson.D) {
-	activities := dGetArrayElements(dGet(flow, "Activities"))
+	activities := bsonnav.DGetArrayElements(bsonnav.DGet(flow, "Activities"))
 	for _, elem := range activities {
 		actDoc, ok := elem.(bson.D)
 		if !ok {
 			continue
 		}
-		actCaption := dGetString(actDoc, "Caption")
-		actName := dGetString(actDoc, "Name")
+		actCaption := bsonnav.DGetString(actDoc, "Caption")
+		actName := bsonnav.DGetString(actDoc, "Name")
 		if actCaption == caption || actName == caption {
 			*matches = append(*matches, actDoc)
 		}
@@ -649,23 +650,23 @@ func findActivitiesRecursive(flow bson.D, caption string, matches *[]bson.D) {
 // getNestedFlows returns all sub-flows within an activity.
 func getNestedFlows(actDoc bson.D) []bson.D {
 	var flows []bson.D
-	outcomes := dGetArrayElements(dGet(actDoc, "Outcomes"))
+	outcomes := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "Outcomes"))
 	for _, o := range outcomes {
 		oDoc, ok := o.(bson.D)
 		if !ok {
 			continue
 		}
-		if f := dGetDoc(oDoc, "Flow"); f != nil {
+		if f := bsonnav.DGetDoc(oDoc, "Flow"); f != nil {
 			flows = append(flows, f)
 		}
 	}
-	events := dGetArrayElements(dGet(actDoc, "BoundaryEvents"))
+	events := bsonnav.DGetArrayElements(bsonnav.DGet(actDoc, "BoundaryEvents"))
 	for _, e := range events {
 		eDoc, ok := e.(bson.D)
 		if !ok {
 			continue
 		}
-		if f := dGetDoc(eDoc, "Flow"); f != nil {
+		if f := bsonnav.DGetDoc(eDoc, "Flow"); f != nil {
 			flows = append(flows, f)
 		}
 	}
@@ -681,7 +682,7 @@ type activityIndexMatch struct {
 
 // findActivityIndex returns the index, activities array, and containing flow of an activity.
 func (m *mprWorkflowMutator) findActivityIndex(caption string, atPosition int) (int, []any, bson.D, error) {
-	flow := dGetDoc(m.rawData, "Flow")
+	flow := bsonnav.DGetDoc(m.rawData, "Flow")
 	if flow == nil {
 		return -1, nil, nil, fmt.Errorf("workflow has no Flow")
 	}
@@ -706,14 +707,14 @@ func (m *mprWorkflowMutator) findActivityIndex(caption string, atPosition int) (
 }
 
 func findActivityIndexRecursive(flow bson.D, caption string, matches *[]activityIndexMatch) {
-	activities := dGetArrayElements(dGet(flow, "Activities"))
+	activities := bsonnav.DGetArrayElements(bsonnav.DGet(flow, "Activities"))
 	for i, elem := range activities {
 		actDoc, ok := elem.(bson.D)
 		if !ok {
 			continue
 		}
-		actCaption := dGetString(actDoc, "Caption")
-		actName := dGetString(actDoc, "Name")
+		actCaption := bsonnav.DGetString(actDoc, "Caption")
+		actName := bsonnav.DGetString(actDoc, "Name")
 		if actCaption == caption || actName == caption {
 			*matches = append(*matches, activityIndexMatch{idx: i, activities: activities, flow: flow})
 		}
@@ -730,7 +731,7 @@ func findActivityIndexRecursive(flow bson.D, caption string, matches *[]activity
 // collectAllActivityNames collects all activity names from the entire workflow BSON.
 func (m *mprWorkflowMutator) collectAllActivityNames() map[string]bool {
 	names := make(map[string]bool)
-	flow := dGetDoc(m.rawData, "Flow")
+	flow := bsonnav.DGetDoc(m.rawData, "Flow")
 	if flow != nil {
 		collectNamesRecursive(flow, names)
 	}
@@ -738,13 +739,13 @@ func (m *mprWorkflowMutator) collectAllActivityNames() map[string]bool {
 }
 
 func collectNamesRecursive(flow bson.D, names map[string]bool) {
-	activities := dGetArrayElements(dGet(flow, "Activities"))
+	activities := bsonnav.DGetArrayElements(bsonnav.DGet(flow, "Activities"))
 	for _, elem := range activities {
 		actDoc, ok := elem.(bson.D)
 		if !ok {
 			continue
 		}
-		if name := dGetString(actDoc, "Name"); name != "" {
+		if name := bsonnav.DGetString(actDoc, "Name"); name != "" {
 			names[name] = true
 		}
 		for _, nested := range getNestedFlows(actDoc) {
