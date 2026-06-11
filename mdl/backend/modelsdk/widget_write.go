@@ -889,6 +889,17 @@ func clientActionToGen(a pages.ClientAction) (element.Element, error) {
 		g.SetNumberOfPagesToClose2("")
 		g.SetPageSettings(formSettingsToGen(x.PageName))
 		return g, nil
+	case *pages.SetTaskOutcomeClientAction:
+		g := genPg.NewSetTaskOutcomeClientAction()
+		if x.ID != "" {
+			g.SetID(element.ID(x.ID))
+		}
+		assignID(g)
+		g.SetClosePage(x.ClosePage)
+		g.SetCommit(x.Commit)
+		g.SetDisabledDuringExecution(true)
+		g.SetOutcomeValue(x.OutcomeValue)
+		return g, nil
 	case *pages.MicroflowClientAction:
 		// call_microflow → Forms$MicroflowAction.
 		g := genPg.NewMicroflowClientAction()
