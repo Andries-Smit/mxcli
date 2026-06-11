@@ -1,0 +1,61 @@
+# PED (Studio Pro MCP server) authoring capabilities — the version-keyed table half
+# of the capability model (ADR-0004). Tool *presence* is NOT here; it comes from a
+# live tools/list probe. This file holds the facts that are not schema-discoverable:
+# which features are authorable, and the reasons the rest are not (PED's create
+# whitelist, behavioral quirks).
+#
+# Keyed by MCP serverInfo.version. The baseline below is the first server (1.0.0,
+# shipped in Studio Pro 11.11). When a newer MCP server lifts a limit, set
+# `available_since` on the blocked feature to that server version — the loader flips
+# it for servers at or above that version. Adding/auditing entries is part of the
+# "onboarding a new version" procedure in docs/03-development/PED_MCP_CAPABILITIES.md.
+
+baseline_server_version: "1.0.0"
+
+features:
+  - feature: "Modules"
+    available: true
+    note: "CREATE"
+  - feature: "Entities"
+    available: true
+    note: "CREATE/DROP; ALTER add/drop/rename attribute, entity & attribute documentation; generalization (extends)"
+  - feature: "Associations"
+    available: true
+    note: "CREATE/DROP within a module"
+  - feature: "Enumerations"
+    available: true
+    note: "CREATE (DROP via Concord)"
+  - feature: "Constants"
+    available: true
+    note: "CREATE / CREATE OR MODIFY / DROP (String/Integer/Decimal/Boolean/DateTime)"
+  - feature: "Microflows"
+    available: true
+    note: "CREATE (broad activity + control-flow coverage)"
+  - feature: "Pages"
+    available: true
+    note: "CREATE + ALTER (widget coverage grows per type)"
+  - feature: "Workflows"
+    available: true
+    note: "CREATE / CREATE OR REPLACE / DROP / ALTER (full, any nesting depth)"
+  - feature: "View entities"
+    available: true
+    note: "CREATE"
+  - feature: "Documents into folders"
+    available: true
+    note: "create <doc> … folder 'A/B' (nested; folder auto-created)"
+
+  - feature: "Nanoflows, Java actions, Business-event services"
+    available: false
+    note: "CREATE — off PED's create whitelist"
+  - feature: "Security (roles, access, demo users), Navigation, OData/REST, mappings, settings"
+    available: false
+    note: "no PED write path"
+  - feature: "ALTER … MODIFY attribute type"
+    available: false
+    note: "PED can't change a type in place (would drop the column)"
+  - feature: "MOVE / re-parent a document, empty CREATE FOLDER"
+    available: false
+    note: "PED can't re-parent documents or create empty folders"
+  - feature: "Pages into folders"
+    available: false
+    note: "pg_write_page has no folderPath (page lands at the module root)"

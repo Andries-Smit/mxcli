@@ -374,14 +374,16 @@ ADR-0004 decides the model; this is the build plan, in dependency order:
    (`mdl/backend/mcp/capabilities.go` + `cmd/mxcli/mcp.go`). The
    `live-edit-with-studio-pro` skill tells the agent to run it before authoring.
    Implemented as a CLI subcommand, **not** a `show mcp capabilities` MDL statement —
-   the MCP backend wires *existing* MDL and must not extend the language. The
-   authorable/blocked lists are still a hand-curated snapshot; step 2 makes them
-   registry-driven.
-2. **Capability registry + `Capabilities` struct (concern 2 foundation).** A
-   version-keyed table (`sdk/versions/ped-*.yaml`, mirroring the Mendix feature
-   registry) for the *non-probeable* facts (create-whitelist, behavioral quirks),
-   merged on connect with the live `tools/list` probe into a single `Capabilities`
-   value on the backend.
+   the MCP backend wires *existing* MDL and must not extend the language.
+2. **Capability registry + `Capabilities` struct (concern 2 foundation). ✅ Shipped.**
+   A version-keyed table — `mdl/backend/mcp/capabilities.yaml` (embedded; keyed by
+   MCP `serverInfo.version`, a different axis than the Mendix-version registry, so
+   co-located with the backend rather than in `sdk/versions/`) — holds the
+   *non-probeable* facts; a blocked feature carries an optional `available_since` so
+   a lifted limit is a one-line edit. `(*Backend).capabilities()` merges the table
+   for the connected version with the live `tools/list` probe into a `Capabilities`
+   value, and the slice-1 report is now generated entirely from it (no hardcoded
+   lists). Still kept in step with `PED_MCP_CAPABILITIES.md` by hand on onboarding.
 3. **Gate behavior on the model.** Replace the scattered hardcoded rejections with
    `capabilities.canCreate(docType)` / `capabilities.hasTool(name)`, and the report
    from step 1 is regenerated from this same model (single source of truth, no
