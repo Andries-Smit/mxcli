@@ -9,6 +9,7 @@ import (
 	"github.com/mendixlabs/mxcli/modelsdk/codec"
 	"github.com/mendixlabs/mxcli/modelsdk/element"
 	genDm "github.com/mendixlabs/mxcli/modelsdk/gen/domainmodels"
+	"github.com/mendixlabs/mxcli/modelsdk/meta"
 	"github.com/mendixlabs/mxcli/sdk/domainmodel"
 )
 
@@ -251,6 +252,11 @@ func (b *Backend) DeleteEntity(domainModelID, entityID model.ID) error {
 	}
 	for _, other := range allDMs {
 		if other.ID == domainModelID {
+			continue
+		}
+		// The virtual System domain model has no on-disk unit and is immutable —
+		// skip it (ListDomainModels injects it for entity resolution).
+		if string(other.ID) == meta.SystemDomainModelID {
 			continue
 		}
 		odm, err := b.loadDomainModelGen(other.ID)
