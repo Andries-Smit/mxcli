@@ -8,190 +8,196 @@
 mxcli must create pluggable-widget instances (ComboBox, DataGrid2, Gallery, …)
 that Studio Pro accepts **without `CE0463` "the definition of this widget has
 changed"** — for whatever Mendix version *and* whatever installed widget version
-a project happens to be on. Today it can't do this reliably:
+a project is on.
 
-- **Legacy engine (`sdk/widgets`)** embeds static templates frozen at Mendix
-  **11.6** (`templates/mendix-11.6/*.json`), hand-patched as gaps surface. They
-  happen to work on 11.10 but are known to break on 10.x (see
-  `sdk/versions/mendix-11.yaml`), and every new Mendix minor or widget version
-  risks a fresh round of `CE0463`.
-- **modelsdk engine (`modelsdk/widgets`)** vendored engalar's generator
-  (`generate.go` / `augment.go` / `def.json`) **but kept the stale static
-  templates as the primary source**, so it inherits the same fragility plus its
-  own drift (the templates were a worse extraction — dirty Object defaults).
+### How widget creation actually works today (both engines)
 
-The cost shows up as `CE0463` on created widgets, a manual per-version
-template-patching treadmill, and an existing (un-fixed) correctness gap on 10.x.
+Resolution is **three layers**, not a single frozen template:
 
-This proposal is **internal architecture only** — no new MDL syntax. It changes
-how the widget Type+Object BSON is *resolved*, behind the existing
-`WidgetObjectBuilder` interface.
+1. **`def.json` / `WidgetRegistry`** — tells the engine *which MDL keyword routes
+   into which widget property key* (+ object-list / child-slot structure). Built-ins
+   (ComboBox/DataGrid/Gallery/filters) are hand-crafted in
+   `sdk/widgets/definitions/*.def.json`; everything else is **extracted from the
+   project's `.mpk`** by `mxcli widget init` → `.mxcli/widgets/<name>.def.json`
+   (`RefreshWidgetDefinitions`, auto-refreshes on drift). Derived from the project.
+2. **`GetTemplateFullBSON`** — loads the static `templates/mendix-11.6/*.json` as the
+   Type+Object **base skeleton**.
+3. **`augmentFromMPK`** (`AugmentTemplate`) — reconciles that skeleton's **property
+   set against the installed `.mpk`**: adds keys in the `.mpk` but missing from the
+   template, removes stale ones, emitting *both* a `PropertyType` (Type) and a
+   `WidgetProperty` (Object) per added key.
+
+**The schema is already version-reconciled.** Measured: a ComboBox created by the
+legacy engine on a **10.24** project (installed ComboBox `2.4.3`, base template
+`11.6`) has **56 `PropertyKey`s — identical** to a pristine Studio-Pro 2.4.3
+ComboBox (0 stale, 0 missing), and produces **no `CE0463`**. So the long-standing
+"frozen 11.6 templates cause `CE0463` on 10.x" belief (encoded in
+`sdk/versions/*.yaml` and `WIDGET_BSON_VERSION_COMPATIBILITY.md`) is **not the
+schema** — `augmentFromMPK` handles it.
+
+### So what actually breaks?
+
+Two real, narrow gaps remain:
+
+- **Dirty Object defaults.** `augmentFromMPK` reconciles property *keys*; it does
+  **not** clean a template's Object *default values*. The modelsdk engine's
+  `CE0463` this cycle came from a `combobox.json` extracted from a *configured*
+  Studio-Pro instance (a `System.Language` association ComboBox), so its neutral
+  defaults carried `optionsSourceType:"association"` + a baked-in datasource. The
+  builder applied `attribute: Country` on top without resetting them → an Object
+  inconsistent with the schema → `CE0463`. The fix that worked (commit `827bffd4b`)
+  was simply swapping in the legacy template's **clean/neutral** Object defaults.
+- **No cross-version guarantee.** Nothing tests that creation stays `CE0463`-free
+  as Mendix minors and widget versions move; regressions surface in the field.
+
+This proposal is **internal architecture only** — no new MDL syntax. It hardens the
+existing three-layer mechanism rather than replacing it.
 
 ## BSON Investigation: the CE0463 tolerance spike
 
-Before designing anything, we measured **what `CE0463` actually checks**, because
-the prevailing assumption (encoded in
-`docs/03-development/WIDGET_BSON_VERSION_COMPATIBILITY.md`) turned out to be
-wrong.
+We measured **what `CE0463` actually checks**, because the prevailing assumption
+(in `WIDGET_BSON_VERSION_COMPATIBILITY.md`) was wrong.
 
 **Method.** Decode a real widget unit (`pymongo`), mutate one dimension, re-encode,
-`mx check`. Every test has a no-op round-trip **control** proving the
-decode→encode is byte-faithful (control always reproduces the baseline error
-count). mxbuild **10.24.19** (project `test-1024`, loads clean) and **11.10.0**
+`mx check`. Every test has a no-op round-trip **control** proving the decode→encode
+is byte-faithful. mxbuild **10.24.19** (`test-1024`, loads clean) + **11.10.0**
 (`test6-app`). Confirmed across **ComboBox, DataGrid2, Gallery**.
 
 | Mutation | Layer | Result |
 |---|---|---|
-| Add `AllowUpload` to all `WidgetValueType` (10.24 ComboBox, 504×) | envelope field | **tolerated** — 0 errors |
-| Remove `AllowUpload` (11.10 ComboBox, 522×) | envelope field | **tolerated** — baseline, no new CE0463 |
-| Reverse `WidgetObject.Properties` order (ComboBox/DataGrid2/Gallery) | Object ordering | **tolerated** — 0 CE0463 |
-| Rename one `WidgetPropertyType.PropertyKey` (ComboBox/DataGrid2/Gallery) | **schema** | **CE0463** — one per instance (18 DataGrid2, 15 Gallery) |
-| Object carries instance-specific values inconsistent with schema (observed when extract-from-instance lifted a `System.Language` association ComboBox) | **Object↔schema** | **CE0463** |
+| Add `AllowUpload` to all `WidgetValueType` (10.24, 504×) | envelope field | **tolerated** — 0 errors |
+| Remove `AllowUpload` (11.10, 522×) | envelope field | **tolerated** — no new CE0463 |
+| Reverse `WidgetObject.Properties` order (all 3 widgets) | Object ordering | **tolerated** — 0 CE0463 |
+| Rename one `WidgetPropertyType.PropertyKey` (all 3) | **schema** | **CE0463** (18 DataGrid2, 15 Gallery) |
+| Object carries instance-specific values inconsistent with schema | **Object↔schema** | **CE0463** (the modelsdk dirty-defaults case) |
 
-**Conclusion.** `CE0463` is triggered by **schema mismatch** — the embedded
-`CustomWidgetType`'s `PropertyKey` set / structure no longer matching the
-*installed* widget definition — and by **Object↔schema inconsistency**. It is
-**NOT** triggered by envelope field presence/absence (`AllowUpload`) or
-`Properties` ordering, which Studio Pro **tolerates**.
-
-This overturns the existing doc's "version-fragile envelope" framing: its 11.9
-`AllowUpload`/ordering fixes worked because they were *holistic template
-re-extractions*, not because those individual fields matter. (The doc must be
-corrected — see Open Questions.)
+**Conclusion.** `CE0463` is triggered by **schema mismatch** (embedded
+`CustomWidgetType` `PropertyKey` set ≠ installed widget) and by **Object↔schema
+inconsistency**. It is **NOT** triggered by envelope field presence/absence
+(`AllowUpload`) or `Properties` ordering — Studio Pro tolerates those. The doc's
+11.9 `AllowUpload`/ordering "envelope fragility" fixes worked because they were
+*holistic template re-extractions*, not because those fields matter.
 
 ### Two independent version axes
 
-| Axis | Source | Drives | Evidence |
+| Axis | Source | Drives | Handled by |
 |---|---|---|---|
-| **Widget version** (e.g. ComboBox `2.4.3` on 10.24 vs `2.5.0` on 11.10) | the project's installed `.mpk` | the **schema** (`PropertyKeys`, types) — *the axis `CE0463` checks* | `.mpk` declares it |
-| **Mendix version** | runtime infra | the **envelope** (`WidgetValueType` field set incl. `AllowUpload`, ordering) — *tolerated* | `AllowUpload` is **0** in the `.mpk`, hard-coded in `sdk/widgets/augment.go:572`; 10.x instances carry 0 `AllowUpload`, 11.x carry 65 |
+| **Widget version** (ComboBox `2.4.3`@10.24 vs `2.5.0`@11.10) | installed `.mpk` | **schema** (`PropertyKeys`) — *what CE0463 checks* | `augmentFromMPK` reconciles it ✓ (proven 56=56) |
+| **Mendix version** | runtime infra | **envelope** (`WidgetValueType` field set, ordering) | tolerated — no action needed |
 
-They move **independently**: a project can be bumped to a new Mendix without
-updating its widgets, or a widget `.mpk` can be updated without updating the
-project's existing instances (Studio Pro then shows `CE0463` on those stale
-instances — the normal "Update widget" prompt). The authoritative schema for a
-**newly created** instance is therefore the **currently installed `.mpk`**, never
-an existing page instance (which may be stale on either axis).
+They move independently (update Mendix without widgets, or a widget `.mpk` without
+the project's existing instances → Studio Pro shows `CE0463` on those stale
+instances = the normal "Update widget" prompt). The authoritative schema for a
+*newly created* instance is the **currently installed `.mpk`** — which augment
+already uses.
 
-## Proposed Architecture
+## Proposed Direction
 
-Stop treating a widget template as one blob. Resolve the three concerns
-separately:
+The existing `def.json`-routing + static-base + `augmentFromMPK` pipeline already
+delivers version-correct **schemas**. So the work is **hardening**, not
+replacement:
 
-1. **Schema ← the project's installed `.mpk`.** `GenerateFromMPK` becomes the
-   **primary** source: the generated `CustomWidgetType` matches the installed
-   widget *by construction*, on any Mendix version, for any widget version. This
-   is the only layer `CE0463` actually checks.
-2. **Object ← synthesized neutral defaults.** Generate the `WidgetObject`
-   deterministically from the acquired Type: one default `WidgetValue` per
-   `PropertyType` (empty `AttributeRef`/`DataSource`, type-appropriate
-   `PrimitiveValue`), then let the existing `widgetobj` builder apply the user's
-   actual property values on top. Never lift Object *values* from a page instance
-   (the engalar failure) or a frozen template.
-3. **Envelope ← tolerated superset.** The `WidgetValueType` field set / ordering
-   need no per-Mendix-version exactness. Emit a stable superset (current
-   `augment.go` defaults are fine); do **not** build a per-minor envelope model.
+1. **Guarantee clean, neutral Object defaults.** The template's Object must be a
+   *fresh, unconfigured* widget's defaults (empty refs/datasources, type-default
+   primitives) — never lifted from a configured instance. Either (a) re-extract all
+   embedded templates from freshly-dropped Studio-Pro widgets, or, more robustly,
+   (b) **synthesize the neutral Object from the (augmented) Type** so it is
+   correct-by-construction and instance-bleed is impossible. This directly removes
+   the only `CE0463` class we actually hit.
+2. **Ensure both engines augment.** legacy and modelsdk both call `augmentFromMPK`;
+   keep them on the same code path (consolidate the two `*/widgets` loaders) so
+   schema reconciliation can't silently diverge.
+3. **Do *not* build a per-Mendix-version envelope model.** The spike shows the
+   envelope is tolerated; the current superset (`augment.go` defaults incl.
+   `AllowUpload`) is sufficient.
+4. **Cross-version validation matrix.** Per installed mxbuild (10.24 / 11.9 / 11.10
+   / 11.11): create one of each pluggable widget on a fresh project, assert
+   `mx check` reports **0 `CE0463`**. Converts version drift into a failing test.
 
-### Resolution chain (replaces `getOrGenerateTemplate`)
+### `GenerateFromMPK` as an evaluated alternative (not the spine)
 
-```
-1. Session cache (per widgetID + project)
-2. User-curated override: .mxcli/widgets/<name>.json   (hand-tuned escape hatch)
-3. GenerateFromMPK(installed .mpk)  →  Type (schema-correct) + synthesized neutral Object
-4. Static embedded template          →  last-resort fallback ONLY when no .mpk present
-```
+A pure ".mpk → Type+Object, no static base" path (`GenerateFromMPK`) is attractive
+(no embedded templates to maintain) but is **largely redundant** with the existing
+augment, and engalar's note that it produces "subtly different BSON" is an unquantified
+risk. Recommend evaluating it *after* (1)–(4) land: if a `GenerateFromMPK` Type is
+structurally equal to an augmented one for the same widget+version, the static base
+can eventually be retired. Until proven, static-base + augment stays.
 
-Extract-from-instance (engalar's `extract.go`) is **deliberately not adopted** as
-a source: it inherits whatever staleness the project has on either axis, and it
-lifts a real instance's Object values (the dirty-defaults `CE0463` we reproduced).
-
-### Why each rejected alternative fails
+### Why the other alternatives are rejected
 
 | Alternative | Why rejected |
 |---|---|
-| Frozen static templates (today) | Wrong schema whenever the installed widget ≠ the frozen widget version → `CE0463`. Manual per-version maintenance. |
-| Extract-from-instance (engalar) | Inherits stale schema (widget updated, instance not) *and* dirty Object values → reproduced `CE0463` this cycle. |
-| Per-Mendix-version envelope model | The spike shows the envelope is **tolerated**; this would be effort spent on a non-problem. |
-| Bulk-sync legacy templates to modelsdk | Still static/frozen; re-stales on the next widget or Mendix bump. |
+| Extract-from-instance (engalar's `extract.go`) | Lifts a real instance's Object → the dirty-defaults `CE0463` we reproduced; also inherits stale schema if instances lag the `.mpk`. |
+| Per-Mendix-version envelope model | Spike shows the envelope is tolerated — effort on a non-problem. |
+| Bulk-sync legacy templates into modelsdk | A point fix for one symptom (dirty defaults); doesn't address neutral-Object guarantee or validation. (The committed `827bffd4b` band-aid is exactly this for ComboBox.) |
 
 ## Implementation Plan
 
 Behind the existing `backend.WidgetObjectBuilder` interface — no executor or MDL
-changes. Applies to **both** engines (legacy and modelsdk) since both resolve
-through the same `*/widgets` loaders.
-
-### Files to modify/create
+changes. Applies to both engines.
 
 | File | Change |
 |------|--------|
-| `modelsdk/widgets/loader.go` (and `sdk/widgets/loader.go`) | Reorder `getOrGenerateTemplate`: prefer `GenerateFromMPK` over the static embed; static becomes last-resort fallback |
-| `modelsdk/widgets/generate.go` | Harden `GenerateFromMPK`: (a) faithful XML→`PropertyType` schema; (b) **neutral Object synthesis** from the generated Type |
-| `modelsdk/widgets/augment.go` | Confirm envelope defaults (incl. `AllowUpload`) are applied as a tolerated superset; reconcile with `sdk/widgets/augment.go` |
-| `modelsdk/widgets/templates/mendix-11.6/*.json`, `sdk/widgets/templates/…` | Demote to fallback; eventually remove once MPK path covers all bundled widgets |
-| `mdl/backend/widgetobj/builder.go` | Ensure the builder fully overrides neutral-Object slots it sets (no instance bleed-through) |
-| `mdl/enginecompare/…` or a new `widgets/multiversion_test.go` | Per-version `mx check` matrix (see Test Plan) |
-| `docs/03-development/WIDGET_BSON_VERSION_COMPATIBILITY.md` | Correct the "envelope fragile" framing per the spike |
+| `modelsdk/widgets/generate.go` (+ `sdk/widgets`) | Neutral-Object synthesis from the augmented Type (default `WidgetValue` per `PropertyType`); make it the Object source instead of the template's stored Object |
+| `modelsdk/widgets/templates/`, `sdk/widgets/templates/` | Re-extract or demote; once synthesis lands, the stored Object becomes redundant |
+| `modelsdk/widgets/loader.go`, `sdk/widgets/loader.go` | Consolidate the two loaders so both engines share one augment path |
+| `sdk/widgets/augment.go` / `modelsdk/widgets/augment.go` | Reconcile to a single implementation |
+| `mdl/backend/widgetobj/builder.go` | Ensure the builder fully overrides every neutral-Object slot it sets (no bleed-through) |
+| `modelsdk/widgets/multiversion_test.go` (new) | Cross-version `mx check` matrix |
+| `docs/03-development/WIDGET_BSON_VERSION_COMPATIBILITY.md`, `sdk/versions/*.yaml` | Correct the "envelope fragile / frozen schema" framing |
 
 ### Phasing
 
-1. **Spike→prove**: for ComboBox on 11.10, `GenerateFromMPK` Type + synthesized
-   neutral Object + builder → `mx check` clean. (De-risks the whole thesis: if the
-   MPK-derived Type matches the extracted Type, schema-from-MPK is sufficient.)
-2. Extend Object synthesis to object-list widgets (DataGrid2 columns, Gallery
-   items).
-3. Flip the resolution chain to MPK-primary; keep static as fallback.
-4. Per-version validation matrix; then retire the static templates.
+1. **Neutral-Object synthesis** for ComboBox → `mx check` clean on 10.24 + 11.10
+   (removes the dirty-defaults class). De-risks the core fix.
+2. Extend synthesis to object-list widgets (DataGrid2 columns, Gallery items).
+3. Consolidate the two engines' widget loaders / augment onto one path.
+4. Cross-version validation matrix; then evaluate retiring the static base via
+   `GenerateFromMPK`.
 
 ## Version Compatibility
 
-Not a version-gated *feature* — it is the mechanism that makes pluggable widgets
-work across versions. The deliverable is a **cross-version validation matrix**:
-for each installed mxbuild (currently **10.24, 11.9, 11.10**; add **11.11**),
-create one of each pluggable widget against a fresh project and assert `mx check`
-reports **0 `CE0463`**. This converts version drift from a field surprise into a
-failing test.
+Not a version-gated feature — it is the mechanism that keeps pluggable widgets
+correct across versions, and its deliverable is the validation matrix above. The
+schema axis is already handled by `augmentFromMPK`; this proposal protects the
+Object axis and proves the whole thing per Mendix minor.
 
-Non-pluggable (`Forms$`) widgets need **no work** — they are already
-version-resilient via the codec's declarative `VersionInfos` metadata
-(`modelsdk/gen/*/version.go`, generated from reflection-data). Multi-version
-support for them = regenerate gen from the target version's reflection-data
-(mechanical, rare).
+Non-pluggable (`Forms$`) widgets need **no work** — already version-resilient via
+the codec's declarative `VersionInfos` metadata (reflection-data); multi-version =
+regenerate gen from the target version's reflection-data.
 
 ## Test Plan
 
-- **Tolerance regression** (lock in the spike): unit tests that mutate
-  `PropertyKey` (expect `CE0463`) vs envelope field/ordering (expect tolerated),
-  so a future change that makes us *depend* on envelope exactness is caught.
-- **Per-version matrix**: `widgets/multiversion_test.go` — create
-  ComboBox/DataGrid2/Gallery on fresh 10.24 / 11.9 / 11.10 / 11.11 projects,
-  `mx check`, assert 0 `CE0463`. Requires the respective mxbuilds (Docker/CI).
-- **MPK fidelity**: assert a `GenerateFromMPK` Type is structurally equivalent
-  (PropertyKey set) to a Studio-Pro-extracted Type for the same widget+version.
-- **No-instance creation**: create a widget in a project with *no* existing
-  instance of it (only the `.mpk`) — must succeed via the MPK path.
+- **Tolerance regression**: unit tests asserting `PropertyKey` rename → `CE0463`
+  vs envelope field/ordering → tolerated (lock in the spike; catch any future
+  dependence on envelope exactness).
+- **Neutral-Object**: assert a synthesized Object has no instance-specific values
+  (no populated `AttributeRef`/`DataSource`, type-default primitives).
+- **Per-version matrix**: create ComboBox/DataGrid2/Gallery on fresh 10.24 / 11.9 /
+  11.10 / 11.11 projects, `mx check`, assert 0 `CE0463`.
+- **Augment fidelity** (lock in the measured result): augmented Type `PropertyKey`
+  set == pristine Studio-Pro Type for the same widget+version (56=56 for ComboBox
+  2.4.3 today).
 
 ## Open Questions
 
-1. **MPK→Type fidelity gap.** engalar's note that `GenerateFromMPK` produces
-   "subtly different BSON" — is that difference in the **schema** (would cause
-   `CE0463`, must fix) or only the **Object/envelope** (tolerated)? Phase-1 spike
-   answers this directly; the whole proposal's cost hinges on it.
-2. **Generalization.** Spike covered ComboBox/DataGrid2/Gallery. Confirm the
-   schema-strict/envelope-tolerant pattern on object-list-heavy widgets with
-   nested CustomWidgets (charts, Maps) and on **12.x** when available.
-3. **Doc correction.** `WIDGET_BSON_VERSION_COMPATIBILITY.md` and the
-   `pluggable_widgets` notes in `sdk/versions/*.yaml` currently assert envelope
-   fragility — update to the schema-is-the-trigger model.
-4. **ADR.** "Installed-`.mpk` is the authoritative widget schema source" is a
-   cross-cutting decision; promote to an ADR once Phase 1 confirms feasibility.
+1. **Object-default version sensitivity.** Schema is version-reconciled and the
+   envelope is tolerated — is the neutral *Object* ever version-sensitive in a way
+   `augment` + synthesis don't cover? The matrix would catch it; flag if found.
+2. **`GenerateFromMPK` fidelity.** Is its Type structurally equal to an augmented
+   one (then the static base can retire), or does it drift on schema (must stay
+   augment-based)? Evaluate in Phase 4.
+3. **Generalization.** Spike + augment-fidelity covered ComboBox/DataGrid2/Gallery.
+   Confirm on nested-CustomWidget widgets (charts, Maps) and on 12.x when available.
+4. **Doc + version-YAML correction**, and an **ADR** for "installed `.mpk` (via
+   augment) is the authoritative widget schema source" once Phase 1 lands.
 
 ## Relationship to existing artifacts
 
-- Memory: `reference_ce0463_tolerance_spike.md` (the empirical basis),
-  `reference_modelsdk_pluggable_widgets.md` (engine/registry history,
-  extract-from-instance rejection).
-- Complements `docs/03-development/WIDGET_BSON_VERSION_COMPATIBILITY.md` (which
-  this proposal corrects on the trigger, and supersedes on the strategy).
-- No overlap with existing widget proposals (`PROPOSAL_update_builtin_widget_properties`,
-  `PROPOSAL_widget_property_visibility`, `PROPOSAL_v0_12_0_widget_consolidation`),
-  which concern property *editing*, not template *resolution*.
+- Memory: `reference_ce0463_tolerance_spike.md` (tolerance + augment-boundary
+  evidence), `reference_modelsdk_pluggable_widgets.md` (engine/registry history).
+- Corrects `docs/03-development/WIDGET_BSON_VERSION_COMPATIBILITY.md` (on the
+  trigger) and the `pluggable_widgets` notes in `sdk/versions/*.yaml`.
+- No overlap with the property-*editing* widget proposals
+  (`PROPOSAL_update_builtin_widget_properties`, `PROPOSAL_widget_property_visibility`,
+  `PROPOSAL_v0_12_0_widget_consolidation`).
