@@ -10,8 +10,75 @@ This document tracks the implementation status of each MDL feature along **two a
    skills, help, …). This answers "is feature X fully built out as an MDL feature?"
 
 When adding a new MDL feature, use **both** as a checklist to ensure complete coverage.
+(The *Agent × tooling at a glance* section just below is a one-slide overview that
+sits above both axes — how the whole Maia/mxcli spectrum compares.)
 
 **Legend:** Y = Yes | N = No | P = Partial | - = Not Applicable
+
+## Agent × tooling at a glance (Maia vs mxcli)
+
+One-slide comparison of how a Mendix app can be edited by an AI agent across five
+setups: **Maia** (Studio Pro's built-in agent — reads/writes the model through
+Studio Pro's *internal* model APIs) → **Maia + MCP** (those same APIs now exposed
+via the PED MCP server) → **Maia + MCP + Concord** (plus the Concord extension's
+tools) → **mxcli** (external CLI, file-based on the on-disk `.mpr`, project closed) →
+**mxcli + MCP + Concord** (external CLI driving the **live** model while Studio Pro
+is open).
+
+The first three columns share Maia's **native reach** — MCP/Concord don't change
+*what Maia can do*; they expose that reach to **external** agents (the bottom
+*drivable externally* row). PED is exactly that exposure of Studio Pro's model APIs,
+and mxcli (cols 4–5) is the external agent consuming it. The capability rows show
+each setup's *own* reach; a Maia–vs–mxcli-live gap on a row is either a PED-subset
+limit or just where each agent's implementation has gotten to.
+
+Legend: ✓ full · ◑ partial / subset · ✗ none · — n/a.
+
+| Capability | Maia | Maia + MCP | Maia + MCP + Concord | mxcli (file) | mxcli + MCP + Concord |
+|------------|:----:|:----------:|:--------------------:|:------------:|:---------------------:|
+| **Authoring** | | | | | |
+| Domain model — entities, view entities, enums, associations, constraints | ✓ | ✓ | ✓ | ✓ | ◑¹ |
+| Pages (incl. pluggable widgets) | ◑² | ◑² | ◑² | ✓ | ◑² |
+| Microflows | ◑³ | ◑³ | ◑³ | ✓ | ◑³ |
+| Workflows | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Theming / styling | ✓ | ✓ | ✓ | ◑⁴ | ◑⁴ |
+| Integrations — REST/OData/SOAP, business events, mappings, mobile | ✗ | ✗ | ✗ | ◑⁵ | ✗ |
+| Security — roles & access | ✗ | ✗ | ✗ | ✓ | ✗ |
+| Java / JS / CSS source | ✓⁶ | ✓⁶ | ✓⁶ | ✓ | ✓ |
+| **Search & analysis** | | | | | |
+| Impact / lint / catalog SQL / full-text | ✗ | ✗ | ✗ | ✓ | ✓ |
+| Mendix KB search / NL→OQL | ✓ | ✓ | ✓ | ✗ | ✗ |
+| **Reach & workflow** | | | | | |
+| Validation before writing | ◑⁷ | ◑⁷ | ◑⁷ | ✓ | ✓ |
+| Batch / scriptable / CI | ✗ | ✗ | ✗ | ✓ | ✓ |
+| Live edits in the open IDE | ✓ | ✓ | ✓ | ✗⁸ | ✓ |
+| Drivable by an external agent (headless) | ✗ | ◑⁹ | ✓ | ✓ | ✓ |
+
+¹ mxcli over MCP can't author indexes or entity validation rules (file mode can);
+Maia does constraints, not indexes. &nbsp; ² Pluggable widgets: Maia not yet; mxcli
+over MCP does ComboBox / DataGrid 2 / Gallery (growing), all widgets in file mode.
+&nbsp; ³ Maia not yet for complex flows; mxcli covers 60+ activities (a few rejected
+over MCP — show-page, cast, retrieve sort/range). &nbsp; ⁴ Maia: full theming;
+mxcli: per-widget styling (`ALTER STYLING`), not a full theme system. &nbsp; ⁵ None
+over MCP or in Maia; mxcli-file has partial REST-publish / mappings / business-event
+reads. &nbsp; ⁶ Maia via the `write_file` virtual FS; mxcli edits source on disk
+directly (any mode). &nbsp; ⁷ Maia: live, reactive validation in the IDE; mxcli:
+static pre-flight (`mxcli check`) *before* writing. &nbsp; ⁸ File mode edits the
+on-disk `.mpr`; reopen Studio Pro to see changes. &nbsp; ⁹ MCP exposes Maia's
+read + authoring surface (the PED subset) to external agents; Concord additionally
+exposes delete + save / build-run. Maia performs all of this natively in-IDE — its
+column is about *external* reach.
+
+**Takeaway:** Maia has broad **native** authoring (domain model, pages, microflows,
+workflows, theming, source), and **MCP is what exposes that surface to external
+agents** — the architectural point. mxcli is that external agent: **mxcli (file)** is
+the only setup with *full* authoring (indexes, security, integrations) plus analysis
++ pre-flight validation + batch/CI, at the cost of the project being closed;
+**mxcli + MCP + Concord** keeps the analysis / validation / scripting while editing
+the **live** model (authoring capped to the PED subset, which differs slightly from
+Maia's — pluggable widgets yes, theming/source via disk). Maia owns the
+conversational + Mendix-KB experience and in-IDE liveness. (Maia capabilities per the
+Mendix team, 2026-06; re-confirm before publishing as they evolve.)
 
 ## Backend Coverage (Mendix / MDL / MPR / MCP)
 
@@ -55,7 +122,7 @@ live distinction is **MPR vs MCP**.
 | **Constants** | Y | Y | Y | P | CREATE / CREATE OR MODIFY (value + exposed-to-client) / DROP (via Concord); type limited to String/Integer/Decimal/Boolean/DateTime; in-place type change rejected; documentation not carried |
 | **OData Clients / Services** | Y | Y | Y | N | Not wired |
 | **External Entities** | Y | Y | Y | N | Not wired |
-| **Business Events** | Y | Y | Y | N | Not wired |
+| **Business Events** | Y | Y | Y | P | SHOW/DESCRIBE read the local `.mpr`; DROP via Concord. **CREATE/ALTER blocked** — PED won't create `BusinessEvents$BusinessEventService` (off the create whitelist). The supporting domain model (published-event entities `extends BusinessEvents.PublishedBusinessEvent`, constants) IS creatable. |
 | **Navigation** | Y | Y | Y | N | Not wired |
 | **Project Settings** | Y | Y | Y | N | Not wired |
 
@@ -69,8 +136,8 @@ live distinction is **MPR vs MCP**.
 
 | Feature | Mendix | MDL | MPR | MCP | MCP notes |
 |---------|:------:|:---:|:---:|:---:|-----------|
-| **Folders** | Y | Y | Y | N | Not wired |
-| **MOVE** | Y | Y | Y | N | Not wired |
+| **Folders** | Y | Y | Y | P | Documents can be **created into** a folder (`create <doc> … folder 'A/B'`, nested ok — the folder auto-materializes). Empty `CREATE FOLDER`, `DROP FOLDER`, `MOVE FOLDER` rejected (PED can't create-empty / delete / re-parent). Pages land at the module root (`pg_write_page` has no folderPath). |
+| **MOVE** | Y | Y | Y | N | Blocked — PED can't re-parent an existing document (`folderPath` is not settable). *Not* faked via delete+recreate: that would change the document's `$ID`, dangling references and diverging from the MPR engine's in-place re-parent (backends must yield equivalent project state). Place documents in folders at *create* time instead. |
 
 ### External SQL, import, catalog & analysis
 

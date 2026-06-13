@@ -50,6 +50,62 @@ func collectActionActivities(oc *microflows.MicroflowObjectCollection) []*microf
 	return result
 }
 
+// microflowActionRef returns the cross-reference a microflow action makes to
+// another document: the target's catalog object type, its qualified name, and
+// the RefKind label. ok is false when the action references no resolvable
+// document target — either it operates only on local variables (change/delete/
+// commit/cast resolve their entity through a variable's type, which needs
+// dataflow analysis) or the reference is by ID and the name wasn't captured.
+//
+// Like getMicroflowActionType, this is a single switch rather than ref-emission
+// scattered through buildReferences, so the set of reference-bearing actions is
+// auditable in one place and unit-testable without a full catalog build.
+func microflowActionRef(action microflows.MicroflowAction) (targetType, targetName, refKind string, ok bool) {
+	switch a := action.(type) {
+	case *microflows.MicroflowCallAction:
+		if a.MicroflowCall != nil && a.MicroflowCall.Microflow != "" {
+			return "MICROFLOW", a.MicroflowCall.Microflow, RefKindCall, true
+		}
+	case *microflows.NanoflowCallAction:
+		if a.NanoflowCall != nil && a.NanoflowCall.Nanoflow != "" {
+			return "NANOFLOW", a.NanoflowCall.Nanoflow, RefKindCall, true
+		}
+	case *microflows.JavaActionCallAction:
+		if a.JavaAction != "" {
+			return "JAVA_ACTION", a.JavaAction, RefKindCall, true
+		}
+	case *microflows.RestOperationCallAction:
+		// Operation is a "Module.Service.Operation" name referencing a consumed
+		// REST service operation.
+		if a.Operation != "" {
+			return "REST_OPERATION", a.Operation, RefKindCall, true
+		}
+	case *microflows.CreateObjectAction:
+		if a.EntityQualifiedName != "" {
+			return "ENTITY", a.EntityQualifiedName, RefKindCreate, true
+		}
+	case *microflows.ShowPageAction:
+		if a.PageName != "" {
+			return "PAGE", a.PageName, RefKindShowPage, true
+		}
+	case *microflows.RetrieveAction:
+		if a.Source == nil {
+			break
+		}
+		switch src := a.Source.(type) {
+		case *microflows.DatabaseRetrieveSource:
+			if src.EntityQualifiedName != "" {
+				return "ENTITY", src.EntityQualifiedName, RefKindRetrieve, true
+			}
+		case *microflows.AssociationRetrieveSource:
+			if src.AssociationQualifiedName != "" {
+				return "ASSOCIATION", src.AssociationQualifiedName, RefKindRetrieve, true
+			}
+		}
+	}
+	return "", "", "", false
+}
+
 // buildReferences extracts cross-references from all documents.
 // This is only run in full mode as it requires parsing all documents.
 func (b *Builder) buildReferences() error {
@@ -70,78 +126,43 @@ func (b *Builder) buildReferences() error {
 	snapshotID := b.snapshot.ID
 	refCount := 0
 
+	// emitActionRefs walks the action activities of a microflow or nanoflow and
+	// records the document reference each action makes. Nanoflows share the same
+	// action types as microflows, so both flow kinds use the same extraction.
+	emitActionRefs := func(sourceType, sourceID string, containerID model.ID, name string, oc *microflows.MicroflowObjectCollection) {
+		if oc == nil {
+			return
+		}
+		moduleName := b.hierarchy.getModuleName(b.hierarchy.findModuleID(containerID))
+		sourceQN := moduleName + "." + name
+		for _, act := range collectActionActivities(oc) {
+			targetType, targetName, refKind, ok := microflowActionRef(act.Action)
+			if !ok {
+				continue
+			}
+			if _, err := stmt.Exec(sourceType, sourceID, sourceQN,
+				targetType, "", targetName,
+				refKind, moduleName, projectID, snapshotID); err == nil {
+				refCount++
+			}
+		}
+	}
+
 	// Extract microflow references (using cached list — no re-parsing)
 	mfs, err := b.cachedMicroflows()
 	if err != nil {
 		return err
 	}
-
 	for _, mf := range mfs {
-		moduleID := b.hierarchy.findModuleID(mf.ContainerID)
-		moduleName := b.hierarchy.getModuleName(moduleID)
-		sourceQN := moduleName + "." + mf.Name
-		sourceType := "MICROFLOW"
+		emitActionRefs("MICROFLOW", string(mf.ID), mf.ContainerID, mf.Name, mf.ObjectCollection)
+	}
 
-		if mf.ObjectCollection == nil {
-			continue
-		}
-
-		for _, act := range collectActionActivities(mf.ObjectCollection) {
-			switch a := act.Action.(type) {
-			case *microflows.MicroflowCallAction:
-				if a.MicroflowCall != nil && a.MicroflowCall.Microflow != "" {
-					_, err = stmt.Exec(sourceType, string(mf.ID), sourceQN,
-						"MICROFLOW", "", a.MicroflowCall.Microflow,
-						RefKindCall, moduleName, projectID, snapshotID)
-					if err == nil {
-						refCount++
-					}
-				}
-
-			case *microflows.CreateObjectAction:
-				if a.EntityQualifiedName != "" {
-					_, err = stmt.Exec(sourceType, string(mf.ID), sourceQN,
-						"ENTITY", "", a.EntityQualifiedName,
-						RefKindCreate, moduleName, projectID, snapshotID)
-					if err == nil {
-						refCount++
-					}
-				}
-
-			case *microflows.RetrieveAction:
-				if a.Source != nil {
-					if dbSrc, ok := a.Source.(*microflows.DatabaseRetrieveSource); ok {
-						if dbSrc.EntityQualifiedName != "" {
-							_, err = stmt.Exec(sourceType, string(mf.ID), sourceQN,
-								"ENTITY", "", dbSrc.EntityQualifiedName,
-								RefKindRetrieve, moduleName, projectID, snapshotID)
-							if err == nil {
-								refCount++
-							}
-						}
-					}
-				}
-
-			case *microflows.ShowPageAction:
-				if a.PageName != "" {
-					_, err = stmt.Exec(sourceType, string(mf.ID), sourceQN,
-						"PAGE", "", a.PageName,
-						RefKindShowPage, moduleName, projectID, snapshotID)
-					if err == nil {
-						refCount++
-					}
-				}
-
-			case *microflows.JavaActionCallAction:
-				if a.JavaAction != "" {
-					_, err = stmt.Exec(sourceType, string(mf.ID), sourceQN,
-						"JAVA_ACTION", "", a.JavaAction,
-						RefKindCall, moduleName, projectID, snapshotID)
-					if err == nil {
-						refCount++
-					}
-				}
-			}
+	// Extract nanoflow references — nanoflows also call microflows/nanoflows,
+	// show pages, retrieve, etc.
+	nfs, err := b.cachedNanoflows()
+	if err == nil {
+		for _, nf := range nfs {
+			emitActionRefs("NANOFLOW", string(nf.ID), nf.ContainerID, nf.Name, nf.ObjectCollection)
 		}
 	}
 
@@ -165,8 +186,38 @@ func (b *Builder) buildReferences() error {
 				}
 			}
 
-			// Note: Association references require resolving ChildID to entity name
-			// which requires a lookup table. Skipping for now - can be added later.
+			// Association references: an association connects a FROM entity
+			// (ParentID) and a TO entity (ChildID). Emit an `associate` ref to
+			// each endpoint so the association is discoverable from either entity
+			// via `show references of Entity` and impact analysis sees both sides.
+			for _, assoc := range dm.Associations {
+				assocQN := moduleName + "." + assoc.Name
+				for _, target := range []string{b.resolveEntityID(assoc.ParentID), b.resolveEntityID(assoc.ChildID)} {
+					if target == "" {
+						continue
+					}
+					if _, err := stmt.Exec("ASSOCIATION", string(assoc.ID), assocQN,
+						"ENTITY", "", target,
+						RefKindAssociate, moduleName, projectID, snapshotID); err == nil {
+						refCount++
+					}
+				}
+			}
+			// Cross-module associations: ChildRef is already a qualified entity
+			// name (the TO entity lives in another module); ParentID is local.
+			for _, ca := range dm.CrossAssociations {
+				assocQN := moduleName + "." + ca.Name
+				for _, target := range []string{b.resolveEntityID(ca.ParentID), ca.ChildRef} {
+					if target == "" {
+						continue
+					}
+					if _, err := stmt.Exec("ASSOCIATION", string(ca.ID), assocQN,
+						"ENTITY", "", target,
+						RefKindAssociate, moduleName, projectID, snapshotID); err == nil {
+						refCount++
+					}
+				}
+			}
 		}
 	}
 
@@ -178,20 +229,18 @@ func (b *Builder) buildReferences() error {
 			moduleName := b.hierarchy.getModuleName(moduleID)
 			sourceQN := moduleName + "." + pg.Name
 
-			// Layout reference (ListPages() returns fully-parsed pages)
-			if pg.LayoutCall != nil && pg.LayoutCall.LayoutName != "" {
+			// Layout reference. ListPages() does not populate pg.LayoutCall (only
+			// pg.LayoutID), so read the layout name the pages table already
+			// resolved from raw BSON (extractLayoutRef) rather than the always-nil
+			// LayoutCall. NOTE: widget-level datasource/action refs still require a
+			// parsed widget tree, which no reader currently exposes — tracked as the
+			// remaining part of #663 gap 3.
+			if layoutRef := b.resolvePageLayoutRef(pg.ID); layoutRef != "" {
 				_, err = stmt.Exec("PAGE", string(pg.ID), sourceQN,
-					"LAYOUT", "", pg.LayoutCall.LayoutName,
+					"LAYOUT", "", layoutRef,
 					RefKindLayout, moduleName, projectID, snapshotID)
 				if err == nil {
 					refCount++
-				}
-
-				// Extract refs from widgets in layout arguments
-				for _, arg := range pg.LayoutCall.Arguments {
-					if arg.Widget != nil {
-						refCount += b.extractWidgetRefs(stmt, arg.Widget, "PAGE", string(pg.ID), sourceQN, moduleName, projectID, snapshotID)
-					}
 				}
 			}
 
@@ -575,6 +624,20 @@ func (b *Builder) resolveEntityID(entityID model.ID) string {
 		return ""
 	}
 	return qualifiedName
+}
+
+// resolvePageLayoutRef returns the layout qualified name the pages table already
+// resolved for a page (from raw-BSON FormCall via extractLayoutRef), or "" if the
+// page has none. buildReferences runs after buildPages in full mode, so the value
+// is available; this avoids re-parsing the page BSON and reuses the pages table's
+// resolution instead of the always-nil pg.LayoutCall.
+func (b *Builder) resolvePageLayoutRef(pageID model.ID) string {
+	var layoutRef string
+	err := b.tx.QueryRow("SELECT LayoutRef FROM pages WHERE Id = ?", string(pageID)).Scan(&layoutRef)
+	if err != nil {
+		return ""
+	}
+	return layoutRef
 }
 
 // resolveMicroflowID looks up the qualified name for a microflow/nanoflow ID.

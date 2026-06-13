@@ -358,6 +358,49 @@ the devcontainer networking prerequisite doc.
   domain-model statements); a registry/probe for the *MCP server* version may be
   warranted in Phase 3.
 
+### Version-aware capability model ([ADR-0004](../13-decisions/0004-mcp-capability-model.md))
+
+Now that coverage has grown well past the first slice, the backend's authoring
+surface is bounded by what the connected PED accepts, and that boundary moves per
+Studio Pro version. PED-limit knowledge is currently scattered across hardcoded
+rejections (`errJavaActionAuthoring`, `errNanoflowCreate`, `errBusinessEventAuthoring`,
+the `ped_create_document` whitelist checks, the "delete via Concord" fallbacks), and
+an agent has no runtime way to know what is authorable against *this* version.
+ADR-0004 decides the model; this is the build plan, in dependency order:
+
+1. **Capability report (agent-facing — concern 1). ✅ Shipped.** `mxcli mcp
+   capabilities -p app.mpr --mcp …` connects, then prints the server identity, the
+   live `tools/list`, and a curated authorable/blocked summary
+   (`mdl/backend/mcp/capabilities.go` + `cmd/mxcli/mcp.go`). The
+   `live-edit-with-studio-pro` skill tells the agent to run it before authoring.
+   Implemented as a CLI subcommand, **not** a `show mcp capabilities` MDL statement —
+   the MCP backend wires *existing* MDL and must not extend the language.
+2. **Capability registry + `Capabilities` struct (concern 2 foundation). ✅ Shipped.**
+   A version-keyed table — `mdl/backend/mcp/capabilities.yaml` (embedded; keyed by
+   MCP `serverInfo.version`, a different axis than the Mendix-version registry, so
+   co-located with the backend rather than in `sdk/versions/`) — holds the
+   *non-probeable* facts; a blocked feature carries an optional `available_since` so
+   a lifted limit is a one-line edit. `(*Backend).capabilities()` merges the table
+   for the connected version with the live `tools/list` probe into a `Capabilities`
+   value, and the slice-1 report is now generated entirely from it (no hardcoded
+   lists). Still kept in step with `PED_MCP_CAPABILITIES.md` by hand on onboarding.
+3. **Gate behavior on the model. ✅ Shipped.** Each table feature now has a stable
+   `key`, and the create rejections consult `(*Backend).canAuthor(key)` with the
+   message sourced from the table note (`notAuthorable`) — so the report and the gate
+   read the same row and can't disagree. Wired for the whitelist-driven doc-type
+   creates (`CreateNanoflow`/`UpdateNanoflow`, `CreateJavaAction`/`UpdateJavaAction`,
+   `CreateBusinessEventService`/`UpdateBusinessEventService`); the bundled
+   "nanoflow/java/biz" report row was split into three keyed entries. `available` now
+   means *the backend can author it* (PED permits **and** mxcli has a create path), so
+   `available_since` is set only when both hold — flipping it then lights the feature
+   up in both the report and the gate. PED-*fundamental* limits (attribute type
+   change, MOVE/re-parent, empty folder) stay inline as display-only rows — they're
+   not whitelist-driven and won't flip. Today every gated method still rejects
+   (baseline table); unit-tested, behavior-preserving.
+
+`PED_MCP_CAPABILITIES.md` remains the human-readable narrative over the machine
+table; the onboarding procedure already there is extended to update the table.
+
 ## Test Plan
 
 - **Phase 0 probe:** ✅ done — `cmd/mcpprobe` captured `tools/list` and the

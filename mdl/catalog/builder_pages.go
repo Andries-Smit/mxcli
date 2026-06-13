@@ -187,20 +187,28 @@ type rawWidgetInfo struct {
 	AttributeRef string
 }
 
-// extractLayoutRef extracts the layout reference from raw page BSON.
+// extractLayoutRef extracts the layout reference from raw page BSON. Regular
+// pages (Forms$Form) carry the layout under FormCall; page templates
+// (Forms$PageTemplate) carry it under LayoutCall instead. Both nest the same
+// Form (string qualified name) / Layout (binary GUID) fields, so try FormCall
+// first and fall back to LayoutCall — without the fallback every page template
+// reports no layout (e.g. all 46 Atlas_Web_Content templates).
 func extractLayoutRef(rawData map[string]any) string {
-	formCall, ok := rawData["FormCall"].(map[string]any)
+	call, ok := rawData["FormCall"].(map[string]any)
+	if !ok {
+		call, ok = rawData["LayoutCall"].(map[string]any)
+	}
 	if !ok {
 		return ""
 	}
 
 	// Try Form field first (string layout name)
-	if formName, ok := formCall["Form"].(string); ok && formName != "" {
+	if formName, ok := call["Form"].(string); ok && formName != "" {
 		return formName
 	}
 
 	// Try Layout field (binary GUID) - extract and format
-	if layoutID := extractBinaryID(formCall["Layout"]); layoutID != "" {
+	if layoutID := extractBinaryID(call["Layout"]); layoutID != "" {
 		return layoutID // Will be a GUID string
 	}
 

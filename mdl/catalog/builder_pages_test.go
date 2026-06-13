@@ -48,6 +48,17 @@ func TestExtractLayoutRef(t *testing.T) {
 			},
 			want: "04030201-0605-0807-090a-0b0c0d0e0f10",
 		},
+		{
+			// Page templates (Forms$PageTemplate) nest the layout under LayoutCall
+			// rather than FormCall.
+			name: "LayoutCall Form field (page template)",
+			rawData: map[string]any{
+				"LayoutCall": map[string]any{
+					"Form": "Atlas_Core.Phone_Default",
+				},
+			},
+			want: "Atlas_Core.Phone_Default",
+		},
 	}
 
 	for _, tt := range tests {
