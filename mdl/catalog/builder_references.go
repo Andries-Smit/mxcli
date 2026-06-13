@@ -186,8 +186,38 @@ func (b *Builder) buildReferences() error {
 				}
 			}
 
-			// Note: Association references require resolving ChildID to entity name
-			// which requires a lookup table. Skipping for now - can be added later.
+			// Association references: an association connects a FROM entity
+			// (ParentID) and a TO entity (ChildID). Emit an `associate` ref to
+			// each endpoint so the association is discoverable from either entity
+			// via `show references of Entity` and impact analysis sees both sides.
+			for _, assoc := range dm.Associations {
+				assocQN := moduleName + "." + assoc.Name
+				for _, target := range []string{b.resolveEntityID(assoc.ParentID), b.resolveEntityID(assoc.ChildID)} {
+					if target == "" {
+						continue
+					}
+					if _, err := stmt.Exec("ASSOCIATION", string(assoc.ID), assocQN,
+						"ENTITY", "", target,
+						RefKindAssociate, moduleName, projectID, snapshotID); err == nil {
+						refCount++
+					}
+				}
+			}
+			// Cross-module associations: ChildRef is already a qualified entity
+			// name (the TO entity lives in another module); ParentID is local.
+			for _, ca := range dm.CrossAssociations {
+				assocQN := moduleName + "." + ca.Name
+				for _, target := range []string{b.resolveEntityID(ca.ParentID), ca.ChildRef} {
+					if target == "" {
+						continue
+					}
+					if _, err := stmt.Exec("ASSOCIATION", string(ca.ID), assocQN,
+						"ENTITY", "", target,
+						RefKindAssociate, moduleName, projectID, snapshotID); err == nil {
+						refCount++
+					}
+				}
+			}
 		}
 	}
 
