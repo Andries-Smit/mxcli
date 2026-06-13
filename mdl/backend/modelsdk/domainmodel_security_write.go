@@ -4,10 +4,94 @@ package modelsdkbackend
 
 import (
 	"fmt"
+	"sort"
 
+	"github.com/mendixlabs/mxcli/mdl/backend"
 	"github.com/mendixlabs/mxcli/model"
 	genDm "github.com/mendixlabs/mxcli/modelsdk/gen/domainmodels"
 )
+
+// AddEntityAccessRule adds (or upserts by matching module-role set) an entity
+// access rule on a domain-model entity: allow create/delete, default member
+// access, XPath constraint, and per-member (attribute/association) access rights.
+// Mirrors legacy writer.AddEntityAccessRule (rules live on the entity in the
+// domain model unit; unitID is the domain model unit).
+func (b *Backend) AddEntityAccessRule(p backend.EntityAccessRuleParams) error {
+	if b.writer == nil {
+		return fmt.Errorf("AddEntityAccessRule: not connected for writing")
+	}
+	dm, err := b.loadDomainModelGen(p.UnitID)
+	if err != nil {
+		return err
+	}
+	var ent *genDm.Entity
+	for _, el := range dm.EntitiesItems() {
+		if e, ok := el.(*genDm.Entity); ok && e.Name() == p.EntityName {
+			ent = e
+			break
+		}
+	}
+	if ent == nil {
+		return fmt.Errorf("AddEntityAccessRule: entity not found: %s", p.EntityName)
+	}
+
+	// Upsert: reuse an existing rule whose module-role set matches (keeps its ID
+	// stable so references stay valid), else add a fresh rule.
+	var rule *genDm.AccessRule
+	for _, el := range ent.AccessRulesItems() {
+		if r, ok := el.(*genDm.AccessRule); ok && sameStringSet(r.ModuleRolesQualifiedNames(), p.RoleNames) {
+			rule = r
+			break
+		}
+	}
+	if rule == nil {
+		rule = genDm.NewAccessRule()
+		assignID(rule)
+		ent.AddAccessRules(rule)
+	} else {
+		for i := len(rule.MemberAccessesItems()) - 1; i >= 0; i-- {
+			rule.RemoveMemberAccesses(i)
+		}
+	}
+
+	rule.SetModuleRolesQualifiedNames(p.RoleNames)
+	rule.SetAllowCreate(p.AllowCreate)
+	rule.SetAllowDelete(p.AllowDelete)
+	if p.DefaultMemberAccess != "" {
+		rule.SetDefaultMemberAccessRights(p.DefaultMemberAccess)
+	}
+	rule.SetXPathConstraint(p.XPathConstraint)
+	for _, ma := range p.MemberAccesses {
+		m := genDm.NewMemberAccess()
+		assignID(m)
+		m.SetAccessRights(ma.AccessRights)
+		if ma.AttributeRef != "" {
+			m.SetAttributeQualifiedName(ma.AttributeRef)
+		}
+		if ma.AssociationRef != "" {
+			m.SetAssociationQualifiedName(ma.AssociationRef)
+		}
+		rule.AddMemberAccesses(m)
+	}
+	return b.persistDM(p.UnitID, dm)
+}
+
+// sameStringSet reports whether a and b contain the same elements (order-insensitive).
+func sameStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	ac := append([]string(nil), a...)
+	bc := append([]string(nil), b...)
+	sort.Strings(ac)
+	sort.Strings(bc)
+	for i := range ac {
+		if ac[i] != bc[i] {
+			return false
+		}
+	}
+	return true
+}
 
 // ReconcileMemberAccesses brings every populated access rule in a domain model
 // into sync with its entity's current members: it adds a MemberAccess for each
