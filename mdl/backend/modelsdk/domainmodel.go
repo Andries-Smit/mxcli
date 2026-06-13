@@ -306,10 +306,24 @@ func attributeTypeFromGen(t element.Element) domainmodel.AttributeType {
 
 func assocFromGen(a *genDm.Association) *domainmodel.Association {
 	out := &domainmodel.Association{
-		Name:     a.Name(),
-		ParentID: model.ID(a.ParentRefID()), // FROM entity (owns the FK)
-		ChildID:  model.ID(a.ChildRefID()),  // TO entity
+		Name:          a.Name(),
+		Documentation: a.Documentation(),
+		ParentID:      model.ID(a.ParentRefID()), // FROM entity (owns the FK)
+		ChildID:       model.ID(a.ChildRefID()),  // TO entity
+		// Type/Owner/StorageFormat/DeleteBehavior MUST be read here: the executor's
+		// CREATE OR MODIFY ASSOCIATION path re-serializes the whole domain model via
+		// UpdateDomainModel→assocToGen, which reads these off the semantic model.
+		// Dropping them here wiped Type/Owner on every *other* association (Studio
+		// Pro then fails to load the domain model: "cannot destructure property
+		// 'child' from null").
+		Type:          domainmodel.AssociationType(a.Type()),
+		Owner:         domainmodel.AssociationOwner(a.Owner()),
+		StorageFormat: domainmodel.AssociationStorageFormat(a.StorageFormat()),
 	}
 	out.ID = model.ID(a.ID())
+	if db, ok := a.DeleteBehavior().(*genDm.AssociationDeleteBehavior); ok && db != nil {
+		out.ParentDeleteBehavior = &domainmodel.DeleteBehavior{Type: domainmodel.DeleteBehaviorType(db.ParentDeleteBehavior())}
+		out.ChildDeleteBehavior = &domainmodel.DeleteBehavior{Type: domainmodel.DeleteBehaviorType(db.ChildDeleteBehavior())}
+	}
 	return out
 }
