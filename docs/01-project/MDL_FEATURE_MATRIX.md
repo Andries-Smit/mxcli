@@ -18,60 +18,67 @@ sits above both axes — how the whole Maia/mxcli spectrum compares.)
 ## Agent × tooling at a glance (Maia vs mxcli)
 
 One-slide comparison of how a Mendix app can be edited by an AI agent across five
-setups, from least to most capable: **Maia** (Studio Pro's built-in assistant, no
-MCP) → **Maia + MCP** (Maia authoring via the PED MCP server) → **Maia + MCP +
-Concord** (plus the Concord extension's tools) → **mxcli** (the CLI, file-based on
-the on-disk `.mpr`, project closed) → **mxcli + MCP + Concord** (mxcli driving the
-**live** model while Studio Pro is open).
+setups: **Maia** (Studio Pro's built-in agent — reads/writes the model through
+Studio Pro's *internal* model APIs) → **Maia + MCP** (those same APIs now exposed
+via the PED MCP server) → **Maia + MCP + Concord** (plus the Concord extension's
+tools) → **mxcli** (external CLI, file-based on the on-disk `.mpr`, project closed) →
+**mxcli + MCP + Concord** (external CLI driving the **live** model while Studio Pro
+is open).
 
-Legend: ✓ full · ◑ partial / subset · ✗ none · — n/a. (Maia's authoring is delivered
-*through* its MCP server, so the rows populate the **+MCP** columns; bare **Maia** is
-conversational/advisory only.)
+The first three columns share Maia's **native reach** — MCP/Concord don't change
+*what Maia can do*; they expose that reach to **external** agents (the bottom
+*drivable externally* row). PED is exactly that exposure of Studio Pro's model APIs,
+and mxcli (cols 4–5) is the external agent consuming it. The capability rows show
+each setup's *own* reach; a Maia–vs–mxcli-live gap on a row is either a PED-subset
+limit or just where each agent's implementation has gotten to.
+
+Legend: ✓ full · ◑ partial / subset · ✗ none · — n/a.
 
 | Capability | Maia | Maia + MCP | Maia + MCP + Concord | mxcli (file) | mxcli + MCP + Concord |
 |------------|:----:|:----------:|:--------------------:|:------------:|:---------------------:|
 | **Authoring** | | | | | |
-| Domain model — entities, view entities, enums, associations, constraints | ✗ | ✓ | ✓ | ✓ | ◑¹ |
-| Pages (incl. pluggable widgets) | ✗ | ◑² | ◑² | ✓ | ◑² |
-| Microflows | ✗ | ◑³ | ◑³ | ✓ | ◑³ |
-| Workflows | ✗ | ✓ | ✓ | ✓ | ✓ |
-| Theming / styling | ✗ | ✓ | ✓ | ◑⁴ | ◑⁴ |
+| Domain model — entities, view entities, enums, associations, constraints | ✓ | ✓ | ✓ | ✓ | ◑¹ |
+| Pages (incl. pluggable widgets) | ◑² | ◑² | ◑² | ✓ | ◑² |
+| Microflows | ◑³ | ◑³ | ◑³ | ✓ | ◑³ |
+| Workflows | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Theming / styling | ✓ | ✓ | ✓ | ◑⁴ | ◑⁴ |
 | Integrations — REST/OData/SOAP, business events, mappings, mobile | ✗ | ✗ | ✗ | ◑⁵ | ✗ |
 | Security — roles & access | ✗ | ✗ | ✗ | ✓ | ✗ |
-| Java / JS / CSS source | ✗ | ✓⁶ | ✓⁶ | ✓ | ✓ |
-| Delete documents | ✗ | ✗⁷ | ✓ | ✓ | ✓ |
-| Pre-flight validation (catch errors before writing) | ✗ | ✗⁸ | ✗⁸ | ✓ | ✓ |
+| Java / JS / CSS source | ✓⁶ | ✓⁶ | ✓⁶ | ✓ | ✓ |
 | **Search & analysis** | | | | | |
-| Cross-refs / impact / lint / catalog SQL / full-text | ✗ | ✗ | ✗ | ✓ | ✓ |
+| Impact / lint / catalog SQL / full-text | ✗ | ✗ | ✗ | ✓ | ✓ |
 | Mendix KB search / NL→OQL | ✓ | ✓ | ✓ | ✗ | ✗ |
-| **Efficiency & workflow** | | | | | |
+| **Reach & workflow** | | | | | |
+| Validation before writing | ◑⁷ | ◑⁷ | ◑⁷ | ✓ | ✓ |
 | Batch / scriptable / CI | ✗ | ✗ | ✗ | ✓ | ✓ |
-| Live edits in the open IDE | — | ✓ | ✓ | ✗⁹ | ✓ |
+| Live edits in the open IDE | ✓ | ✓ | ✓ | ✗⁸ | ✓ |
+| Drivable by an external agent (headless) | ✗ | ◑⁹ | ✓ | ✓ | ✓ |
 
-¹ Indexes & entity validation rules are mxcli-file only (Maia does constraints, not
-indexes; mxcli over MCP does neither). &nbsp; ² Pluggable widgets: Maia not yet;
-mxcli over MCP supports ComboBox / DataGrid 2 / Gallery (growing), all widgets in
-file mode. &nbsp; ³ Maia not yet for complex flows; mxcli covers 60+ activities (a
-few rejected over MCP — show-page, cast, retrieve sort/range). &nbsp; ⁴ Maia: full
-theming; mxcli: per-widget styling (`ALTER STYLING`), not a full theme system.
-&nbsp; ⁵ None over MCP or in Maia; mxcli-file has partial REST-publish / mappings /
-business-event reads. &nbsp; ⁶ Maia via the `write_file` virtual FS; mxcli edits
-source on disk directly (any mode). &nbsp; ⁷ PED has no delete tool (Concord adds
-it). &nbsp; ⁸ Post-hoc only over MCP (`ped_check_errors` *after* writing); mxcli
-runs `mxcli check` *before*. &nbsp; ⁹ File mode edits the on-disk `.mpr`; reopen
-Studio Pro to see changes.
+¹ mxcli over MCP can't author indexes or entity validation rules (file mode can);
+Maia does constraints, not indexes. &nbsp; ² Pluggable widgets: Maia not yet; mxcli
+over MCP does ComboBox / DataGrid 2 / Gallery (growing), all widgets in file mode.
+&nbsp; ³ Maia not yet for complex flows; mxcli covers 60+ activities (a few rejected
+over MCP — show-page, cast, retrieve sort/range). &nbsp; ⁴ Maia: full theming;
+mxcli: per-widget styling (`ALTER STYLING`), not a full theme system. &nbsp; ⁵ None
+over MCP or in Maia; mxcli-file has partial REST-publish / mappings / business-event
+reads. &nbsp; ⁶ Maia via the `write_file` virtual FS; mxcli edits source on disk
+directly (any mode). &nbsp; ⁷ Maia: live, reactive validation in the IDE; mxcli:
+static pre-flight (`mxcli check`) *before* writing. &nbsp; ⁸ File mode edits the
+on-disk `.mpr`; reopen Studio Pro to see changes. &nbsp; ⁹ MCP exposes Maia's
+read + authoring surface (the PED subset) to external agents; Concord additionally
+exposes delete + save / build-run. Maia performs all of this natively in-IDE — its
+column is about *external* reach.
 
-**Takeaway:** the **Maia** and **mxcli (live)** authoring sets overlap but are *not*
-identical — both build domain model / pages / microflows / workflows and neither
-does integrations or security over MCP, but Maia adds theming + source-file editing
-where mxcli adds pluggable widgets + constants. The real separators are elsewhere:
-**mxcli (file)** is the only setup with *full* authoring (indexes, security,
-integrations) plus analysis + pre-flight validation + batch/CI — at the cost of the
-project being closed; **mxcli + MCP + Concord** keeps that analysis / validation /
-scripting while editing the **live** model (authoring capped to the PED subset); and
-the **Maia** setups own the conversational + Mendix-KB experience and in-IDE
-liveness. (Maia capabilities per the Mendix team, 2026-06; re-confirm before
-publishing as they evolve.)
+**Takeaway:** Maia has broad **native** authoring (domain model, pages, microflows,
+workflows, theming, source), and **MCP is what exposes that surface to external
+agents** — the architectural point. mxcli is that external agent: **mxcli (file)** is
+the only setup with *full* authoring (indexes, security, integrations) plus analysis
++ pre-flight validation + batch/CI, at the cost of the project being closed;
+**mxcli + MCP + Concord** keeps the analysis / validation / scripting while editing
+the **live** model (authoring capped to the PED subset, which differs slightly from
+Maia's — pluggable widgets yes, theming/source via disk). Maia owns the
+conversational + Mendix-KB experience and in-IDE liveness. (Maia capabilities per the
+Mendix team, 2026-06; re-confirm before publishing as they evolve.)
 
 ## Backend Coverage (Mendix / MDL / MPR / MCP)
 
