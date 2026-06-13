@@ -10,8 +10,56 @@ This document tracks the implementation status of each MDL feature along **two a
    skills, help, …). This answers "is feature X fully built out as an MDL feature?"
 
 When adding a new MDL feature, use **both** as a checklist to ensure complete coverage.
+(The *Agent × tooling at a glance* section just below is a one-slide overview that
+sits above both axes — how the whole Maia/mxcli spectrum compares.)
 
 **Legend:** Y = Yes | N = No | P = Partial | - = Not Applicable
+
+## Agent × tooling at a glance (Maia vs mxcli)
+
+One-slide comparison of how a Mendix app can be edited by an AI agent across five
+setups, from least to most capable: **Maia** (Studio Pro's built-in assistant, no
+MCP) → **Maia + MCP** (Maia authoring via the PED MCP server) → **Maia + MCP +
+Concord** (plus the Concord extension's tools) → **mxcli** (the CLI, file-based on
+the on-disk `.mpr`, project closed) → **mxcli + MCP + Concord** (mxcli driving the
+**live** model while Studio Pro is open).
+
+Legend: ✓ full · ◑ partial / subset · ✗ none · — n/a.
+
+| Capability | Maia | Maia + MCP | Maia + MCP + Concord | mxcli (file) | mxcli + MCP + Concord |
+|------------|:----:|:----------:|:--------------------:|:------------:|:---------------------:|
+| **Authoring** | | | | | |
+| Create / modify model documents | ✗ | ◑¹ | ◑¹ | ✓ (all MDL) | ◑¹ |
+| Doc types beyond PED (nanoflows, Java actions, security, MOVE) | ✗ | ✗ | ✗ | ✓ | ✗ |
+| Delete documents | ✗ | ✗² | ✓ | ✓ | ✓ |
+| Edit Java / JS / CSS source | ✗ | ✓³ | ✓³ | ✓ (disk) | ✓ (disk) |
+| Pre-flight validation (catch errors before writing) | ✗ | ✗⁴ | ✗⁴ | ✓ | ✓ |
+| **Search & analysis** | | | | | |
+| Cross-refs / impact / lint / catalog SQL / full-text | ✗ | ✗ | ✗ | ✓ | ✓ |
+| Mendix KB search / NL→OQL | ✓ | ✓ | ✓ | ✗ | ✗ |
+| **Efficiency & workflow** | | | | | |
+| Batch / scriptable / CI | ✗ | ✗ | ✗ | ✓ | ✓ |
+| Live edits in the open IDE | — | ✓ | ✓ | ✗⁵ | ✓ |
+| Works while project is open in Studio Pro | ✓ | ✓ | ✓ | ✗ | ✓ |
+
+¹ Bounded by PED's create-whitelist — entities, associations, enumerations,
+constants, microflows, pages, workflows, view entities, and foldered creates **yes**;
+nanoflows, Java actions, security, business-event services, attribute type change,
+and MOVE/re-parent **no**. Both Maia and mxcli hit the same wall here because both
+author through PED. &nbsp; ² PED has no delete tool (Concord adds it). &nbsp;
+³ Maia via the `write_file` virtual-FS tool; mxcli edits source on disk directly.
+&nbsp; ⁴ Post-hoc only (`ped_check_errors` *after* the write); mxcli runs `mxcli
+check` *before*. &nbsp; ⁵ File mode edits the on-disk `.mpr`; reopen Studio Pro to
+see changes.
+
+**Takeaway:** *full* authoring + analysis + CI lives only in **mxcli (file)**, at
+the cost of the project being closed. **mxcli + MCP + Concord** keeps mxcli's
+analysis, pre-flight validation, and scripting while editing the **live** model, but
+authoring is capped to the PED subset. The **Maia** setups add conversational +
+Mendix-KB strengths and in-IDE liveness, but no batch/analysis/pre-flight and the
+same PED authoring ceiling. (Maia columns are *inferred from the PED/Concord tool
+surface* — see [`PED_MCP_CAPABILITIES.md`](../03-development/PED_MCP_CAPABILITIES.md) —
+not from Maia product docs; confirm with the Maia team before publishing.)
 
 ## Backend Coverage (Mendix / MDL / MPR / MCP)
 
