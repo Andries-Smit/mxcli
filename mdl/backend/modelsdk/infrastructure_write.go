@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/mendixlabs/mxcli/mdl/types"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -47,6 +48,178 @@ func (b *Backend) UpdateQualifiedNameInAllUnits(oldName, newName string) (int, e
 		}
 	}
 	return updated, nil
+}
+
+// RenameReferences scans every unit and replaces qualified-name strings matching
+// oldName (exact or "oldName."-prefixed) with newName, reporting one RenameHit per
+// affected unit. When dryRun is true no unit is written — only the hit list is
+// returned (the `mxcli rename ... --dry-run` / "scan references" path). Mirrors the
+// legacy writer.RenameReferences but uses the codec reader's raw primitives.
+func (b *Backend) RenameReferences(oldName, newName string, dryRun bool) ([]types.RenameHit, error) {
+	if !dryRun && b.writer == nil {
+		return nil, fmt.Errorf("RenameReferences: not connected for writing")
+	}
+	units, err := b.reader.ListUnits()
+	if err != nil {
+		return nil, fmt.Errorf("RenameReferences: list units: %w", err)
+	}
+	var hits []types.RenameHit
+	for _, u := range units {
+		raw, err := b.reader.GetRawUnitBytes(u.ID)
+		if err != nil || len(raw) == 0 {
+			continue
+		}
+		var doc bson.D
+		if err := bson.Unmarshal(raw, &doc); err != nil {
+			continue
+		}
+		count := 0
+		updated := replaceQNInDocCounted(doc, oldName, newName, &count)
+		if count == 0 {
+			continue
+		}
+		hits = append(hits, types.RenameHit{
+			UnitID:   u.ID,
+			UnitType: u.Type,
+			Name:     docNameOf(updated),
+			Count:    count,
+		})
+		if !dryRun {
+			contents, err := bson.Marshal(updated)
+			if err != nil {
+				return hits, fmt.Errorf("RenameReferences: marshal %s: %w", u.ID, err)
+			}
+			if err := b.writer.UpdateRawUnit(u.ID, contents); err != nil {
+				return hits, fmt.Errorf("RenameReferences: update %s: %w", u.ID, err)
+			}
+		}
+	}
+	return hits, nil
+}
+
+// RenameDocumentByName finds the document named oldName inside moduleName (directly
+// or via a nested folder) and rewrites its top-level "Name" field to newName. Works
+// for any document type via a raw BSON scan. Mirrors the legacy writer.
+func (b *Backend) RenameDocumentByName(moduleName, oldName, newName string) error {
+	if b.writer == nil {
+		return fmt.Errorf("RenameDocumentByName: not connected for writing")
+	}
+	modules, err := b.reader.ListModules()
+	if err != nil {
+		return fmt.Errorf("RenameDocumentByName: list modules: %w", err)
+	}
+	var moduleID string
+	for _, m := range modules {
+		if m.Name == moduleName {
+			moduleID = m.ID
+			break
+		}
+	}
+	if moduleID == "" {
+		return fmt.Errorf("module not found: %s", moduleName)
+	}
+	containers := b.containerSetForModule(moduleID)
+
+	units, err := b.reader.ListUnits()
+	if err != nil {
+		return fmt.Errorf("RenameDocumentByName: list units: %w", err)
+	}
+	for _, u := range units {
+		if !containers[u.ContainerID] {
+			continue
+		}
+		raw, err := b.reader.GetRawUnitBytes(u.ID)
+		if err != nil || len(raw) == 0 {
+			continue
+		}
+		var doc bson.D
+		if err := bson.Unmarshal(raw, &doc); err != nil {
+			continue
+		}
+		for i, elem := range doc {
+			if elem.Key != "Name" {
+				continue
+			}
+			if s, ok := elem.Value.(string); ok && s == oldName {
+				doc[i].Value = newName
+				contents, err := bson.Marshal(doc)
+				if err != nil {
+					return fmt.Errorf("RenameDocumentByName: marshal: %w", err)
+				}
+				return b.writer.UpdateRawUnit(u.ID, contents)
+			}
+		}
+	}
+	return fmt.Errorf("document '%s.%s' not found", moduleName, oldName)
+}
+
+// containerSetForModule returns the module ID plus every folder ID nested under it
+// (transitively), so a document-in-a-folder is recognised as belonging to the module.
+func (b *Backend) containerSetForModule(moduleID string) map[string]bool {
+	set := map[string]bool{moduleID: true}
+	folders, err := b.reader.ListFolders()
+	if err != nil {
+		return set
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, f := range folders {
+			if set[f.ContainerID] && !set[f.ID] {
+				set[f.ID] = true
+				changed = true
+			}
+		}
+	}
+	return set
+}
+
+// docNameOf returns the top-level "Name" string of a decoded unit, or "".
+func docNameOf(doc bson.D) string {
+	for _, elem := range doc {
+		if elem.Key == "Name" {
+			if s, ok := elem.Value.(string); ok {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+// replaceQNInDocCounted is replaceQNInValue with a running count of replacements,
+// used by RenameReferences to report per-unit hit counts.
+func replaceQNInDocCounted(doc bson.D, oldName, newName string, count *int) bson.D {
+	for i, elem := range doc {
+		doc[i].Value = replaceQNInValueCounted(elem.Value, oldName, newName, count)
+	}
+	return doc
+}
+
+func replaceQNInValueCounted(v any, oldName, newName string, count *int) any {
+	switch val := v.(type) {
+	case string:
+		if val == oldName {
+			*count++
+			return newName
+		}
+		if strings.HasPrefix(val, oldName+".") {
+			*count++
+			return newName + val[len(oldName):]
+		}
+		return val
+	case primitive.D:
+		return replaceQNInDocCounted(val, oldName, newName, count)
+	case primitive.A:
+		for i, elem := range val {
+			val[i] = replaceQNInValueCounted(elem, oldName, newName, count)
+		}
+		return val
+	case []any:
+		for i, elem := range val {
+			val[i] = replaceQNInValueCounted(elem, oldName, newName, count)
+		}
+		return val
+	}
+	return v
 }
 
 // replaceQNInValue recursively rewrites qualified-name references in a decoded
