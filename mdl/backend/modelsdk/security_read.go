@@ -40,6 +40,68 @@ func (b *Backend) GetModuleSecurity(moduleID model.ID) (*security.ModuleSecurity
 	return nil, fmt.Errorf("module security not found for module: %s", moduleID)
 }
 
+// GetProjectSecurity reads the project's Security$ProjectSecurity document (security
+// level, admin/guest roles, user roles, demo users, password policy).
+func (b *Backend) GetProjectSecurity() (*security.ProjectSecurity, error) {
+	g, err := mprread.GetProjectSecurity(b.reader)
+	if err != nil {
+		return nil, err
+	}
+	ps := &security.ProjectSecurity{
+		SecurityLevel:      g.SecurityLevel(),
+		AdminUserName:      g.AdminUserName(),
+		AdminPassword:      g.AdminPassword(),
+		AdminUserRole:      g.AdminUserRoleName(),
+		CheckSecurity:      g.CheckSecurity(),
+		StrictMode:         g.StrictMode(),
+		StrictPageUrlCheck: g.StrictPageUrlCheck(),
+		EnableDemoUsers:    g.EnableDemoUsers(),
+		EnableGuestAccess:  g.EnableGuestAccess(),
+		GuestUserRole:      g.GuestUserRoleName(),
+	}
+	ps.ID = model.ID(g.ID())
+	for _, el := range g.UserRolesItems() {
+		r, ok := el.(*genSec.UserRole)
+		if !ok {
+			continue
+		}
+		ur := &security.UserRole{
+			Name:                    r.Name(),
+			Description:             r.Description(),
+			ModuleRoles:             r.ModuleRolesQualifiedNames(),
+			ManageAllRoles:          r.ManageAllRoles(),
+			ManageUsersWithoutRoles: r.ManageUsersWithoutRoles(),
+			ManageableRoles:         r.ManageableRolesQualifiedNames(),
+			CheckSecurity:           r.CheckSecurity(),
+		}
+		ur.ID = model.ID(r.ID())
+		ps.UserRoles = append(ps.UserRoles, ur)
+	}
+	for _, el := range g.DemoUsersItems() {
+		d, ok := el.(*genSec.DemoUser)
+		if !ok {
+			continue
+		}
+		du := &security.DemoUser{
+			UserName:  d.UserName(),
+			Password:  d.Password(),
+			Entity:    d.EntityQualifiedName(),
+			UserRoles: d.UserRolesQualifiedNames(),
+		}
+		du.ID = model.ID(d.ID())
+		ps.DemoUsers = append(ps.DemoUsers, du)
+	}
+	if pp, ok := g.PasswordPolicySettings().(*genSec.PasswordPolicySettings); ok && pp != nil {
+		ps.PasswordPolicy = &security.PasswordPolicy{
+			MinimumLength:    int(pp.MinimumLength()),
+			RequireDigit:     pp.RequireDigit(),
+			RequireMixedCase: pp.RequireMixedCase(),
+			RequireSymbol:    pp.RequireSymbol(),
+		}
+	}
+	return ps, nil
+}
+
 // moduleSecurityFromGen converts a gen ModuleSecurity element to the semantic type.
 func moduleSecurityFromGen(ms *genSec.ModuleSecurity, containerID model.ID) *security.ModuleSecurity {
 	out := &security.ModuleSecurity{ContainerID: containerID}
