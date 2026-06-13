@@ -4,6 +4,9 @@ package modelsdkbackend
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/mendixlabs/mxcli/model"
 	"github.com/mendixlabs/mxcli/modelsdk/codec"
@@ -131,6 +134,71 @@ func (b *Backend) UpdateModule(m *model.Module) error {
 	}
 	gm.SetName(m.Name)
 	return b.persistUnit(m.ID, gm)
+}
+
+// DeleteModule deletes a module and every unit transitively contained in it
+// (DomainModel, ModuleSecurity, ModuleSettings, Folders, Documents). Orphaned
+// child units would crash Studio Pro (KeyNotFoundException in LoadChildUnits), so
+// descendants are removed first, then the module unit itself.
+func (b *Backend) DeleteModule(id model.ID) error {
+	if b.writer == nil {
+		return fmt.Errorf("DeleteModule: not connected for writing")
+	}
+	descendants, err := b.collectDescendantUnitIDs(string(id))
+	if err != nil {
+		return err
+	}
+	for _, child := range descendants {
+		if err := b.writer.DeleteUnit(child); err != nil {
+			return fmt.Errorf("DeleteModule: delete child %s: %w", child, err)
+		}
+	}
+	if err := b.writer.DeleteUnit(string(id)); err != nil {
+		return fmt.Errorf("DeleteModule: delete module %s: %w", id, err)
+	}
+	return nil
+}
+
+// DeleteModuleWithCleanup deletes the module (and child units) and also removes the
+// module's themesource/<lowercase-name>/ directory, whose name derives from the
+// module name rather than its ID.
+func (b *Backend) DeleteModuleWithCleanup(id model.ID, moduleName string) error {
+	if err := b.DeleteModule(id); err != nil {
+		return err
+	}
+	if b.path == "" {
+		return nil
+	}
+	themesourceDir := filepath.Join(filepath.Dir(b.path), "themesource", strings.ToLower(moduleName))
+	if stat, err := os.Stat(themesourceDir); err == nil && stat.IsDir() {
+		_ = os.RemoveAll(themesourceDir)
+	}
+	return nil
+}
+
+// collectDescendantUnitIDs returns every unit ID transitively contained under
+// parentID (excluding parentID itself), walking the ContainerID hierarchy.
+func (b *Backend) collectDescendantUnitIDs(parentID string) ([]string, error) {
+	units, err := b.reader.ListUnits()
+	if err != nil {
+		return nil, fmt.Errorf("DeleteModule: list units: %w", err)
+	}
+	childrenOf := make(map[string][]string, len(units))
+	for _, u := range units {
+		if u.ID == u.ContainerID {
+			continue // a unit that contains itself (project root) — skip self-loop
+		}
+		childrenOf[u.ContainerID] = append(childrenOf[u.ContainerID], u.ID)
+	}
+	var out []string
+	queue := append([]string(nil), childrenOf[parentID]...)
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		out = append(out, id)
+		queue = append(queue, childrenOf[id]...)
+	}
+	return out, nil
 }
 
 // insertChildUnit builds, encodes, and inserts a fresh-ID'd unit contained in the
