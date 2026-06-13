@@ -91,45 +91,61 @@ instances = the normal "Update widget" prompt). The authoritative schema for a
 *newly created* instance is the **currently installed `.mpk`** — which augment
 already uses.
 
+## Phase-1 spike result: neutral Object CANNOT be synthesized (decisive)
+
+The first-cut plan was to **synthesize a neutral Object from the (augmented)
+Type** — correct-by-construction, no stored Object to keep clean. **This was built
+and disproven.**
+
+`SynthesizeNeutralObject` emitted one neutral `WidgetProperty` per non-System
+`PropertyType`, valued from the `ValueType.DefaultValue`. A/B `mx check` on test6
+(11.10), modelsdk engine: the clean template produced **0 `CE0463`**; the
+synthesized Object produced **1 `CE0463` on the ComboBox**. Root cause:
+
+> **Studio Pro's fresh-widget instantiation defaults are not in the Type schema or
+> the `.mpk`.** ComboBox `optionsSourceType`: schema/`.mpk` `DefaultValue` =
+> `"association"`, but a *freshly dropped* widget instantiates `"enumeration"`
+> (likewise `readOnlyStyle` `text`→`bordered`, `optionsSourceDatabaseItemSelection`
+> `""`→`Single`). The widget's React `getDefaultProperties` overrides the declared
+> defaults; only a **real extraction** of a fresh widget captures them.
+
+`GenerateFromMPK` walks the **same** `createDefaultWidgetValue(.mpk default)` path,
+so it has the identical flaw and would also `CE0463`. **Consequence: you cannot
+derive a correct Object purely from schema/`.mpk`. A clean static template
+(extracted from a fresh Studio-Pro widget) is *necessary*, not merely convenient.**
+
 ## Proposed Direction
 
-The existing `def.json`-routing + static-base + `augmentFromMPK` pipeline already
-delivers version-correct **schemas**. So the work is **hardening**, not
-replacement:
+The existing `def.json`-routing + static-base + `augmentFromMPK` pipeline is the
+right architecture: it already delivers version-correct **schemas** (proven 56=56),
+and the static Object carries the fresh-widget defaults that nothing else can. The
+modelsdk `CE0463` was simply a **dirty template** (extracted from a *configured*
+instance). So the work is **hardening + discipline**, not synthesis:
 
-1. **Guarantee clean, neutral Object defaults.** The template's Object must be a
-   *fresh, unconfigured* widget's defaults (empty refs/datasources, type-default
-   primitives) — never lifted from a configured instance. Either (a) re-extract all
-   embedded templates from freshly-dropped Studio-Pro widgets, or, more robustly,
-   (b) **synthesize the neutral Object from the (augmented) Type** so it is
-   correct-by-construction and instance-bleed is impossible. This directly removes
-   the only `CE0463` class we actually hit.
-2. **Ensure both engines augment.** legacy and modelsdk both call `augmentFromMPK`;
-   keep them on the same code path (consolidate the two `*/widgets` loaders) so
-   schema reconciliation can't silently diverge.
-3. **Do *not* build a per-Mendix-version envelope model.** The spike shows the
-   envelope is tolerated; the current superset (`augment.go` defaults incl.
-   `AllowUpload`) is sufficient.
-4. **Cross-version validation matrix.** Per installed mxbuild (10.24 / 11.9 / 11.10
+1. **Clean embedded templates are required, and must stay clean.** Every embedded
+   template's Object must be a *fresh, unconfigured* widget extraction (no populated
+   `AttributeRef`/`DataSource`/`EntityRef`). The ComboBox band-aid (`827bffd4b`) did
+   this; audit the rest of the embedded set the same way.
+2. **Add a dirty-template guard.** A check/lint that fails if any embedded (or
+   `widget init`-generated) template's Object contains instance bindings — catches
+   the modelsdk-class bug at build time instead of as a field `CE0463`.
+3. **Ensure both engines augment.** legacy and modelsdk both call `augmentFromMPK`;
+   consolidate the two `*/widgets` loaders so schema reconciliation can't diverge.
+4. **Do *not* build a per-Mendix-version envelope model.** The spike shows the
+   envelope is tolerated; the current `augment.go` superset (incl. `AllowUpload`)
+   is sufficient.
+5. **Cross-version validation matrix.** Per installed mxbuild (10.24 / 11.9 / 11.10
    / 11.11): create one of each pluggable widget on a fresh project, assert
    `mx check` reports **0 `CE0463`**. Converts version drift into a failing test.
 
-### `GenerateFromMPK` as an evaluated alternative (not the spine)
-
-A pure ".mpk → Type+Object, no static base" path (`GenerateFromMPK`) is attractive
-(no embedded templates to maintain) but is **largely redundant** with the existing
-augment, and engalar's note that it produces "subtly different BSON" is an unquantified
-risk. Recommend evaluating it *after* (1)–(4) land: if a `GenerateFromMPK` Type is
-structurally equal to an augmented one for the same widget+version, the static base
-can eventually be retired. Until proven, static-base + augment stays.
-
-### Why the other alternatives are rejected
+### Why the alternatives are rejected
 
 | Alternative | Why rejected |
 |---|---|
-| Extract-from-instance (engalar's `extract.go`) | Lifts a real instance's Object → the dirty-defaults `CE0463` we reproduced; also inherits stale schema if instances lag the `.mpk`. |
+| Synthesize neutral Object from Type | **Disproven** (Phase-1 spike): fresh-widget defaults aren't in the schema → `CE0463`. |
+| `GenerateFromMPK` (.mpk → Type+Object) | Same `createDefaultWidgetValue` path → same wrong fresh-defaults → `CE0463`. Demoted to last-resort (used only when no embedded template *and* no instance exist). |
+| Extract-from-instance (engalar's `extract.go`) | Lifts a real instance's Object → dirty-defaults `CE0463` (reproduced); inherits stale schema if instances lag the `.mpk`. Only safe if extracting from a *fresh* instance, which projects rarely have. |
 | Per-Mendix-version envelope model | Spike shows the envelope is tolerated — effort on a non-problem. |
-| Bulk-sync legacy templates into modelsdk | A point fix for one symptom (dirty defaults); doesn't address neutral-Object guarantee or validation. (The committed `827bffd4b` band-aid is exactly this for ComboBox.) |
 
 ## Implementation Plan
 
@@ -138,22 +154,23 @@ changes. Applies to both engines.
 
 | File | Change |
 |------|--------|
-| `modelsdk/widgets/generate.go` (+ `sdk/widgets`) | Neutral-Object synthesis from the augmented Type (default `WidgetValue` per `PropertyType`); make it the Object source instead of the template's stored Object |
-| `modelsdk/widgets/templates/`, `sdk/widgets/templates/` | Re-extract or demote; once synthesis lands, the stored Object becomes redundant |
-| `modelsdk/widgets/loader.go`, `sdk/widgets/loader.go` | Consolidate the two loaders so both engines share one augment path |
+| `sdk/widgets/templates/`, `modelsdk/widgets/templates/` | Audit every embedded template's Object for instance bindings; re-extract any dirty one from a fresh Studio-Pro widget (as done for ComboBox in `827bffd4b`) |
+| `modelsdk/widgets/` (+ `sdk/widgets`) | New dirty-template guard: a test/`widget init` check that rejects Objects with populated `AttributeRef`/`DataSource`/`EntityRef` |
+| `modelsdk/widgets/loader.go`, `sdk/widgets/loader.go` | Consolidate so both engines share one augment path |
 | `sdk/widgets/augment.go` / `modelsdk/widgets/augment.go` | Reconcile to a single implementation |
-| `mdl/backend/widgetobj/builder.go` | Ensure the builder fully overrides every neutral-Object slot it sets (no bleed-through) |
+| `mdl/backend/widgetobj/builder.go` | Ensure the builder fully overrides every Object slot it sets (no bleed-through) |
 | `modelsdk/widgets/multiversion_test.go` (new) | Cross-version `mx check` matrix |
 | `docs/03-development/WIDGET_BSON_VERSION_COMPATIBILITY.md`, `sdk/versions/*.yaml` | Correct the "envelope fragile / frozen schema" framing |
 
 ### Phasing
 
-1. **Neutral-Object synthesis** for ComboBox → `mx check` clean on 10.24 + 11.10
-   (removes the dirty-defaults class). De-risks the core fix.
-2. Extend synthesis to object-list widgets (DataGrid2 columns, Gallery items).
-3. Consolidate the two engines' widget loaders / augment onto one path.
-4. Cross-version validation matrix; then evaluate retiring the static base via
-   `GenerateFromMPK`.
+1. **Audit embedded templates for dirty Objects** + add the guard. ComboBox is
+   already clean (`827bffd4b`); confirm DataGrid2/Gallery/the rest.
+2. Consolidate the two engines' widget loaders / augment onto one path.
+3. Cross-version validation matrix.
+4. (Optional) Evaluate whether a fresh-instance extraction could *generate* clean
+   templates on demand for widgets with no embedded template — the only way to
+   avoid hand-extraction for the long tail of marketplace widgets.
 
 ## Version Compatibility
 
@@ -171,8 +188,8 @@ regenerate gen from the target version's reflection-data.
 - **Tolerance regression**: unit tests asserting `PropertyKey` rename → `CE0463`
   vs envelope field/ordering → tolerated (lock in the spike; catch any future
   dependence on envelope exactness).
-- **Neutral-Object**: assert a synthesized Object has no instance-specific values
-  (no populated `AttributeRef`/`DataSource`, type-default primitives).
+- **Dirty-template guard**: assert no embedded template's Object contains populated
+  `AttributeRef`/`DataSource`/`EntityRef` (catches the modelsdk-class bug).
 - **Per-version matrix**: create ComboBox/DataGrid2/Gallery on fresh 10.24 / 11.9 /
   11.10 / 11.11 projects, `mx check`, assert 0 `CE0463`.
 - **Augment fidelity** (lock in the measured result): augmented Type `PropertyKey`
@@ -182,15 +199,21 @@ regenerate gen from the target version's reflection-data.
 ## Open Questions
 
 1. **Object-default version sensitivity.** Schema is version-reconciled and the
-   envelope is tolerated — is the neutral *Object* ever version-sensitive in a way
-   `augment` + synthesis don't cover? The matrix would catch it; flag if found.
-2. **`GenerateFromMPK` fidelity.** Is its Type structurally equal to an augmented
-   one (then the static base can retire), or does it drift on schema (must stay
-   augment-based)? Evaluate in Phase 4.
-3. **Generalization.** Spike + augment-fidelity covered ComboBox/DataGrid2/Gallery.
-   Confirm on nested-CustomWidget widgets (charts, Maps) and on 12.x when available.
-4. **Doc + version-YAML correction**, and an **ADR** for "installed `.mpk` (via
-   augment) is the authoritative widget schema source" once Phase 1 lands.
+   envelope is tolerated. The remaining unknown: do the fresh-widget Object defaults
+   (which only a clean extraction captures) themselves differ across Mendix versions
+   — i.e. does ComboBox `2.4.3`@10.24 need a different Object than `2.5.0`@11.10?
+   The cross-version matrix answers this; if yes, we may need a clean template *per
+   widget-version*, not one shared base.
+2. **Long-tail marketplace widgets.** Built-ins can be hand-extracted clean. For
+   arbitrary marketplace widgets with no embedded template, the only correct Object
+   source is a fresh extraction — can `widget init` extract from a freshly-dropped
+   instance, or must the user drop one first? (`GenerateFromMPK` is ruled out as the
+   primary source by the Phase-1 result.)
+3. **Generalization.** Confirm the dirty-vs-clean / fresh-default behaviour on
+   nested-CustomWidget widgets (charts, Maps) and on 12.x when available.
+4. **Doc + version-YAML correction**, and an **ADR** for "a clean static template
+   (fresh Studio-Pro extraction) is required for the Object; `augmentFromMPK`
+   reconciles the schema" once Phase 1 lands.
 
 ## Relationship to existing artifacts
 
