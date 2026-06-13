@@ -229,20 +229,18 @@ func (b *Builder) buildReferences() error {
 			moduleName := b.hierarchy.getModuleName(moduleID)
 			sourceQN := moduleName + "." + pg.Name
 
-			// Layout reference (ListPages() returns fully-parsed pages)
-			if pg.LayoutCall != nil && pg.LayoutCall.LayoutName != "" {
+			// Layout reference. ListPages() does not populate pg.LayoutCall (only
+			// pg.LayoutID), so read the layout name the pages table already
+			// resolved from raw BSON (extractLayoutRef) rather than the always-nil
+			// LayoutCall. NOTE: widget-level datasource/action refs still require a
+			// parsed widget tree, which no reader currently exposes — tracked as the
+			// remaining part of #663 gap 3.
+			if layoutRef := b.resolvePageLayoutRef(pg.ID); layoutRef != "" {
 				_, err = stmt.Exec("PAGE", string(pg.ID), sourceQN,
-					"LAYOUT", "", pg.LayoutCall.LayoutName,
+					"LAYOUT", "", layoutRef,
 					RefKindLayout, moduleName, projectID, snapshotID)
 				if err == nil {
 					refCount++
-				}
-
-				// Extract refs from widgets in layout arguments
-				for _, arg := range pg.LayoutCall.Arguments {
-					if arg.Widget != nil {
-						refCount += b.extractWidgetRefs(stmt, arg.Widget, "PAGE", string(pg.ID), sourceQN, moduleName, projectID, snapshotID)
-					}
 				}
 			}
 
@@ -626,6 +624,20 @@ func (b *Builder) resolveEntityID(entityID model.ID) string {
 		return ""
 	}
 	return qualifiedName
+}
+
+// resolvePageLayoutRef returns the layout qualified name the pages table already
+// resolved for a page (from raw-BSON FormCall via extractLayoutRef), or "" if the
+// page has none. buildReferences runs after buildPages in full mode, so the value
+// is available; this avoids re-parsing the page BSON and reuses the pages table's
+// resolution instead of the always-nil pg.LayoutCall.
+func (b *Builder) resolvePageLayoutRef(pageID model.ID) string {
+	var layoutRef string
+	err := b.tx.QueryRow("SELECT LayoutRef FROM pages WHERE Id = ?", string(pageID)).Scan(&layoutRef)
+	if err != nil {
+		return ""
+	}
+	return layoutRef
 }
 
 // resolveMicroflowID looks up the qualified name for a microflow/nanoflow ID.

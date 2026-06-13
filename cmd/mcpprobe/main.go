@@ -260,7 +260,7 @@ func (c *client) readSSEResponse(r io.Reader, wantID int) (*rpcResponse, error) 
 			logf("← sse data: %s", raw)
 		}
 		var probe struct {
-			ID     *int `json:"id"`
+			ID     *int    `json:"id"`
 			Method *string `json:"method"`
 		}
 		_ = json.Unmarshal([]byte(raw), &probe)
