@@ -188,6 +188,46 @@ func widgetToGen(w pages.Widget) (element.Element, error) {
 		}
 		return g, nil
 
+	case *pages.TabContainer:
+		// pages.TabContainer → Forms$TabControl (gen type genPg.TabContainer).
+		g := genPg.NewTabContainer()
+		applyWidgetBase(g, &x.BaseWidget)
+		g.SetActivePageOnChangeAction(noActionGen())
+		var defaultID element.ID
+		for i, tp := range x.TabPages {
+			tpg := genPg.NewTabPage()
+			if tp.ID != "" {
+				tpg.SetID(element.ID(tp.ID))
+			}
+			assignID(tpg)
+			tpg.SetName(tp.Name)
+			tpg.SetRefreshOnShow(tp.RefreshOnShow)
+			// Caption defaults to the tab name when unset (matches legacy).
+			capText := tp.Caption
+			if capText == nil {
+				capText = &model.Text{Translations: map[string]string{"en_US": tp.Name}}
+			}
+			tpg.SetCaption(captionToGen(capText))
+			for _, c := range tp.Widgets {
+				cg, err := widgetToGen(c)
+				if err != nil {
+					return nil, err
+				}
+				tpg.AddWidgets(cg)
+			}
+			g.AddTabPages(tpg)
+			if i == 0 {
+				defaultID = tpg.ID()
+			}
+		}
+		if x.DefaultPageID != "" {
+			defaultID = element.ID(x.DefaultPageID)
+		}
+		if defaultID != "" {
+			g.SetDefaultPageID(defaultID)
+		}
+		return g, nil
+
 	case *pages.DynamicText:
 		g := genPg.NewDynamicText()
 		applyWidgetBase(g, &x.BaseWidget)
