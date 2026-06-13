@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/mendixlabs/mxcli/mdl/backend"
+	"github.com/mendixlabs/mxcli/mdl/types"
 	"github.com/mendixlabs/mxcli/model"
 	genDm "github.com/mendixlabs/mxcli/modelsdk/gen/domainmodels"
 )
@@ -74,6 +75,203 @@ func (b *Backend) AddEntityAccessRule(p backend.EntityAccessRuleParams) error {
 		rule.AddMemberAccesses(m)
 	}
 	return b.persistDM(p.UnitID, dm)
+}
+
+// RevokeEntityMemberAccess narrows access on rules matching roleNames for an entity:
+// revoke create/delete, and downgrade member read/write rights (ReadWrite→ReadOnly
+// for write revocation, →None for read revocation) for all members or named ones.
+// Returns the number of rules modified. Mirrors legacy writer.RevokeEntityMemberAccess.
+func (b *Backend) RevokeEntityMemberAccess(unitID model.ID, entityName string, roleNames []string, rev types.EntityAccessRevocation) (int, error) {
+	if b.writer == nil {
+		return 0, fmt.Errorf("RevokeEntityMemberAccess: not connected for writing")
+	}
+	dm, err := b.loadDomainModelGen(unitID)
+	if err != nil {
+		return 0, err
+	}
+	var ent *genDm.Entity
+	for _, el := range dm.EntitiesItems() {
+		if e, ok := el.(*genDm.Entity); ok && e.Name() == entityName {
+			ent = e
+			break
+		}
+	}
+	if ent == nil {
+		return 0, fmt.Errorf("RevokeEntityMemberAccess: entity not found: %s", entityName)
+	}
+
+	readSet := toStringSet(rev.RevokeReadMembers)
+	writeSet := toStringSet(rev.RevokeWriteMembers)
+	modified := 0
+	for _, el := range ent.AccessRulesItems() {
+		rule, ok := el.(*genDm.AccessRule)
+		if !ok || !sameStringSet(rule.ModuleRolesQualifiedNames(), roleNames) {
+			continue
+		}
+		ruleMod := false
+		if rev.RevokeCreate && rule.AllowCreate() {
+			rule.SetAllowCreate(false)
+			ruleMod = true
+		}
+		if rev.RevokeDelete && rule.AllowDelete() {
+			rule.SetAllowDelete(false)
+			ruleMod = true
+		}
+		switch cur := rule.DefaultMemberAccessRights(); {
+		case rev.RevokeReadAll && cur != "None":
+			rule.SetDefaultMemberAccessRights("None")
+			ruleMod = true
+		case rev.RevokeWriteAll && cur == "ReadWrite":
+			rule.SetDefaultMemberAccessRights("ReadOnly")
+			ruleMod = true
+		}
+		for _, mel := range rule.MemberAccessesItems() {
+			ma, ok := mel.(*genDm.MemberAccess)
+			if !ok {
+				continue
+			}
+			ref := ma.AttributeQualifiedName()
+			if ref == "" {
+				ref = ma.AssociationQualifiedName()
+			}
+			if ref == "" {
+				continue
+			}
+			rights := ma.AccessRights()
+			newRights := rights
+			switch {
+			case rev.RevokeReadAll || readSet[ref]:
+				newRights = "None"
+			case (rev.RevokeWriteAll || writeSet[ref]) && rights == "ReadWrite":
+				newRights = "ReadOnly"
+			}
+			if newRights != rights {
+				ma.SetAccessRights(newRights)
+				ruleMod = true
+			}
+		}
+		if ruleMod {
+			modified++
+		}
+	}
+	if modified > 0 {
+		if err := b.persistDM(unitID, dm); err != nil {
+			return 0, err
+		}
+	}
+	return modified, nil
+}
+
+// RemoveEntityAccessRule removes the named module roles from an entity's access
+// rules: a rule left with no roles is dropped, one with remaining roles is kept
+// (with the role removed). Returns the number of rules modified. Mirrors legacy.
+func (b *Backend) RemoveEntityAccessRule(unitID model.ID, entityName string, roleNames []string) (int, error) {
+	if b.writer == nil {
+		return 0, fmt.Errorf("RemoveEntityAccessRule: not connected for writing")
+	}
+	dm, err := b.loadDomainModelGen(unitID)
+	if err != nil {
+		return 0, err
+	}
+	var ent *genDm.Entity
+	for _, el := range dm.EntitiesItems() {
+		if e, ok := el.(*genDm.Entity); ok && e.Name() == entityName {
+			ent = e
+			break
+		}
+	}
+	if ent == nil {
+		return 0, fmt.Errorf("RemoveEntityAccessRule: entity not found: %s", entityName)
+	}
+	removeSet := toStringSet(roleNames)
+	modified := 0
+	// Back-to-front so RemoveAccessRules(i) indices stay valid.
+	rules := ent.AccessRulesItems()
+	for i := len(rules) - 1; i >= 0; i-- {
+		rule, ok := rules[i].(*genDm.AccessRule)
+		if !ok {
+			continue
+		}
+		cur := rule.ModuleRolesQualifiedNames()
+		kept := make([]string, 0, len(cur))
+		for _, r := range cur {
+			if !removeSet[r] {
+				kept = append(kept, r)
+			}
+		}
+		if len(kept) == len(cur) {
+			continue // unchanged
+		}
+		modified++
+		if len(kept) == 0 {
+			ent.RemoveAccessRules(i)
+		} else {
+			rule.SetModuleRolesQualifiedNames(kept)
+		}
+	}
+	if modified > 0 {
+		if err := b.persistDM(unitID, dm); err != nil {
+			return 0, err
+		}
+	}
+	return modified, nil
+}
+
+// RemoveRoleFromAllEntities removes a single module role from every entity's access
+// rules in the domain model (dropping rules left role-less). Returns the number of
+// rules modified. Mirrors legacy.
+func (b *Backend) RemoveRoleFromAllEntities(unitID model.ID, roleName string) (int, error) {
+	if b.writer == nil {
+		return 0, fmt.Errorf("RemoveRoleFromAllEntities: not connected for writing")
+	}
+	dm, err := b.loadDomainModelGen(unitID)
+	if err != nil {
+		return 0, err
+	}
+	modified := 0
+	for _, el := range dm.EntitiesItems() {
+		ent, ok := el.(*genDm.Entity)
+		if !ok {
+			continue
+		}
+		rules := ent.AccessRulesItems()
+		for i := len(rules) - 1; i >= 0; i-- {
+			rule, ok := rules[i].(*genDm.AccessRule)
+			if !ok {
+				continue
+			}
+			cur := rule.ModuleRolesQualifiedNames()
+			kept := make([]string, 0, len(cur))
+			for _, r := range cur {
+				if r != roleName {
+					kept = append(kept, r)
+				}
+			}
+			if len(kept) == len(cur) {
+				continue
+			}
+			modified++
+			if len(kept) == 0 {
+				ent.RemoveAccessRules(i)
+			} else {
+				rule.SetModuleRolesQualifiedNames(kept)
+			}
+		}
+	}
+	if modified > 0 {
+		if err := b.persistDM(unitID, dm); err != nil {
+			return 0, err
+		}
+	}
+	return modified, nil
+}
+
+func toStringSet(xs []string) map[string]bool {
+	m := make(map[string]bool, len(xs))
+	for _, x := range xs {
+		m[x] = true
+	}
+	return m
 }
 
 // sameStringSet reports whether a and b contain the same elements (order-insensitive).
