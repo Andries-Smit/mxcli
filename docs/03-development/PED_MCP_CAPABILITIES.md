@@ -66,7 +66,7 @@ blank = absent, `—` = n/a). `cmd/mcpprobe -method tools/list` is the source.
 | `read_skill` | ✓ | Load a Maia skill. (Agent helper; not used.) |
 | `glob` | ✓ | List files in a virtual file domain. (Agent helper; not used.) |
 | `read_file` | ✓ | Read a file in a virtual file domain. (Agent helper; not used.) |
-| `write_file` | ✓ | Write Java/JS/CSS in a virtual file domain. (Potential alt to mounted-fs writes.) |
+| `write_file` | ✓ | Write Java/JS/CSS in a virtual file domain. **Intentionally not used** — these exist for Maia (the in-IDE agent with no disk access). Claude Code / mxcli run with direct filesystem access to the project, so source files are edited on disk directly; routing through the virtual FS would be pure overhead. Not a capability gap. |
 
 `initialize` instructs clients to first read the resource
 `mendix://studio-pro/system-prompt` (the Maia system prompt + PED contract).
