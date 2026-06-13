@@ -49,7 +49,10 @@ func (b *Backend) GetDomainModel(moduleID model.ID) (*domainmodel.DomainModel, e
 			return domainModelFromGen(u.Element, u.ContainerID), nil
 		}
 	}
-	return nil, nil
+	// Match the legacy contract: a missing domain model is an error, not (nil, nil).
+	// Callers (e.g. finalizeProgramExecution after a module drop) rely on the error
+	// to skip — returning (nil, nil) caused a nil-pointer panic downstream.
+	return nil, fmt.Errorf("domain model not found for module: %s", moduleID)
 }
 
 func domainModelFromGen(dm *genDm.DomainModel, containerID model.ID) *domainmodel.DomainModel {

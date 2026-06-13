@@ -353,8 +353,8 @@ func (e *Executor) finalizeProgramExecution() error {
 
 	for moduleID, moduleName := range e.cache.modifiedDomainModels {
 		dm, err := e.backend.GetDomainModel(moduleID)
-		if err != nil {
-			continue // module may not have a domain model
+		if err != nil || dm == nil {
+			continue // module was dropped, or has no domain model
 		}
 
 		count, err := e.backend.ReconcileMemberAccesses(dm.ID, moduleName)
