@@ -298,6 +298,15 @@ func execCreateEntity(ctx *ExecContext, s *ast.CreateEntityStmt) error {
 	}
 
 	if s.CreateOrModify && existingEntity != nil {
+		// If the entity being replaced was a view entity, its OQL source document is
+		// now orphaned — execCreateEntity only ever produces persistent/non-persistent
+		// entities, so converting a view entity here leaves the ViewEntitySourceDocument
+		// dangling (CE6786 "view entity document no longer linked to any view entity").
+		if existingEntity.Source == "DomainModels$OqlViewEntitySource" {
+			if err := ctx.Backend.DeleteViewEntitySourceDocumentByName(s.Name.Module, s.Name.Name); err != nil {
+				return mdlerrors.NewBackend("delete orphaned view entity source document", err)
+			}
+		}
 		// Update existing entity
 		entity.ID = existingEntity.ID
 		if err := ctx.Backend.UpdateEntity(dm.ID, entity); err != nil {
