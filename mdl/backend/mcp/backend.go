@@ -321,13 +321,25 @@ func (b *Backend) ListDomainModels() ([]*domainmodel.DomainModel, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(b.sessionModules) == 0 {
-		return local, nil
+	out := make([]*domainmodel.DomainModel, 0, len(local)+len(b.sessionModules))
+	// A module written this session must be reconstructed from Studio Pro's live
+	// model here too, with the SAME dirty routing GetDomainModel applies — otherwise
+	// the stale on-disk snapshot hides entities/associations created earlier in the
+	// same run. This is what made CREATE ASSOCIATION fail when its from/to entities
+	// were just created in an existing module: findEntity lists via this method, and
+	// it previously reconstructed only session-created modules, not dirty existing
+	// ones. Best-effort: keep the local copy if reconstruction fails.
+	for _, dm := range local {
+		if mod, merr := b.reader.GetModule(dm.ContainerID); merr == nil && b.dirty[mod.Name] {
+			if recon, rerr := b.reconstructDomainModel(mod.Name, dm.ContainerID); rerr == nil {
+				out = append(out, recon)
+				continue
+			}
+		}
+		out = append(out, dm)
 	}
-	// Append a live-reconstructed domain model for each session-created module, so
-	// entity references into a freshly created module (e.g. a microflow parameter
-	// or workflow context typed X.Foo) resolve in the same run. Best-effort.
-	out := append([]*domainmodel.DomainModel(nil), local...)
+	// Session-created modules have no on-disk domain model; reconstruct each so
+	// references into a freshly created module resolve in the same run.
 	for _, m := range b.sessionModules {
 		if dm, derr := b.reconstructDomainModelFromPED(m.Name, model.ID(sessionDMPrefix+m.Name), m.ID); derr == nil {
 			out = append(out, dm)
