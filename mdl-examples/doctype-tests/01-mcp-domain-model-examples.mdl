@@ -2,33 +2,36 @@
 -- MCP-Only Domain Model Examples — what the MCP backend can author
 -- ============================================================================
 --
--- Every statement in this file stays inside the MCP backend's authoring surface
--- (the Studio Pro embedded MCP server, "PED"). Run it with the MCP backend:
+-- Every statement here stays inside the MCP backend's authoring surface (the
+-- Studio Pro embedded MCP server, "PED"), verified by running this script against
+-- a live Studio Pro 11.11 with the MCP backend:
 --
 --   mxcli exec mdl-examples/doctype-tests/01-mcp-domain-model-examples.mdl \
---     -p app.mpr --mcp
+--     -p app.mpr --mcp http://localhost:7782/mcp
 --
--- Source of truth for what is in/out of scope:
---   mdl/backend/mcp/capabilities.yaml   (see also: mxcli mcp capabilities -p app.mpr --mcp)
+-- Source of truth: mdl/backend/mcp/capabilities.yaml
+--   (live view: mxcli mcp capabilities -p app.mpr --mcp http://localhost:7782/mcp)
 --
 -- IN scope (used below):
 --   - create module
 --   - create enumeration
---   - create [persistent | non-persistent] entity     (+ NOT NULL / UNIQUE / DEFAULT, enum attrs)
+--   - create persistent entity, with NOT NULL / UNIQUE validation rules (+ error messages)
 --   - create entity ... extends ...                    (generalization)
 --   - create association ... (reference, referenceset) WITHIN a single module
 --   - create view entity ... as <OQL>
 --   - alter entity ... add / rename attribute, set documentation
 --
--- OUT of scope — deliberately NOT used here, with reasons (capabilities.yaml):
---   - index (...)                       PED entity authoring does not cover indexes
+-- OUT of scope — NOT used here, with reasons (capabilities.yaml):
+--   - default values                    the entity slice doesn't author attribute defaults yet
+--                                        (PED's attribute object carries name/type only)
+--   - non-persistent entities           PED's entity constructor exposes no persistable flag
+--   - index (...)                       not built in the entity slice
 --   - alter entity ... modify attribute <type>   attribute_type_change: PED can't change a type in place
 --   - move entity / move enumeration    document_move: PED can't re-parent a document
 --   - cross-module associations         associations are authorable WITHIN a module
 --   - security (roles/grants), navigation        no PED write path
 --
--- This script creates only — it never DROPs or MOVEs, so the results stay in the
--- model for inspection in Studio Pro after the run.
+-- Create-only — no DROP/MOVE — so results stay in the model for inspection.
 --
 -- ============================================================================
 
@@ -71,12 +74,13 @@ create enumeration McpDm.PaymentMethod (
 /
 
 -- ############################################################################
--- PART 2: PERSISTENT ENTITIES (types + constraints, no indexes)
+-- PART 2: PERSISTENT ENTITIES (types + NOT NULL / UNIQUE validation rules)
 -- ############################################################################
 
 /**
  * Customer master record.
- * Demonstrates NOT NULL, UNIQUE and DEFAULT constraints plus an enum attribute.
+ * Demonstrates NOT NULL and UNIQUE validation rules (with error messages) plus
+ * an enumeration-typed attribute — all authorable over MCP.
  */
 @position(100, 100)
 create persistent entity McpDm.Customer (
@@ -89,13 +93,12 @@ create persistent entity McpDm.Customer (
   /** Phone number */
   Phone: string(50),
   /** Whether the customer is active */
-  IsActive: boolean default true
+  IsActive: boolean
 );
 /
 
 /**
- * Product catalog entry.
- * Demonstrates the common attribute types the MCP backend can author.
+ * Product catalog entry — the common attribute types the MCP backend authors.
  */
 @position(100, 300)
 create persistent entity McpDm.Product (
@@ -106,13 +109,13 @@ create persistent entity McpDm.Product (
   /** Full product description */
   Description1: string(2000),
   /** Unit price */
-  Price: decimal not null error 'Price is required' default 0.00,
+  Price: decimal,
   /** Current stock quantity (32-bit) */
-  Stock: integer default 0,
+  Stock: integer,
   /** Lifetime units produced (64-bit) */
-  TotalUnitsProduced: long default 0,
+  TotalUnitsProduced: long,
   /** Whether the product is available for sale */
-  IsActive: boolean default true,
+  IsActive: boolean,
   /** Release date (date only) */
   ReleaseDate: date,
   /** Creation timestamp */
@@ -121,8 +124,7 @@ create persistent entity McpDm.Product (
 /
 
 /**
- * Sales order header.
- * Uses enumeration-typed attributes for status and payment method.
+ * Sales order header — enumeration-typed status and payment method.
  */
 @position(400, 100)
 create persistent entity McpDm.SalesOrder (
@@ -135,34 +137,12 @@ create persistent entity McpDm.SalesOrder (
   /** Payment method */
   PaymentMethod: enumeration(McpDm.PaymentMethod),
   /** Total amount */
-  TotalAmount: decimal not null error 'Total is required' default 0.00
+  TotalAmount: decimal not null error 'Total is required'
 );
 /
 
 -- ############################################################################
--- PART 3: NON-PERSISTENT ENTITY
--- ############################################################################
-
-/**
- * Search criteria object passed to microflows (not stored in the database).
- */
-@position(400, 300)
-create non-persistent entity McpDm.SearchParameters (
-  /** Free-text search term */
-  SearchTerm: string(200),
-  /** Filter by status */
-  StatusFilter: enumeration(McpDm.OrderStatus),
-  /** Start of date range */
-  StartDate: datetime,
-  /** End of date range */
-  EndDate: datetime,
-  /** Include inactive records */
-  IncludeInactive: boolean default false
-);
-/
-
--- ############################################################################
--- PART 4: ASSOCIATIONS (within McpDm only)
+-- PART 3: ASSOCIATIONS (within McpDm only)
 -- ############################################################################
 
 /**
@@ -185,7 +165,7 @@ owner both;
 /
 
 -- ############################################################################
--- PART 5: ENTITY GENERALIZATION (extends)
+-- PART 4: ENTITY GENERALIZATION (extends)
 -- ############################################################################
 
 /**
@@ -196,7 +176,7 @@ create persistent entity McpDm.Attachment extends System.FileDocument (
   /** Description of the attachment */
   FileDescription: string(500),
   /** Whether the attachment is publicly accessible */
-  IsPublic: boolean default false
+  IsPublic: boolean
 );
 /
 
@@ -210,7 +190,7 @@ create persistent entity McpDm.Vehicle (
   /** Manufacturer */
   Make: string(100),
   /** Current mileage */
-  Mileage: long default 0
+  Mileage: long
 );
 /
 
@@ -222,13 +202,13 @@ create persistent entity McpDm.Truck extends McpDm.Vehicle (
   /** Maximum payload in kilograms */
   MaxPayload: decimal,
   /** Number of axles */
-  AxleCount: integer default 2
+  AxleCount: integer
 );
 /
 
 -- @version: 10.18+
 -- ############################################################################
--- PART 6: VIEW ENTITIES (OQL) — requires Mendix 10.18+
+-- PART 5: VIEW ENTITIES (OQL) — requires Mendix 10.18+
 -- ############################################################################
 
 /**
@@ -270,16 +250,16 @@ create view entity McpDm.CustomerOrderTotals (
 
 -- @version: any
 -- ############################################################################
--- PART 7: ALTER ENTITY (add / rename attribute, documentation)
+-- PART 6: ALTER ENTITY (add / rename attribute, documentation)
 -- ############################################################################
 --
--- Only the ALTER actions the MCP backend supports are used here:
---   add attribute, rename attribute, set documentation/comment.
--- (modify attribute <type>, add index, and move are intentionally absent.)
+-- Only the ALTER actions the MCP backend supports are used here: add attribute
+-- (without defaults or NOT NULL/UNIQUE — validation rules on ALTER are a future
+-- slice), rename attribute, set documentation/comment.
 
--- Add attributes to an existing entity.
+-- Add plain attributes to an existing entity.
 alter entity McpDm.Customer
-  add attribute LoyaltyPoints: integer default 0
+  add attribute LoyaltyPoints: integer
   add attribute PreferredContact: string(50);
 
 -- Rename an attribute (non-destructive — preserves the attribute identity).
@@ -294,7 +274,7 @@ alter entity McpDm.Customer
   set comment 'Customer master, MCP-authored.';
 
 -- ############################################################################
--- PART 8: VERIFY (reads always work over MCP — they delegate to the local .mpr)
+-- PART 7: VERIFY (reads always work over MCP — they delegate to the local .mpr)
 -- ############################################################################
 
 show entities in McpDm;
