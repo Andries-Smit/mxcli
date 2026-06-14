@@ -10,9 +10,11 @@ import (
 	"github.com/mendixlabs/mxcli/modelsdk/codec"
 	"github.com/mendixlabs/mxcli/modelsdk/element"
 	genDT "github.com/mendixlabs/mxcli/modelsdk/gen/datatypes"
+	genDom "github.com/mendixlabs/mxcli/modelsdk/gen/domainmodels"
 	genMf "github.com/mendixlabs/mxcli/modelsdk/gen/microflows"
 	genTexts "github.com/mendixlabs/mxcli/modelsdk/gen/texts"
 	mmpr "github.com/mendixlabs/mxcli/modelsdk/mpr"
+	"github.com/mendixlabs/mxcli/modelsdk/property"
 	"github.com/mendixlabs/mxcli/sdk/microflows"
 )
 
@@ -48,6 +50,65 @@ func init() {
 	})
 	codec.RegisterListMarker("Microflows$MicroflowCallParameterMapping", 2)
 	codec.RegisterListMarker("Microflows$NanoflowCallParameterMapping", 2)
+	// A JavaActionCallAction always serializes QueueSettings as null; its
+	// ParameterMappings list empties as marker 2; a StringTemplateParameterValue's
+	// TypedTemplate empties its Arguments list as marker 2 (legacy writer).
+	codec.RegisterTypeDefaults("Microflows$JavaActionCallAction", codec.TypeDefaults{
+		NullFields: []string{"QueueSettings"},
+	})
+	codec.RegisterListMarker("Microflows$JavaActionParameterMapping", 2)
+	codec.RegisterTypeDefaults("Microflows$TypedTemplate", codec.TypeDefaults{
+		MandatoryListMarkers: map[string]int32{"Arguments": 2},
+	})
+	// A ListOperationAction's Sort operation reuses the same Microflows$SortingsList
+	// envelope as a retrieve (registered above: empty "Sortings" = marker 2,
+	// RetrieveSorting child marker = 2). Studio Pro tolerates the inner Sortings
+	// marker (2 vs the legacy list-op writer's 3 — see the CE0463 tolerance note),
+	// so no additional registration is needed here.
+	// A DomainModels$IndirectEntityRef's "Steps" list uses marker 2.
+	codec.RegisterListMarker("DomainModels$EntityRefStep", 2)
+	// A ValidationFeedbackAction's FeedbackTemplate is a Microflows$TextTemplate
+	// whose "Parameters" list empties as marker 2 (legacy serializeTextTemplate);
+	// the nested template-parameter children themselves use marker 3 (the
+	// encoder default) when present.
+	codec.RegisterTypeDefaults("Microflows$TextTemplate", codec.TypeDefaults{
+		MandatoryListMarkers: map[string]int32{"Parameters": 2},
+	})
+	// NOTE: do NOT globally register a marker for Texts$Text's "Items" list — an
+	// empty Texts$Text (e.g. every microflow's ConcurrencyErrorMessage) serializes
+	// with the default marker 3, and a global override breaks write-parity for all
+	// microflows. The ShowMessage/ValidationFeedback TextTemplate's nested Texts$Text
+	// marker is cosmetic (CE0463-tolerated) so we leave it at the default.
+	// REST call sub-elements. The HttpConfiguration's HttpHeaderEntries list and a
+	// StringTemplate's Parameters list both empty as marker 2 (legacy writer); their
+	// child element $Types use marker 2 too. A ShowPage FormSettings' ParameterMappings
+	// likewise empties as marker 2. These trees are built directly with the verified
+	// storage keys (newElem/addStr/...), so register the per-$Type list markers here.
+	codec.RegisterListMarker("Microflows$HttpHeaderEntry", 2)
+	codec.RegisterListMarker("Microflows$TemplateParameter", 2)
+	codec.RegisterListMarker("Forms$PageParameterMapping", 2)
+	codec.RegisterTypeDefaults("Microflows$HttpConfiguration", codec.TypeDefaults{
+		MandatoryListMarkers: map[string]int32{"HttpHeaderEntries": 2},
+	})
+	codec.RegisterTypeDefaults("Microflows$StringTemplate", codec.TypeDefaults{
+		MandatoryListMarkers: map[string]int32{"Parameters": 2},
+	})
+	// A REST call always serializes ProxyConfiguration as null (legacy
+	// serializeRestCallAction). A ResultHandling serializes ImportMappingCall as null
+	// unless the result is mapped — for the mapped case the field is set explicitly,
+	// so the NullField default only fires when it was not emitted.
+	codec.RegisterTypeDefaults("Microflows$RestCallAction", codec.TypeDefaults{
+		NullFields: []string{"ProxyConfiguration"},
+	})
+	codec.RegisterTypeDefaults("Microflows$ResultHandling", codec.TypeDefaults{
+		NullFields: []string{"ImportMappingCall"},
+	})
+	// A ShowPage FormSettings always carries a TitleOverride (empty Microflows$TextTemplate)
+	// and each PageParameterMapping a Variable (empty Forms$PageVariable); both are built
+	// directly. FormSettings' ParameterMappings list empties as marker 2.
+	codec.RegisterTypeDefaults("Forms$FormSettings", codec.TypeDefaults{
+		MandatoryListMarkers: map[string]int32{"ParameterMappings": 2},
+	})
 }
 
 // majorVersion returns the project's Mendix major version (for version-gated BSON).
@@ -182,6 +243,15 @@ func microflowObjectToGen(obj microflows.MicroflowObject) element.Element {
 		g.SetDocumentation("")
 		g.SetRelativeMiddlePoint(pointStr(o.Position))
 		g.SetReturnValue(o.ReturnValue)
+		g.SetSize(sizeStr(o.Size))
+		return g
+	case *microflows.ErrorEvent:
+		// `raise error` in a custom error handler. Dropping it (the old default)
+		// left the error-handler SequenceFlow pointing at a non-existent object →
+		// Studio Pro/mx crash "KeyNotFoundException" in LoadChildUnits.
+		g := genMf.NewErrorEvent()
+		g.SetID(element.ID(o.ID))
+		g.SetRelativeMiddlePoint(pointStr(o.Position))
 		g.SetSize(sizeStr(o.Size))
 		return g
 	case *microflows.ActionActivity:
@@ -340,6 +410,28 @@ func microflowActionToGen(action microflows.MicroflowAction) element.Element {
 		g.SetOutputVariableName(a.ResultVariableName) // BSON key "ResultVariableName"
 		g.SetUseReturnVariable(a.UseReturnVariable)
 		return g
+	case *microflows.JavaActionCallAction:
+		// Built directly: the gen JavaActionCallAction binds the wrong BSON keys
+		// (JavaActionQualifiedName/OutputVariableName) vs the verified storage keys
+		// (JavaAction/ResultVariableName). Mirrors the legacy serializer.
+		g := newElem("Microflows$JavaActionCallAction", string(a.ID))
+		addStr(g, "ErrorHandlingType", orDefault(string(a.ErrorHandlingType), "Rollback"))
+		addStr(g, "JavaAction", a.JavaAction)
+		addStr(g, "ResultVariableName", a.ResultVariableName)
+		addBool(g, "UseReturnVariable", a.UseReturnVariable)
+		mappings := make([]element.Element, 0, len(a.ParameterMappings))
+		for _, pm := range a.ParameterMappings {
+			m := newElem("Microflows$JavaActionParameterMapping", string(pm.ID))
+			addStr(m, "Parameter", pm.Parameter)
+			if pm.Value != nil {
+				if v := codeActionParameterValueToGen(pm.Value); v != nil {
+					addPart(m, "Value", v)
+				}
+			}
+			mappings = append(mappings, m)
+		}
+		addPartList(g, "ParameterMappings", mappings)
+		return g
 	case *microflows.LogMessageAction:
 		g := genMf.NewLogMessageAction()
 		g.SetID(element.ID(a.ID))
@@ -388,9 +480,350 @@ func microflowActionToGen(action microflows.MicroflowAction) element.Element {
 			g.SetNanoflowCall(nc)
 		}
 		return g
+	case *microflows.CastAction:
+		// Storage $Type Microflows$CastAction; output bound to "VariableName".
+		g := genMf.NewCastAction()
+		g.SetID(element.ID(a.ID))
+		g.SetErrorHandlingType("Rollback")
+		g.SetOutputVariableName(a.OutputVariable)
+		return g
+	case *microflows.AggregateListAction:
+		// Storage $Type Microflows$AggregateAction. Input bound to
+		// "AggregateVariableName", output to "VariableName"; Attribute is a
+		// by-name ref. Expression mode is mutually exclusive with Attribute.
+		g := genMf.NewAggregateListAction()
+		g.SetID(element.ID(a.ID))
+		g.SetErrorHandlingType("Rollback")
+		g.SetAggregateFunction(string(a.Function))
+		g.SetInputListVariableName(a.InputVariable)
+		if a.UseExpression {
+			g.SetUseExpression(true)
+			g.SetExpression(a.Expression)
+		} else if a.AttributeQualifiedName != "" {
+			g.SetAttributeQualifiedName(a.AttributeQualifiedName)
+		}
+		g.SetOutputVariableName(a.OutputVariable)
+		return g
+	case *microflows.CreateListAction:
+		// Storage $Type Microflows$CreateListAction; output bound to "VariableName".
+		g := genMf.NewCreateListAction()
+		g.SetID(element.ID(a.ID))
+		g.SetErrorHandlingType("Rollback")
+		if a.EntityQualifiedName != "" {
+			g.SetEntityQualifiedName(a.EntityQualifiedName)
+		}
+		g.SetOutputVariableName(a.OutputVariable)
+		return g
+	case *microflows.ChangeListAction:
+		// Storage $Type Microflows$ChangeListAction. Value is omitted by the
+		// legacy writer when empty (e.g. Clear); the gen Set only marks dirty
+		// when called, so guard it the same way.
+		g := genMf.NewChangeListAction()
+		g.SetID(element.ID(a.ID))
+		g.SetErrorHandlingType("Rollback")
+		g.SetChangeVariableName(a.ChangeVariable)
+		g.SetType(string(a.Type))
+		if a.Value != "" {
+			g.SetValue(a.Value)
+		}
+		return g
+	case *microflows.ValidationFeedbackAction:
+		// Storage $Type Microflows$ValidationFeedbackAction. Object bound to
+		// "ValidationVariableName"; FeedbackTemplate is a Microflows$TextTemplate
+		// (NOT a StringTemplate) with a nested Texts$Text. Attribute/Association
+		// are mutually exclusive by-name refs; the legacy writer emits both keys
+		// (one empty) but only the populated one is required for validity.
+		g := genMf.NewValidationFeedbackAction()
+		g.SetID(element.ID(a.ID))
+		g.SetErrorHandlingType(orDefault(string(a.ErrorHandlingType), "Rollback"))
+		g.SetObjectVariableName(a.ObjectVariable)
+		if a.AssociationName != "" {
+			g.SetAssociationQualifiedName(a.AssociationName)
+		} else if a.AttributeName != "" {
+			g.SetAttributeQualifiedName(a.AttributeName)
+		}
+		if a.Template != nil {
+			g.SetFeedbackTemplate(textTemplateToGen(a.Template, a.TemplateParameters))
+		}
+		return g
+	case *microflows.ListOperationAction:
+		// Storage $Type Microflows$ListOperationsAction. The operation is bound
+		// to "NewOperation" and the output to "ResultVariableName" — the gen
+		// ListOperationAction uses the wrong storage keys ("Operation"/
+		// "VariableName"), so this action and its operation sub-elements are
+		// built directly with the verified legacy BSON keys.
+		e := newElem("Microflows$ListOperationsAction", string(a.ID))
+		addStr(e, "ErrorHandlingType", "Rollback")
+		if a.Operation != nil {
+			addPart(e, "NewOperation", listOperationToGen(a.Operation))
+		}
+		addStr(e, "ResultVariableName", a.OutputVariable)
+		return e
+	case *microflows.ShowPageAction:
+		// Storage $Type Microflows$ShowFormAction ("Form" = legacy term for "Page").
+		// The gen ShowPageAction's FormSettings/PageParameterMapping/PageVariable
+		// children are Forms$ types with no gen constructors, so the FormSettings tree
+		// is built directly with the verified legacy storage keys.
+		g := genMf.NewShowPageAction()
+		g.SetID(element.ID(a.ID))
+		g.SetErrorHandlingType(orDefault(string(a.ErrorHandlingType), "Rollback"))
+		g.SetPageSettings(showPageFormSettingsToGen(a))
+		g.SetNumberOfPagesToClose("")
+		return g
+	case *microflows.ClosePageAction:
+		// Storage $Type Microflows$CloseFormAction. Legacy emits only
+		// ErrorHandlingType + NumberOfPages (int32); the gen's extra
+		// NumberOfPagesToClose string is left unset (not dirty → not emitted).
+		g := genMf.NewCloseFormAction()
+		g.SetID(element.ID(a.ID))
+		g.SetErrorHandlingType(orDefault(string(a.ErrorHandlingType), "Rollback"))
+		g.SetNumberOfPages(int32(a.NumberOfPages))
+		return g
+	case *microflows.ShowHomePageAction:
+		// Storage $Type Microflows$ShowHomePageAction. Legacy emits only
+		// ErrorHandlingType (always "Rollback").
+		g := genMf.NewShowHomePageAction()
+		g.SetID(element.ID(a.ID))
+		g.SetErrorHandlingType("Rollback")
+		return g
+	case *microflows.ShowMessageAction:
+		// Storage $Type Microflows$ShowMessageAction. Template is a
+		// Microflows$TextTemplate (nested Texts$Text) — the same shape as
+		// ValidationFeedback's FeedbackTemplate, so reuse textTemplateToGen.
+		g := genMf.NewShowMessageAction()
+		g.SetID(element.ID(a.ID))
+		g.SetErrorHandlingType(orDefault(string(a.ErrorHandlingType), "Rollback"))
+		g.SetType(string(a.Type))
+		g.SetBlocking(a.Blocking)
+		if a.Template != nil {
+			g.SetTemplate(textTemplateToGen(a.Template, a.TemplateParameters))
+		}
+		return g
+	case *microflows.RestCallAction:
+		// Storage $Type Microflows$RestCallAction. The gen constructor's keys match
+		// for the action level, but several sub-elements diverge from the verified
+		// legacy storage names (HttpConfiguration's HttpHeaderEntries/
+		// HttpAuthenticationPassword/UseHttpAuthentication; ImportMappingCall's
+		// ReturnValueMapping; StringTemplate's Microflows$TemplateParameter children),
+		// so the whole subtree is built directly. Mirrors serializeRestCallAction.
+		return restCallActionToGen(a)
 	default:
 		return nil // not yet supported (added in later groups)
 	}
+}
+
+// newElem builds a bare codec element with the given storage $Type and ID,
+// fresh-generating the ID when empty. Used where the gen type's property keys
+// diverge from Mendix's verified storage names (the list-operation family),
+// so the BSON keys are set explicitly via addStr/addPart/addPartList.
+// codeActionParameterValueToGen builds a java/javascript-action parameter value
+// (the Value child of a JavaActionParameterMapping). Mirrors the legacy
+// serializeCodeActionParameterValue field-for-field.
+func codeActionParameterValueToGen(v microflows.CodeActionParameterValue) element.Element {
+	switch val := v.(type) {
+	case *microflows.StringTemplateParameterValue:
+		g := newElem("Microflows$StringTemplateParameterValue", string(val.ID))
+		if val.TypedTemplate != nil {
+			tt := newElem("Microflows$TypedTemplate", string(val.TypedTemplate.ID))
+			addPartList(tt, "Arguments", nil) // empty (marker 2, registered in init)
+			addStr(tt, "Text", val.TypedTemplate.Text)
+			addPart(g, "TypedTemplate", tt)
+		}
+		return g
+	case *microflows.ExpressionBasedCodeActionParameterValue:
+		g := newElem("Microflows$ExpressionBasedCodeActionParameterValue", string(val.ID))
+		addStr(g, "Expression", val.Expression)
+		return g
+	case *microflows.BasicCodeActionParameterValue:
+		g := newElem("Microflows$BasicCodeActionParameterValue", string(val.ID))
+		addStr(g, "Argument", val.Argument)
+		return g
+	case *microflows.MicroflowParameterValue:
+		g := newElem("Microflows$MicroflowParameterValue", string(val.ID))
+		addStr(g, "Microflow", val.Microflow)
+		return g
+	case *microflows.EntityTypeCodeActionParameterValue:
+		g := newElem("Microflows$EntityTypeCodeActionParameterValue", string(val.ID))
+		addStr(g, "Entity", val.Entity)
+		return g
+	}
+	return nil
+}
+
+func newElem(typeName, id string) *element.Base {
+	b := &element.Base{}
+	b.SetTypeName(typeName)
+	if id == "" {
+		id = mmpr.GenerateID()
+	}
+	b.SetID(element.ID(id))
+	return b
+}
+
+// addStr adds a dirty string property (BSON key = name) to a bare element.
+func addStr(b *element.Base, name, val string) {
+	p := property.NewPrimitive[string](name, property.DecodeString)
+	b.AddProperty(p, uint(len(b.Properties())))
+	p.Set(val)
+}
+
+// addBool adds a dirty bool property (BSON key = name) to a bare element.
+func addBool(b *element.Base, name string, val bool) {
+	p := property.NewPrimitive[bool](name, property.DecodeBool)
+	b.AddProperty(p, uint(len(b.Properties())))
+	p.Set(val)
+}
+
+// addInt32 adds a dirty int32 property (BSON key = name) to a bare element.
+func addInt32(b *element.Base, name string, val int32) {
+	p := property.NewPrimitive[int32](name, property.DecodeInt32)
+	b.AddProperty(p, uint(len(b.Properties())))
+	p.Set(val)
+}
+
+// addPart adds a dirty single-child property (BSON key = name).
+func addPart(b *element.Base, name string, child element.Element) {
+	p := property.NewPart[element.Element](name)
+	b.AddProperty(p, uint(len(b.Properties())))
+	p.Set(child)
+}
+
+// addPartList adds a dirty child-list property (BSON key = name). The encoder
+// emits the typed-array marker (registered per child $Type) plus each child.
+func addPartList(b *element.Base, name string, children []element.Element) {
+	p := property.NewPartList[element.Element](name)
+	b.AddProperty(p, uint(len(b.Properties())))
+	for _, c := range children {
+		p.Append(c)
+	}
+}
+
+// listOperationToGen builds a ListOperation sub-element with the verified legacy
+// storage names: ListName / SecondListOrObjectName (the gen types use the wrong
+// keys ListVariableName / SecondListOrObjectVariableName). Mirrors
+// sdk/mpr.serializeListOperation field-for-field.
+func listOperationToGen(op microflows.ListOperation) element.Element {
+	switch o := op.(type) {
+	case *microflows.HeadOperation:
+		e := newElem("Microflows$Head", string(o.ID))
+		addStr(e, "ListName", o.ListVariable)
+		return e
+	case *microflows.TailOperation:
+		e := newElem("Microflows$Tail", string(o.ID))
+		addStr(e, "ListName", o.ListVariable)
+		return e
+	case *microflows.FindOperation:
+		e := newElem("Microflows$FindByExpression", string(o.ID))
+		addStr(e, "Expression", o.Expression)
+		addStr(e, "ListName", o.ListVariable)
+		return e
+	case *microflows.FilterOperation:
+		e := newElem("Microflows$FilterByExpression", string(o.ID))
+		addStr(e, "Expression", o.Expression)
+		addStr(e, "ListName", o.ListVariable)
+		return e
+	case *microflows.FindByAttributeOperation:
+		e := newElem("Microflows$Find", string(o.ID))
+		addStr(e, "Association", o.Association)
+		addStr(e, "Attribute", o.Attribute)
+		addStr(e, "Expression", o.Expression)
+		addStr(e, "ListName", o.ListVariable)
+		return e
+	case *microflows.FilterByAttributeOperation:
+		e := newElem("Microflows$Filter", string(o.ID))
+		addStr(e, "Association", o.Association)
+		addStr(e, "Attribute", o.Attribute)
+		addStr(e, "Expression", o.Expression)
+		addStr(e, "ListName", o.ListVariable)
+		return e
+	case *microflows.SortOperation:
+		e := newElem("Microflows$Sort", string(o.ID))
+		addStr(e, "ListName", o.ListVariable)
+		// Sortings is a single Microflows$SortingsList whose own "Sortings" list
+		// holds the RetrieveSorting items (marker 2, registered in init).
+		sl := newElem("Microflows$SortingsList", "")
+		items := make([]element.Element, 0, len(o.Sorting))
+		for _, it := range o.Sorting {
+			items = append(items, sortItemToGen(it))
+		}
+		addPartList(sl, "Sortings", items)
+		addPart(e, "Sortings", sl)
+		return e
+	case *microflows.UnionOperation:
+		e := newElem("Microflows$Union", string(o.ID))
+		addStr(e, "ListName", o.ListVariable1)
+		addStr(e, "SecondListOrObjectName", o.ListVariable2)
+		return e
+	case *microflows.IntersectOperation:
+		e := newElem("Microflows$Intersect", string(o.ID))
+		addStr(e, "ListName", o.ListVariable1)
+		addStr(e, "SecondListOrObjectName", o.ListVariable2)
+		return e
+	case *microflows.SubtractOperation:
+		e := newElem("Microflows$Subtract", string(o.ID))
+		addStr(e, "ListName", o.ListVariable1)
+		addStr(e, "SecondListOrObjectName", o.ListVariable2)
+		return e
+	case *microflows.ContainsOperation:
+		e := newElem("Microflows$Contains", string(o.ID))
+		addStr(e, "ListName", o.ListVariable)
+		addStr(e, "SecondListOrObjectName", o.ObjectVariable)
+		return e
+	case *microflows.EqualsOperation:
+		e := newElem("Microflows$Equals", string(o.ID))
+		addStr(e, "ListName", o.ListVariable1)
+		addStr(e, "SecondListOrObjectName", o.ListVariable2)
+		return e
+	case *microflows.ListRangeOperation:
+		// Mirrors legacy parser key "Microflows$ListRange". No legacy writer
+		// case existed; the example MDL does not exercise it, so emit the verified
+		// storage name with ListName + range expressions.
+		e := newElem("Microflows$ListRange", string(o.ID))
+		addStr(e, "ListName", o.ListVariable)
+		if o.LimitExpression != "" {
+			addStr(e, "LimitExpression", o.LimitExpression)
+		}
+		if o.OffsetExpression != "" {
+			addStr(e, "OffsetExpression", o.OffsetExpression)
+		}
+		return e
+	default:
+		return nil
+	}
+}
+
+// sortItemToGen builds a Microflows$RetrieveSorting item with a nested
+// DomainModels$AttributeRef. Mirrors the SortOperation branch of
+// sdk/mpr.serializeListOperation.
+func sortItemToGen(item *microflows.SortItem) element.Element {
+	e := newElem("Microflows$RetrieveSorting", string(item.ID))
+	addStr(e, "SortOrder", string(item.Direction))
+	if item.AttributeQualifiedName != "" {
+		ref := genDom.NewAttributeRef()
+		assignID(ref)
+		ref.SetAttributeQualifiedName(item.AttributeQualifiedName)
+		if len(item.EntityRefSteps) > 0 {
+			ref.SetEntityRef(entityRefToGen(item.EntityRefSteps))
+		}
+		addPart(e, "AttributeRef", ref)
+	}
+	return e
+}
+
+// entityRefToGen builds a DomainModels$IndirectEntityRef from association steps.
+// Mirrors sdk/mpr.serializeIndirectEntityRef; the gen Steps list and EntityRefStep
+// Association/DestinationEntity keys already match the verified storage names.
+func entityRefToGen(steps []microflows.EntityRefStep) element.Element {
+	ref := genDom.NewIndirectEntityRef()
+	assignID(ref)
+	for _, s := range steps {
+		st := genDom.NewEntityRefStep()
+		assignID(st)
+		st.SetAssociationQualifiedName(s.Association)
+		st.SetDestinationEntityQualifiedName(s.DestinationEntity)
+		ref.AddSteps(st)
+	}
+	return ref
 }
 
 // splitConditionToGen builds an exclusive-split condition. Rule conditions are a
@@ -411,6 +844,18 @@ func splitConditionToGen(sc microflows.SplitCondition) element.Element {
 // EnumerationCase with Value = the expression ("true"/"false") — Studio Pro has
 // never recognised Microflows$ExpressionCase (verified vs legacy). Default NoCase.
 func caseValueToGen(cv microflows.CaseValue) element.Element {
+	// The visitor sometimes yields value receivers; normalise to pointers so the
+	// dispatch below handles each case once (mirrors the legacy writer). Without
+	// this, a value-typed EnumerationCase fell through to NoCase — an enum `case`
+	// split lost all its branch values (CE0079/CE0773 in Studio Pro).
+	switch c := cv.(type) {
+	case microflows.EnumerationCase:
+		cv = &c
+	case microflows.ExpressionCase:
+		cv = &c
+	case microflows.NoCase:
+		cv = &c
+	}
 	switch c := cv.(type) {
 	case *microflows.EnumerationCase:
 		g := genMf.NewEnumerationCase()
@@ -554,6 +999,245 @@ func stringTemplateToGen(text *model.Text, params []string) *genMf.StringTemplat
 	return st
 }
 
+// textTemplateToGen builds a Microflows$TextTemplate (a ValidationFeedbackAction's
+// FeedbackTemplate): a nested Texts$Text holding the translations, plus one
+// TemplateParameter per {1},{2},… expression. Distinct from StringTemplate, whose
+// Text is a scalar — here Text is a nested Texts$Text element. Mirrors
+// sdk/mpr.serializeTextTemplate. Empty Parameters emits as marker 2 via the
+// registered TextTemplate default.
+func textTemplateToGen(text *model.Text, params []string) *genMf.TextTemplate {
+	tt := genMf.NewTextTemplate()
+	assignID(tt)
+	txt := genTexts.NewText()
+	assignID(txt)
+	if text != nil && len(text.Translations) > 0 {
+		langs := make([]string, 0, len(text.Translations))
+		for lang := range text.Translations {
+			langs = append(langs, lang)
+		}
+		sort.Strings(langs)
+		for _, lang := range langs {
+			tr := genTexts.NewTranslation()
+			assignID(tr)
+			tr.SetLanguageCode(lang)
+			tr.SetText(text.Translations[lang])
+			txt.AddTranslations(tr)
+		}
+	}
+	tt.SetText(txt)
+	for _, expr := range params {
+		tp := genMf.NewTemplateArgument()
+		assignID(tp)
+		tp.SetExpression(expr)
+		tt.AddArguments(tp)
+	}
+	return tt
+}
+
+// showPageFormSettingsToGen builds a ShowPage's Forms$FormSettings subtree directly:
+// Form (page by-name ref), ParameterMappings (Forms$PageParameterMapping list,
+// marker 2) and a TitleOverride (empty Microflows$TextTemplate, reusing the widget
+// helper). Mirrors serializeMicroflowAction's ShowFormAction case; the Forms$ types
+// have no gen constructors.
+func showPageFormSettingsToGen(a *microflows.ShowPageAction) element.Element {
+	fs := newElem("Forms$FormSettings", string(a.FormSettingsID))
+	addStr(fs, "Form", a.PageName) // BY_NAME_REFERENCE: page qualified name
+	mappings := make([]element.Element, 0, len(a.PageParameterMappings))
+	for _, pm := range a.PageParameterMappings {
+		m := newElem("Forms$PageParameterMapping", string(pm.ID))
+		addStr(m, "Argument", pm.Argument)
+		addStr(m, "Parameter", pm.Parameter) // BY_NAME_REFERENCE
+		addPart(m, "Variable", emptyPageVariable())
+		mappings = append(mappings, m)
+	}
+	addPartList(fs, "ParameterMappings", mappings)
+	addPart(fs, "TitleOverride", emptyTextTemplateToGen())
+	return fs
+}
+
+// emptyPageVariable builds an empty Forms$PageVariable (the Variable on a
+// PageParameterMapping). Mirrors the legacy emptyPageVariable().
+func emptyPageVariable() element.Element {
+	v := newElem("Forms$PageVariable", "")
+	addStr(v, "PageParameter", "")
+	addStr(v, "SnippetParameter", "")
+	addBool(v, "UseAllPages", false)
+	addStr(v, "Widget", "")
+	return v
+}
+
+// restCallActionToGen builds a Microflows$RestCallAction subtree directly, mirroring
+// sdk/mpr.serializeRestCallAction field-for-field. The gen sub-element types diverge
+// from the verified legacy storage keys, so the whole tree uses newElem/addStr/etc.
+func restCallActionToGen(a *microflows.RestCallAction) element.Element {
+	e := newElem("Microflows$RestCallAction", string(a.ID))
+	addStr(e, "ErrorHandlingType", orDefault(string(a.ErrorHandlingType), "Rollback"))
+	addStr(e, "ErrorResultHandlingType", "HttpResponse")
+	if a.HttpConfiguration != nil {
+		addPart(e, "HttpConfiguration", httpConfigToGen(a.HttpConfiguration))
+	}
+	// ProxyConfiguration is emitted as null via the registered NullField default.
+	if a.RequestHandling != nil {
+		if rh := restRequestHandlingToGen(a.RequestHandling); rh != nil {
+			addPart(e, "RequestHandling", rh)
+		}
+	}
+	addStr(e, "RequestHandlingType", "Custom")
+	addStr(e, "RequestProxyType", "DefaultProxy")
+	resultHandlingType := "String"
+	if a.ResultHandling != nil {
+		addPart(e, "ResultHandling", restResultHandlingToGen(a.ResultHandling, a.OutputVariable))
+		switch a.ResultHandling.(type) {
+		case *microflows.ResultHandlingString:
+			resultHandlingType = "String"
+		case *microflows.ResultHandlingHttpResponse:
+			resultHandlingType = "HttpResponse"
+		case *microflows.ResultHandlingMapping:
+			resultHandlingType = "Mapping"
+		case *microflows.ResultHandlingNone:
+			resultHandlingType = "None"
+		}
+	}
+	addStr(e, "ResultHandlingType", resultHandlingType)
+	addStr(e, "TimeOutExpression", orDefault(a.TimeoutExpression, "300"))
+	addBool(e, "UseRequestTimeOut", true)
+	return e
+}
+
+// httpConfigToGen builds a Microflows$HttpConfiguration with the verified legacy
+// storage keys (HttpHeaderEntries / HttpAuthenticationPassword / UseHttpAuthentication
+// — all of which diverge from the gen constructor's keys). Empty HttpHeaderEntries
+// emits as marker 2 via the registered default. Mirrors serializeRestCallAction's
+// HttpConfiguration block.
+func httpConfigToGen(c *microflows.HttpConfiguration) element.Element {
+	hc := newElem("Microflows$HttpConfiguration", string(c.ID))
+	addStr(hc, "ClientCertificate", "")
+	addStr(hc, "CustomLocation", "")
+	if c.LocationTemplate != "" {
+		addPart(hc, "CustomLocationTemplate", stringTemplateElem(c.LocationTemplate, c.LocationParams))
+	}
+	addStr(hc, "HttpAuthenticationPassword", c.Password)
+	addStr(hc, "HttpAuthenticationUserName", c.Username)
+	headers := make([]element.Element, 0, len(c.CustomHeaders))
+	for _, h := range c.CustomHeaders {
+		he := newElem("Microflows$HttpHeaderEntry", string(h.ID))
+		addStr(he, "Key", h.Name)
+		addStr(he, "Value", h.Value)
+		headers = append(headers, he)
+	}
+	addPartList(hc, "HttpHeaderEntries", headers)
+	addStr(hc, "HttpMethod", string(c.HttpMethod))
+	addBool(hc, "OverrideLocation", true)
+	addBool(hc, "UseHttpAuthentication", c.UseAuthentication)
+	return hc
+}
+
+// stringTemplateElem builds a Microflows$StringTemplate with a scalar Text plus a
+// Parameters list of Microflows$TemplateParameter (Expression) children — the shape
+// the REST writer uses for the location/custom-request templates (distinct from the
+// StringTemplate gen type which uses TemplateArgument children). Empty Parameters
+// emits as marker 2 via the registered default.
+func stringTemplateElem(text string, params []string) element.Element {
+	st := newElem("Microflows$StringTemplate", "")
+	addStr(st, "Text", text)
+	if len(params) > 0 {
+		items := make([]element.Element, 0, len(params))
+		for _, p := range params {
+			tp := newElem("Microflows$TemplateParameter", "")
+			addStr(tp, "Expression", p)
+			items = append(items, tp)
+		}
+		addPartList(st, "Parameters", items)
+	}
+	return st
+}
+
+// restRequestHandlingToGen builds a REST RequestHandling sub-element. Mirrors
+// serializeRestRequestHandling (Custom/Mapping/Simple).
+func restRequestHandlingToGen(rh microflows.RequestHandling) element.Element {
+	switch h := rh.(type) {
+	case *microflows.CustomRequestHandling:
+		e := newElem("Microflows$CustomRequestHandling", string(h.ID))
+		addPart(e, "Template", stringTemplateElem(h.Template, h.TemplateParams))
+		return e
+	case *microflows.MappingRequestHandling:
+		e := newElem("Microflows$MappingRequestHandling", string(h.ID))
+		addStr(e, "MappingId", string(h.MappingID))
+		addStr(e, "ContentType", h.ContentType)
+		addStr(e, "ParameterVariable", h.ParameterVariable)
+		return e
+	case *microflows.SimpleRequestHandling:
+		return newElem("Microflows$SimpleRequestHandling", string(h.ID))
+	default:
+		return nil
+	}
+}
+
+// restResultHandlingToGen builds a REST ResultHandling sub-element. Mirrors
+// serializeRestResultHandling. The Mapping case's ImportMappingCall uses the verified
+// legacy key ReturnValueMapping (the gen ImportMappingCall uses "Mapping"); for the
+// non-mapping cases ImportMappingCall is emitted as null via the registered default.
+func restResultHandlingToGen(rh microflows.ResultHandling, outputVar string) element.Element {
+	switch h := rh.(type) {
+	case *microflows.ResultHandlingString:
+		e := newElem("Microflows$ResultHandling", string(h.ID))
+		addBool(e, "Bind", outputVar != "")
+		addStr(e, "ResultVariableName", outputVar)
+		addPart(e, "VariableType", newElem("DataTypes$StringType", ""))
+		return e
+	case *microflows.ResultHandlingHttpResponse:
+		e := newElem("Microflows$ResultHandling", string(h.ID))
+		addBool(e, "Bind", outputVar != "")
+		addStr(e, "ResultVariableName", outputVar)
+		vt := newElem("DataTypes$ObjectType", "")
+		addStr(vt, "Entity", "System.HttpResponse")
+		addPart(e, "VariableType", vt)
+		return e
+	case *microflows.ResultHandlingNone:
+		e := newElem("Microflows$ResultHandling", string(h.ID))
+		addBool(e, "Bind", false)
+		addStr(e, "ResultVariableName", "")
+		addPart(e, "VariableType", newElem("DataTypes$VoidType", ""))
+		return e
+	case *microflows.ResultHandlingMapping:
+		e := newElem("Microflows$ResultHandling", string(h.ID))
+		addBool(e, "Bind", true)
+		forceSingle := h.SingleObject
+		if h.ForceSingleOccurrence != nil {
+			forceSingle = *h.ForceSingleOccurrence
+		}
+		imc := newElem("Microflows$ImportMappingCall", "")
+		addStr(imc, "Commit", "YesWithoutEvents")
+		addStr(imc, "ContentType", "Json")
+		addBool(imc, "ForceSingleOccurrence", forceSingle)
+		addStr(imc, "ObjectHandlingBackup", "Create")
+		addStr(imc, "ParameterVariableName", "")
+		rng := newElem("Microflows$ConstantRange", "")
+		addBool(rng, "SingleObject", h.SingleObject)
+		addPart(imc, "Range", rng)
+		addStr(imc, "ReturnValueMapping", string(h.MappingID))
+		addPart(e, "ImportMappingCall", imc)
+		var vt *element.Base
+		if h.SingleObject {
+			vt = newElem("DataTypes$ObjectType", "")
+		} else {
+			vt = newElem("DataTypes$ListType", "")
+		}
+		if h.ResultEntityID != "" {
+			addStr(vt, "Entity", string(h.ResultEntityID))
+		}
+		addStr(e, "ResultVariableName", h.ResultVariable)
+		addPart(e, "VariableType", vt)
+		return e
+	default:
+		e := newElem("Microflows$ResultHandling", string(mmpr.GenerateID()))
+		addBool(e, "Bind", outputVar != "")
+		addStr(e, "ResultVariableName", outputVar)
+		addPart(e, "VariableType", newElem("DataTypes$StringType", ""))
+		return e
+	}
+}
+
 // firstTranslation returns a translation value deterministically (lowest language
 // code), or "" when there are none.
 func firstTranslation(text *model.Text) string {
@@ -587,6 +1271,10 @@ func microflowDataTypeToGen(dt microflows.DataType) element.Element {
 		return genDT.NewDateTimeType()
 	case *microflows.BinaryType:
 		return genDT.NewBinaryType()
+	case *microflows.EnumerationType:
+		t := genDT.NewEnumerationType()
+		t.SetEnumerationQualifiedName(a.EnumerationQualifiedName)
+		return t
 	case *microflows.ObjectType:
 		t := genDT.NewObjectType()
 		t.SetEntityQualifiedName(a.EntityQualifiedName)
