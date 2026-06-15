@@ -3,8 +3,8 @@
 package modelsdkbackend
 
 import (
-	genMf "github.com/mendixlabs/mxcli/modelsdk/gen/microflows"
 	"github.com/mendixlabs/mxcli/modelsdk/element"
+	genMf "github.com/mendixlabs/mxcli/modelsdk/gen/microflows"
 	"github.com/mendixlabs/mxcli/modelsdk/mprread"
 
 	"github.com/mendixlabs/mxcli/model"
@@ -131,21 +131,39 @@ func splitFlowObjects(coll element.Element) ([]*microflows.MicroflowParameter, [
 // ActionActivity (sufficient for counting); LoopedActivity recurses so decision
 // points inside loop bodies are counted.
 func flowObjectFromGen(el element.Element) microflows.MicroflowObject {
+	// Carry the real object ID: the catalog keys activities_data on the activity Id,
+	// so bare objects with an empty ID collide (UNIQUE constraint on
+	// activities_data.Id) on the second activity of any microflow (full-mode catalog
+	// / REFRESH CATALOG FULL). ID is the promoted public field from BaseElement.
+	id := model.ID(el.ID())
 	switch el.TypeName() {
 	case "Microflows$StartEvent":
-		return &microflows.StartEvent{}
+		o := &microflows.StartEvent{}
+		o.ID = id
+		return o
 	case "Microflows$EndEvent":
-		return &microflows.EndEvent{}
+		o := &microflows.EndEvent{}
+		o.ID = id
+		return o
 	case "Microflows$ExclusiveMerge":
-		return &microflows.ExclusiveMerge{}
+		o := &microflows.ExclusiveMerge{}
+		o.ID = id
+		return o
 	case "Microflows$ExclusiveSplit":
-		return &microflows.ExclusiveSplit{}
+		o := &microflows.ExclusiveSplit{}
+		o.ID = id
+		return o
 	case "Microflows$InheritanceSplit":
-		return &microflows.InheritanceSplit{}
+		o := &microflows.InheritanceSplit{}
+		o.ID = id
+		return o
 	case "Microflows$ErrorEvent":
-		return &microflows.ErrorEvent{}
+		o := &microflows.ErrorEvent{}
+		o.ID = id
+		return o
 	case "Microflows$LoopedActivity":
 		la := &microflows.LoopedActivity{}
+		la.ID = id
 		if g, ok := el.(*genMf.LoopedActivity); ok {
 			if _, objs := splitFlowObjects(g.ObjectCollection()); objs != nil {
 				la.ObjectCollection = &microflows.MicroflowObjectCollection{Objects: objs}
@@ -153,7 +171,9 @@ func flowObjectFromGen(el element.Element) microflows.MicroflowObject {
 		}
 		return la
 	default:
-		return &microflows.ActionActivity{}
+		o := &microflows.ActionActivity{}
+		o.ID = id
+		return o
 	}
 }
 
