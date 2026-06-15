@@ -1,4 +1,4 @@
-# ADR-0004: Version-aware MCP capability model
+# ADR-0006: Version-aware MCP capability model
 
 - **Status**: Proposed
 - **Date**: 2026-06-11

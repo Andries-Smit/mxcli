@@ -358,7 +358,7 @@ the devcontainer networking prerequisite doc.
   domain-model statements); a registry/probe for the *MCP server* version may be
   warranted in Phase 3.
 
-### Version-aware capability model ([ADR-0004](../13-decisions/0004-mcp-capability-model.md))
+### Version-aware capability model ([ADR-0006](../13-decisions/0006-mcp-capability-model.md))
 
 Now that coverage has grown well past the first slice, the backend's authoring
 surface is bounded by what the connected PED accepts, and that boundary moves per
@@ -366,7 +366,7 @@ Studio Pro version. PED-limit knowledge is currently scattered across hardcoded
 rejections (`errJavaActionAuthoring`, `errNanoflowCreate`, `errBusinessEventAuthoring`,
 the `ped_create_document` whitelist checks, the "delete via Concord" fallbacks), and
 an agent has no runtime way to know what is authorable against *this* version.
-ADR-0004 decides the model; this is the build plan, in dependency order:
+ADR-0006 decides the model; this is the build plan, in dependency order:
 
 1. **Capability report (agent-facing — concern 1). ✅ Shipped.** `mxcli mcp
    capabilities -p app.mpr --mcp …` connects, then prints the server identity, the

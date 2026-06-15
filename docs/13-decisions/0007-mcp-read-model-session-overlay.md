@@ -1,4 +1,4 @@
-# ADR-0005: MCP backend read model — disk base with session overlay
+# ADR-0007: MCP backend read model — disk base with session overlay
 
 - **Status**: Proposed
 - **Date**: 2026-06-14

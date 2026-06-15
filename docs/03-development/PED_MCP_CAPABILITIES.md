@@ -13,7 +13,7 @@ can do. This document is the canonical record of *which PED tools exist in which
 Studio Pro version* and *what capability gaps each version has*. Update it
 whenever a new Studio Pro version is onboarded (procedure at the bottom).
 
-> **Direction:** [ADR-0004](../13-decisions/0004-mcp-capability-model.md) decides to
+> **Direction:** [ADR-0006](../13-decisions/0006-mcp-capability-model.md) decides to
 > make this knowledge machine-readable — a version-keyed capability table merged
 > with a live `tools/list` probe — so the backend gates on it and an agent-facing
 > capability report is generated from it. This document then becomes the
