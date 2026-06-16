@@ -159,9 +159,11 @@ func (b *Backend) DeleteModule(id model.ID) error {
 	return nil
 }
 
-// DeleteModuleWithCleanup deletes the module (and child units) and also removes the
-// module's themesource/<lowercase-name>/ directory, whose name derives from the
-// module name rather than its ID.
+// DeleteModuleWithCleanup deletes the module (and child units) and also removes
+// the module's generated source directories (themesource, javasource,
+// javascriptsource), whose names derive from the module name rather than its ID.
+// Without this, dropping a module strands its proxies and java/javascript action
+// source for a module that no longer exists in the model.
 func (b *Backend) DeleteModuleWithCleanup(id model.ID, moduleName string) error {
 	if err := b.DeleteModule(id); err != nil {
 		return err
@@ -169,9 +171,19 @@ func (b *Backend) DeleteModuleWithCleanup(id model.ID, moduleName string) error 
 	if b.path == "" {
 		return nil
 	}
-	themesourceDir := filepath.Join(filepath.Dir(b.path), "themesource", strings.ToLower(moduleName))
-	if stat, err := os.Stat(themesourceDir); err == nil && stat.IsDir() {
-		_ = os.RemoveAll(themesourceDir)
+	projectDir := filepath.Dir(b.path)
+	lower := strings.ToLower(moduleName)
+	// themesource and javasource use the lowercased module name; javascriptsource
+	// uses the original casing (with a lowercase fallback).
+	for _, dir := range []string{
+		filepath.Join(projectDir, "themesource", lower),
+		filepath.Join(projectDir, "javasource", lower),
+		filepath.Join(projectDir, "javascriptsource", moduleName),
+		filepath.Join(projectDir, "javascriptsource", lower),
+	} {
+		if stat, err := os.Stat(dir); err == nil && stat.IsDir() {
+			_ = os.RemoveAll(dir)
+		}
 	}
 	return nil
 }

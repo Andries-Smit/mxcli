@@ -109,14 +109,33 @@ func (w *Writer) DeleteModuleWithCleanup(id model.ID, moduleName string) error {
 		return err
 	}
 
-	// Remove themesource/<modulename>/ directory (lowercased module name)
+	// Remove the module's generated source directories. themesource and
+	// javasource use the lowercased module name; javascriptsource uses the
+	// original casing (with a lowercase fallback). Studio Pro deletes these when a
+	// module is removed; leaving them strands proxies/actions for a module that no
+	// longer exists in the model.
 	projectDir := filepath.Dir(w.reader.path)
-	themesourceDir := filepath.Join(projectDir, "themesource", strings.ToLower(moduleName))
-	if stat, err := os.Stat(themesourceDir); err == nil && stat.IsDir() {
-		os.RemoveAll(themesourceDir)
-	}
+	removeModuleSourceDirs(projectDir, moduleName)
 
 	return nil
+}
+
+// removeModuleSourceDirs deletes the themesource/javasource/javascriptsource
+// directories belonging to a module. Mirrored by the modelsdk backend's
+// DeleteModuleWithCleanup.
+func removeModuleSourceDirs(projectDir, moduleName string) {
+	lower := strings.ToLower(moduleName)
+	dirs := []string{
+		filepath.Join(projectDir, "themesource", lower),
+		filepath.Join(projectDir, "javasource", lower),
+		filepath.Join(projectDir, "javascriptsource", moduleName),
+		filepath.Join(projectDir, "javascriptsource", lower),
+	}
+	for _, dir := range dirs {
+		if stat, err := os.Stat(dir); err == nil && stat.IsDir() {
+			os.RemoveAll(dir)
+		}
+	}
 }
 
 // deleteChildUnits recursively deletes all units whose ContainerID matches the given parent.
