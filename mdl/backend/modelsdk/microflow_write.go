@@ -640,9 +640,92 @@ func microflowActionToGen(action microflows.MicroflowAction) element.Element {
 		// ReturnValueMapping; StringTemplate's Microflows$TemplateParameter children),
 		// so the whole subtree is built directly. Mirrors serializeRestCallAction.
 		return restCallActionToGen(a)
+	case *microflows.ImportXmlAction:
+		// "import from mapping" — Microflows$ImportXmlAction with a ResultHandling
+		// whose ImportMappingCall references the mapping. Built directly because the
+		// ImportMappingCall uses the verified key ReturnValueMapping (gen binds
+		// "Mapping"). Mirrors serializeImportXmlAction.
+		return importXmlActionToGen(a)
+	case *microflows.ExportXmlAction:
+		// "export to mapping" — Microflows$ExportXmlAction with an ExportXmlAction$
+		// StringExport output method and a MappingRequestHandling. Mirrors
+		// serializeExportXmlAction.
+		return exportXmlActionToGen(a)
 	default:
 		return nil // not yet supported (added in later groups)
 	}
+}
+
+// importXmlActionToGen builds a Microflows$ImportXmlAction ("import from mapping").
+// Mirrors serializeImportXmlAction field-for-field, including the ImportMappingCall
+// sub-element (ReturnValueMapping key) and the Object/List VariableType.
+func importXmlActionToGen(a *microflows.ImportXmlAction) element.Element {
+	g := newElem("Microflows$ImportXmlAction", string(a.ID))
+	addStr(g, "ErrorHandlingType", orDefault(string(a.ErrorHandlingType), "Rollback"))
+	addBool(g, "IsValidationRequired", a.IsValidationRequired)
+
+	rh := a.ResultHandling
+	if rh == nil {
+		rh = &microflows.ResultHandlingMapping{}
+	}
+	forceSingle := rh.SingleObject
+	if rh.ForceSingleOccurrence != nil {
+		forceSingle = *rh.ForceSingleOccurrence
+	}
+
+	imc := newElem("Microflows$ImportMappingCall", "")
+	addStr(imc, "Commit", "YesWithoutEvents")
+	addStr(imc, "ContentType", "Json")
+	addBool(imc, "ForceSingleOccurrence", forceSingle)
+	addStr(imc, "ObjectHandlingBackup", "Create")
+	addStr(imc, "ParameterVariableName", "")
+	rng := newElem("Microflows$ConstantRange", "")
+	addBool(rng, "SingleObject", rh.SingleObject)
+	addPart(imc, "Range", rng)
+	addStr(imc, "ReturnValueMapping", string(rh.MappingID))
+
+	var vt *element.Base
+	if rh.SingleObject {
+		vt = newElem("DataTypes$ObjectType", "")
+	} else {
+		vt = newElem("DataTypes$ListType", "")
+	}
+	addStr(vt, "Entity", string(rh.ResultEntityID))
+
+	resultHandling := newElem("Microflows$ResultHandling", string(rh.ID))
+	addBool(resultHandling, "Bind", rh.ResultVariable != "")
+	addPart(resultHandling, "ImportMappingCall", imc)
+	addStr(resultHandling, "ResultVariableName", rh.ResultVariable)
+	addPart(resultHandling, "VariableType", vt)
+
+	addPart(g, "ResultHandling", resultHandling)
+	addStr(g, "XmlDocumentVariableName", a.XmlDocumentVariable)
+	return g
+}
+
+// exportXmlActionToGen builds a Microflows$ExportXmlAction ("export to mapping").
+// Mirrors serializeExportXmlAction: an ExportXmlAction$StringExport output method
+// plus a MappingRequestHandling referencing the export mapping.
+func exportXmlActionToGen(a *microflows.ExportXmlAction) element.Element {
+	g := newElem("Microflows$ExportXmlAction", string(a.ID))
+	addStr(g, "ErrorHandlingType", orDefault(string(a.ErrorHandlingType), "Rollback"))
+	addBool(g, "IsValidationRequired", a.IsValidationRequired)
+
+	output := newElem("ExportXmlAction$StringExport", "")
+	addStr(output, "OutputVariableName", a.OutputVariable)
+	addPart(g, "OutputMethod", output)
+
+	mappingID, paramVar := "", ""
+	if a.RequestHandling != nil {
+		mappingID = string(a.RequestHandling.MappingID)
+		paramVar = a.RequestHandling.ParameterVariable
+	}
+	rh := newElem("Microflows$MappingRequestHandling", "")
+	addStr(rh, "ContentType", "Json")
+	addStr(rh, "MappingId", mappingID)
+	addStr(rh, "MappingVariableName", paramVar)
+	addPart(g, "ResultHandling", rh)
+	return g
 }
 
 // newElem builds a bare codec element with the given storage $Type and ID,

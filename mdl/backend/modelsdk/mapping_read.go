@@ -5,6 +5,7 @@ package modelsdkbackend
 import (
 	"github.com/mendixlabs/mxcli/mdl/types"
 	"github.com/mendixlabs/mxcli/model"
+	"github.com/mendixlabs/mxcli/modelsdk/element"
 	genExp "github.com/mendixlabs/mxcli/modelsdk/gen/exportmappings"
 	genImp "github.com/mendixlabs/mxcli/modelsdk/gen/importmappings"
 	genJson "github.com/mendixlabs/mxcli/modelsdk/gen/jsonstructures"
@@ -40,10 +41,7 @@ func (b *Backend) ListImportMappings() ([]*model.ImportMapping, error) {
 		im.ID = model.ID(g.ID())
 		im.TypeName = "ImportMappings$ImportMapping"
 		for _, el := range g.RootMappingElementsItems() {
-			e := &model.ImportMappingElement{}
-			e.ID = model.ID(el.ID())
-			e.TypeName = el.TypeName()
-			im.Elements = append(im.Elements, e)
+			im.Elements = append(im.Elements, importMappingElementFromGen(el))
 		}
 		out = append(out, im)
 	}
@@ -77,10 +75,7 @@ func (b *Backend) ListExportMappings() ([]*model.ExportMapping, error) {
 		em.ID = model.ID(g.ID())
 		em.TypeName = "ExportMappings$ExportMapping"
 		for _, el := range g.RootMappingElementsItems() {
-			e := &model.ExportMappingElement{}
-			e.ID = model.ID(el.ID())
-			e.TypeName = el.TypeName()
-			em.Elements = append(em.Elements, e)
+			em.Elements = append(em.Elements, exportMappingElementFromGen(el))
 		}
 		out = append(out, em)
 	}
@@ -193,4 +188,85 @@ func (b *Backend) ListModuleSettings() ([]*types.ModuleSettings, error) {
 		out = append(out, ms)
 	}
 	return out, nil
+}
+
+// kindFromElementType maps a mapping element's ElementType ("Object"/"Array"/
+// "Value") to the model Kind. Defaults to "Object".
+func kindFromElementType(elementType string) string {
+	switch elementType {
+	case "Array":
+		return "Array"
+	case "Value":
+		return "Value"
+	default:
+		return "Object"
+	}
+}
+
+// importMappingElementFromGen recursively converts a gen import-mapping element
+// (object or value) to the semantic model. Object elements carry the entity /
+// association / object-handling and recurse into children; value elements carry
+// the attribute / key / occurrence facets. The microflow builder reads the root
+// object element's Entity and MaxOccurs to shape the import result, so these must
+// be populated (not just ID/TypeName).
+func importMappingElementFromGen(el element.Element) *model.ImportMappingElement {
+	e := &model.ImportMappingElement{}
+	e.ID = model.ID(el.ID())
+	e.TypeName = el.TypeName()
+	switch o := el.(type) {
+	case *genImp.ImportObjectMappingElement:
+		e.Kind = kindFromElementType(o.ElementType())
+		e.Entity = o.EntityQualifiedName()
+		e.Association = o.AssociationQualifiedName()
+		e.ObjectHandling = o.ObjectHandling()
+		e.ExposedName = o.ExposedName()
+		e.JsonPath = o.JsonPath()
+		e.MinOccurs = int(o.MinOccurs())
+		e.MaxOccurs = int(o.MaxOccurs())
+		e.Nillable = o.Nillable()
+		for _, c := range o.ChildrenItems() {
+			e.Children = append(e.Children, importMappingElementFromGen(c))
+		}
+	case *genImp.ImportValueMappingElement:
+		e.Kind = "Value"
+		e.Attribute = o.AttributeQualifiedName()
+		e.IsKey = o.IsKey()
+		e.ExposedName = o.ExposedName()
+		e.JsonPath = o.JsonPath()
+		e.MinOccurs = int(o.MinOccurs())
+		e.MaxOccurs = int(o.MaxOccurs())
+		e.Nillable = o.Nillable()
+		e.OriginalValue = o.OriginalValue()
+		e.FractionDigits = int(o.FractionDigits())
+		e.TotalDigits = int(o.TotalDigits())
+		e.MaxLength = int(o.MaxLength())
+	}
+	return e
+}
+
+// exportMappingElementFromGen recursively converts a gen export-mapping element
+// to the semantic model. Mirrors importMappingElementFromGen for the export side.
+func exportMappingElementFromGen(el element.Element) *model.ExportMappingElement {
+	e := &model.ExportMappingElement{}
+	e.ID = model.ID(el.ID())
+	e.TypeName = el.TypeName()
+	switch o := el.(type) {
+	case *genExp.ExportObjectMappingElement:
+		e.Kind = kindFromElementType(o.ElementType())
+		e.Entity = o.EntityQualifiedName()
+		e.Association = o.AssociationQualifiedName()
+		e.ObjectHandling = o.ObjectHandling()
+		e.ExposedName = o.ExposedName()
+		e.JsonPath = o.JsonPath()
+		e.MaxOccurs = int(o.MaxOccurs())
+		for _, c := range o.ChildrenItems() {
+			e.Children = append(e.Children, exportMappingElementFromGen(c))
+		}
+	case *genExp.ExportValueMappingElement:
+		e.Kind = "Value"
+		e.Attribute = o.AttributeQualifiedName()
+		e.ExposedName = o.ExposedName()
+		e.JsonPath = o.JsonPath()
+	}
+	return e
 }

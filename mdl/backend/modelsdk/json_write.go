@@ -79,7 +79,7 @@ func (b *Backend) GetJsonStructureByQualifiedName(moduleName, name string) (*typ
 		return nil, err
 	}
 	for _, js := range all {
-		if js.Name == name && b.moduleNameFor(js.ContainerID) == moduleName {
+		if js.Name == name && b.moduleNameFor(js.ID) == moduleName {
 			return js, nil
 		}
 	}
