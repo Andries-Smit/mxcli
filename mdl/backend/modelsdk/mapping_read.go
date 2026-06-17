@@ -183,6 +183,19 @@ func (b *Backend) ListModuleSettings() ([]*types.ModuleSettings, error) {
 				Version:    dep.Version(),
 				IsIncluded: dep.IsIncluded(),
 			}
+			// Reconstruct exclusions so an ALTER MODULE DROP EXCLUSION can find
+			// them (the executor reads, mutates, and rewrites the full settings).
+			for _, excEl := range dep.ExclusionsItems() {
+				exc, ok := excEl.(*genPrj.JarDependencyExclusion)
+				if !ok {
+					continue
+				}
+				jd.Exclusions = append(jd.Exclusions, &types.JarDependencyExclusion{
+					ID:         model.ID(exc.ID()),
+					GroupID:    exc.GroupId(),
+					ArtifactID: exc.ArtifactId(),
+				})
+			}
 			ms.JarDependencies = append(ms.JarDependencies, jd)
 		}
 		out = append(out, ms)
