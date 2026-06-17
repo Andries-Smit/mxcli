@@ -141,9 +141,15 @@ func slotName(_ *pages.LayoutCallArgument, index int) string {
 func pageParameters(params []*pages.PageParameter) []any {
 	out := make([]any, 0, len(params))
 	for _, p := range params {
-		po := map[string]any{"$Type": "Pages$PageParameter", "name": p.Name}
+		po := map[string]any{"$Type": "Pages$PageParameter", "name": p.Name, "isRequired": p.IsRequired}
 		if p.EntityName != "" {
-			po["entity"] = p.EntityName
+			// pg_write_page wants the entity type as a nested parameterType element
+			// (DataTypes$ObjectType.entity), not a flat `entity` field — a flat field
+			// is ignored and the parameter degrades to DataTypes$UnknownType.
+			po["parameterType"] = map[string]any{
+				"$Type":  "DataTypes$ObjectType",
+				"entity": p.EntityName,
+			}
 		}
 		out = append(out, po)
 	}

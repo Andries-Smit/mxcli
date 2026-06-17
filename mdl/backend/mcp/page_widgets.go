@@ -17,6 +17,16 @@ func (b *Backend) mapPageWidget(w pages.Widget) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Overlay the widget's design properties in one place (the body builders set an
+	// empty designProperties via pageAppearance). Previously these were silently
+	// dropped on every widget; injecting here covers all widget types uniformly.
+	if bwg, ok := w.(interface{ GetBaseWidget() *pages.BaseWidget }); ok {
+		if dps := bwg.GetBaseWidget().DesignProperties; len(dps) > 0 {
+			if ap, ok := m["appearance"].(map[string]any); ok {
+				ap["designProperties"] = designPropertiesMap(dps)
+			}
+		}
+	}
 	if cv := conditionalVisibility(w); cv != nil {
 		m["conditionalVisibilitySettings"] = cv
 	}
@@ -398,6 +408,26 @@ func mapClientAction(a pages.ClientAction) (map[string]any, error) {
 			},
 			"disabledDuringExecution": true,
 		}, nil
+	case *pages.SaveChangesClientAction:
+		// Standard edit-page "Save". Shapes verified against a Studio-Pro-generated
+		// page (testdata/pg-page-contact-newedit.json).
+		return map[string]any{
+			"$Type":                   "Pages$SaveChangesClientAction",
+			"disabledDuringExecution": true,
+			"syncAutomatically":       false,
+			"closePage":               act.ClosePage,
+		}, nil
+	case *pages.CancelChangesClientAction:
+		return map[string]any{
+			"$Type":                   "Pages$CancelChangesClientAction",
+			"disabledDuringExecution": true,
+			"closePage":               act.ClosePage,
+		}, nil
+	case *pages.ClosePageClientAction:
+		return map[string]any{
+			"$Type":                   "Pages$ClosePageClientAction",
+			"disabledDuringExecution": true,
+		}, nil
 	default:
 		return nil, fmt.Errorf("client action %T is not yet supported by the MCP backend", a)
 	}
@@ -428,7 +458,9 @@ func buttonStyle(s string) string {
 	}
 }
 
-// pageAppearance builds a Pages$Appearance from a widget's class/style.
+// pageAppearance builds a Pages$Appearance from a widget's class/style. Design
+// properties start empty and are overlaid in mapPageWidget (one place, all
+// widget types) via designPropertiesMap.
 func pageAppearance(class, style string) map[string]any {
 	return map[string]any{
 		"$Type":            "Pages$Appearance",
@@ -437,6 +469,25 @@ func pageAppearance(class, style string) map[string]any {
 		"dynamicClasses":   "",
 		"designProperties": map[string]any{},
 	}
+}
+
+// designPropertiesMap renders a widget's design properties into the object shape
+// pg_write_page expects (verified against testdata/pg-page-contact-newedit-
+// designprops.json): keys are "<kind>:<DisplayName>" — "toggle:" with a bool
+// value, "option:" with a string value. (Compound/nested design properties are
+// not expressible in MDL, so they are not emitted; "custom" carries a string
+// value like option.)
+func designPropertiesMap(dps []pages.DesignPropertyValue) map[string]any {
+	out := make(map[string]any, len(dps))
+	for _, dp := range dps {
+		switch dp.ValueType {
+		case "toggle":
+			out["toggle:"+dp.Key] = true
+		default: // "option" and "custom" both carry a string value
+			out["option:"+dp.Key] = dp.Option
+		}
+	}
+	return out
 }
 
 // textValue returns the en_US translation of a localized text (empty if nil).
