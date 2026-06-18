@@ -8,6 +8,7 @@ import (
 	"github.com/mendixlabs/mxcli/model"
 	"github.com/mendixlabs/mxcli/modelsdk/element"
 	genMf "github.com/mendixlabs/mxcli/modelsdk/gen/microflows"
+	genTexts "github.com/mendixlabs/mxcli/modelsdk/gen/texts"
 	"github.com/mendixlabs/mxcli/sdk/microflows"
 )
 
@@ -194,6 +195,74 @@ func actionFromGen(el element.Element) microflows.MicroflowAction {
 		out.ID = model.ID(a.ID())
 		return out
 
+	case *genMf.ShowHomePageAction:
+		out := &microflows.ShowHomePageAction{}
+		out.ID = model.ID(a.ID())
+		return out
+
+	case *genMf.ShowMessageAction:
+		out := &microflows.ShowMessageAction{
+			ErrorHandlingType: microflows.ErrorHandlingType(a.ErrorHandlingType()),
+			Type:              microflows.MessageType(a.Type()),
+			Blocking:          a.Blocking(),
+		}
+		out.ID = model.ID(a.ID())
+		out.Template, out.TemplateParameters = textTemplateFromGen(a.Template())
+		return out
+
+	case *genMf.ShowPageAction:
+		// Storage $Type Microflows$ShowFormAction. The FormSettings tree is written
+		// raw (Form / ParameterMappings with legacy keys), so read it from raw.
+		out := &microflows.ShowPageAction{ErrorHandlingType: microflows.ErrorHandlingType(a.ErrorHandlingType())}
+		out.ID = model.ID(a.ID())
+		if fs, ok := a.Raw().Lookup("PageSettings").DocumentOK(); ok {
+			out.FormSettingsID = model.ID(rawStr(fs, "$ID"))
+			out.PageName = rawStr(fs, "Form")
+			if arr, ok := fs.Lookup("ParameterMappings").ArrayOK(); ok {
+				vals, _ := arr.Values()
+				for _, v := range vals {
+					md, ok := v.DocumentOK()
+					if !ok {
+						continue
+					}
+					pm := &microflows.PageParameterMapping{Parameter: rawStr(md, "Parameter"), Argument: rawStr(md, "Argument")}
+					pm.ID = model.ID(rawStr(md, "$ID"))
+					out.PageParameterMappings = append(out.PageParameterMappings, pm)
+				}
+			}
+		}
+		return out
+
+	case *genMf.JavaActionCallAction:
+		// Storage keys JavaAction / ResultVariableName diverge from the gen
+		// accessors, so read from raw — the inverse of the direct write.
+		raw := a.Raw()
+		out := &microflows.JavaActionCallAction{
+			ErrorHandlingType:  microflows.ErrorHandlingType(rawStr(raw, "ErrorHandlingType")),
+			JavaAction:         rawStr(raw, "JavaAction"),
+			ResultVariableName: rawStr(raw, "ResultVariableName"),
+		}
+		out.ID = model.ID(a.ID())
+		if b, ok := raw.Lookup("UseReturnVariable").BooleanOK(); ok {
+			out.UseReturnVariable = b
+		}
+		if arr, ok := raw.Lookup("ParameterMappings").ArrayOK(); ok {
+			vals, _ := arr.Values()
+			for _, v := range vals {
+				md, ok := v.DocumentOK()
+				if !ok {
+					continue
+				}
+				pm := &microflows.JavaActionParameterMapping{Parameter: rawStr(md, "Parameter")}
+				pm.ID = model.ID(rawStr(md, "$ID"))
+				if vd, ok := md.Lookup("Value").DocumentOK(); ok {
+					pm.Value = codeActionParameterValueFromRaw(vd)
+				}
+				out.ParameterMappings = append(out.ParameterMappings, pm)
+			}
+		}
+		return out
+
 	case *genMf.ListOperationAction:
 		// Storage $Type Microflows$ListOperationsAction. The write binds the output
 		// to "ResultVariableName" and the operation to "NewOperation" (not the gen
@@ -207,6 +276,69 @@ func actionFromGen(el element.Element) microflows.MicroflowAction {
 		}
 		return out
 
+	default:
+		return nil
+	}
+}
+
+// textTemplateFromGen reconstructs a Microflows$TextTemplate's translations and
+// template arguments (the {1},{2},… expressions). Inverse of textTemplateToGen.
+func textTemplateFromGen(el element.Element) (*model.Text, []string) {
+	tt, ok := el.(*genMf.TextTemplate)
+	if !ok || tt == nil {
+		return nil, nil
+	}
+	var text *model.Text
+	if txt, ok := tt.Text().(*genTexts.Text); ok && txt != nil {
+		trans := map[string]string{}
+		for _, trEl := range txt.TranslationsItems() {
+			if tr, ok := trEl.(*genTexts.Translation); ok {
+				trans[tr.LanguageCode()] = tr.Text()
+			}
+		}
+		if len(trans) > 0 {
+			text = &model.Text{Translations: trans}
+		}
+	}
+	var params []string
+	for _, argEl := range tt.ArgumentsItems() {
+		if arg, ok := argEl.(*genMf.TemplateArgument); ok {
+			params = append(params, arg.Expression())
+		}
+	}
+	return text, params
+}
+
+// codeActionParameterValueFromRaw reconstructs a java-action parameter value from
+// its raw Value sub-document. Inverse of codeActionParameterValueToGen.
+func codeActionParameterValueFromRaw(doc bson.Raw) microflows.CodeActionParameterValue {
+	id := model.ID(rawStr(doc, "$ID"))
+	switch rawStr(doc, "$Type") {
+	case "Microflows$StringTemplateParameterValue":
+		v := &microflows.StringTemplateParameterValue{}
+		v.ID = id
+		if tt, ok := doc.Lookup("TypedTemplate").DocumentOK(); ok {
+			t := &microflows.TypedTemplate{Text: rawStr(tt, "Text")}
+			t.ID = model.ID(rawStr(tt, "$ID"))
+			v.TypedTemplate = t
+		}
+		return v
+	case "Microflows$ExpressionBasedCodeActionParameterValue":
+		v := &microflows.ExpressionBasedCodeActionParameterValue{Expression: rawStr(doc, "Expression")}
+		v.ID = id
+		return v
+	case "Microflows$BasicCodeActionParameterValue":
+		v := &microflows.BasicCodeActionParameterValue{Argument: rawStr(doc, "Argument")}
+		v.ID = id
+		return v
+	case "Microflows$MicroflowParameterValue":
+		v := &microflows.MicroflowParameterValue{Microflow: rawStr(doc, "Microflow")}
+		v.ID = id
+		return v
+	case "Microflows$EntityTypeCodeActionParameterValue":
+		v := &microflows.EntityTypeCodeActionParameterValue{Entity: rawStr(doc, "Entity")}
+		v.ID = id
+		return v
 	default:
 		return nil
 	}
