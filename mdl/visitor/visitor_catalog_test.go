@@ -62,6 +62,12 @@ func TestSelectFromCatalog(t *testing.T) {
 		{"lowercase", "select * from catalog.microflows;"},
 		{"with alias", "SELECT e.Name FROM CATALOG.ENTITIES e;"},
 		{"with join", "SELECT e.Name, a.Name FROM CATALOG.ENTITIES e JOIN CATALOG.ATTRIBUTES a ON e.Id = a.EntityId;"},
+		// COMMUNITIES is a lexer keyword (SHOW COMMUNITIES); it must still parse as
+		// a catalog table name for CATALOG.COMMUNITIES — otherwise the SELECT
+		// silently fails to parse and produces no statement (and no output).
+		{"communities keyword table", "SELECT * FROM CATALOG.COMMUNITIES;"},
+		{"communities lowercase", "select * from catalog.communities;"},
+		{"communities with where", "SELECT AssetName FROM CATALOG.COMMUNITIES WHERE CommunityId = 1;"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
