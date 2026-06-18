@@ -134,6 +134,19 @@ func flowsFromGen(items []element.Element) []*microflows.SequenceFlow {
 	return flows
 }
 
+// loopSourceFromGen reconstructs a loop's source: iterate-over-list (iterator +
+// list variable) or a while-condition. Inverse of loopSourceToGen.
+func loopSourceFromGen(el element.Element) microflows.LoopSource {
+	switch g := el.(type) {
+	case *genMf.IterableList:
+		return &microflows.IterableList{ListVariableName: g.ListVariableName(), VariableName: g.VariableName()}
+	case *genMf.WhileLoopCondition:
+		return &microflows.WhileLoopCondition{WhileExpression: g.WhileExpression()}
+	default:
+		return nil
+	}
+}
+
 // splitConditionFromGen reconstructs an exclusive split's condition (the `if <expr>`
 // expression). Inverse of splitConditionToGen.
 func splitConditionFromGen(el element.Element) microflows.SplitCondition {
@@ -224,6 +237,7 @@ func flowObjectFromGen(el element.Element) microflows.MicroflowObject {
 		la := &microflows.LoopedActivity{}
 		la.ID = id
 		if g, ok := el.(*genMf.LoopedActivity); ok {
+			la.LoopSource = loopSourceFromGen(g.LoopSource())
 			if _, objs := splitFlowObjects(g.ObjectCollection()); objs != nil {
 				la.ObjectCollection = &microflows.MicroflowObjectCollection{Objects: objs}
 			}
