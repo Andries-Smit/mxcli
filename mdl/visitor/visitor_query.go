@@ -282,6 +282,19 @@ func (b *Builder) ExitShowStatement(ctx *parser.ShowStatementContext) {
 				Depth:      depth,
 			})
 		}
+	} else if ctx.COMMUNITY() != nil {
+		// SHOW COMMUNITY [MEMBERS] OF Module.Asset
+		ot := ast.ShowCommunity
+		if ctx.MEMBERS() != nil {
+			ot = ast.ShowCommunityMembers
+		}
+		if qn := ctx.QualifiedName(); qn != nil {
+			name := buildQualifiedName(qn)
+			b.statements = append(b.statements, &ast.ShowStmt{ObjectType: ot, Name: &name})
+		}
+	} else if ctx.COMMUNITIES() != nil {
+		// SHOW COMMUNITIES
+		b.statements = append(b.statements, &ast.ShowStmt{ObjectType: ast.ShowCommunities})
 	} else if ctx.SECURITY() != nil && ctx.PROJECT() != nil {
 		// SHOW PROJECT SECURITY
 		b.statements = append(b.statements, &ast.ShowStmt{ObjectType: ast.ShowProjectSecurity})

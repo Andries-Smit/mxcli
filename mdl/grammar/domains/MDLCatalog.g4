@@ -52,6 +52,9 @@ showStatement
     | showOrList REFERENCES TO qualifiedName
     | showOrList IMPACT OF qualifiedName
     | showOrList CONTEXT OF qualifiedName (DEPTH NUMBER_LITERAL)?
+    | showOrList COMMUNITY MEMBERS OF qualifiedName
+    | showOrList COMMUNITY OF qualifiedName
+    | showOrList COMMUNITIES
     | showOrList WIDGETS showWidgetsFilter?
     | showOrList PROJECT SECURITY
     | showOrList MODULE ROLES (IN (qualifiedName | IDENTIFIER))?

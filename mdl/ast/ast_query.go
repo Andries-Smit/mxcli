@@ -46,6 +46,10 @@ const (
 	ShowContext    // SHOW CONTEXT OF Module.Microflow [DEPTH N]
 	ShowWidgets    // SHOW WIDGETS [WHERE ...] [IN module]
 
+	ShowCommunities       // SHOW COMMUNITIES
+	ShowCommunity         // SHOW COMMUNITY OF Module.Asset
+	ShowCommunityMembers  // SHOW COMMUNITY MEMBERS OF Module.Asset
+
 	// Security show types
 	ShowProjectSecurity   // SHOW PROJECT SECURITY
 	ShowModuleRoles       // SHOW MODULE ROLES [IN module]

@@ -59,6 +59,12 @@ func execShow(ctx *ExecContext, s *ast.ShowStmt) error {
 		return execShowImpact(ctx, s)
 	case ast.ShowContext:
 		return execShowContext(ctx, s)
+	case ast.ShowCommunities:
+		return execShowCommunities(ctx)
+	case ast.ShowCommunity:
+		return execShowCommunity(ctx, s, false)
+	case ast.ShowCommunityMembers:
+		return execShowCommunity(ctx, s, true)
 	case ast.ShowProjectSecurity:
 		return listProjectSecurity(ctx)
 	case ast.ShowModuleRoles:
