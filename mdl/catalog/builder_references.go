@@ -343,6 +343,29 @@ func (b *Builder) buildReferences() error {
 				}
 			}
 		}
+
+		// Widget references: page → entity (datasource) and page → microflow /
+		// nanoflow (action). Projected from the widgets table, which buildPages
+		// already populated from each page's raw BSON (so no extra parse here).
+		// DISTINCT collapses the many widgets on a page that target the same
+		// document into a single edge.
+		widgetProjections := []struct{ col, targetType, refKind string }{
+			{"EntityRef", "ENTITY", RefKindDatasource},
+			{"MicroflowRef", "MICROFLOW", RefKindAction},
+			{"NanoflowRef", "NANOFLOW", RefKindAction},
+		}
+		for _, p := range widgetProjections {
+			res, perr := b.tx.Exec(
+				`INSERT INTO refs (SourceType, SourceId, SourceName, TargetType, TargetId, TargetName, RefKind, ModuleName, ProjectId, SnapshotId)
+				 SELECT DISTINCT ContainerType, '', ContainerQualifiedName, ?, '', `+p.col+`, ?, ModuleName, ?, ?
+				 FROM widgets_data WHERE `+p.col+` != ''`,
+				p.targetType, p.refKind, projectID, snapshotID)
+			if perr == nil {
+				if n, e := res.RowsAffected(); e == nil {
+					refCount += int(n)
+				}
+			}
+		}
 	}
 
 	// Extract navigation references (home pages, menu items, login pages)

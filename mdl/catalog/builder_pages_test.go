@@ -8,6 +8,61 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+func TestScanWidgetOwnRefs(t *testing.T) {
+	// A DataView referencing an entity via DataSource, with a child action button
+	// (a separate widget) whose microflow must NOT be attributed to the DataView.
+	dataView := map[string]any{
+		"$Type": "Forms$DataView",
+		"DataSource": map[string]any{
+			"$Type":  "Forms$EntityPathSource",
+			"Entity": "Sales.Order",
+		},
+		"Widgets": []any{ // child widget — excluded from the parent's own refs
+			map[string]any{
+				"$Type":  "Forms$ActionButton",
+				"Action": map[string]any{"Settings": map[string]any{"$Type": "Forms$MicroflowSettings", "Microflow": "Sales.ACT_Child"}},
+			},
+		},
+	}
+	ent, mf, nf := scanWidgetOwnRefs(dataView)
+	if ent != "Sales.Order" {
+		t.Errorf("entity = %q, want Sales.Order", ent)
+	}
+	if mf != "" {
+		t.Errorf("microflow = %q, want empty (child button's MF must not leak to parent)", mf)
+	}
+	if nf != "" {
+		t.Errorf("nanoflow = %q, want empty", nf)
+	}
+
+	// A button's own microflow + nanoflow.
+	button := map[string]any{
+		"$Type":  "Forms$ActionButton",
+		"Action": map[string]any{"Settings": map[string]any{"Microflow": "M.DoThing"}},
+		"Extra":  map[string]any{"Nanoflow": "M.DoNano"},
+	}
+	if _, mf, nf := scanWidgetOwnRefs(button); mf != "M.DoThing" || nf != "M.DoNano" {
+		t.Errorf("button refs = (%q,%q), want (M.DoThing, M.DoNano)", mf, nf)
+	}
+
+	// Determinism: multiple microflows → the lexicographically smallest, stable
+	// across runs regardless of map order.
+	multi := map[string]any{
+		"A": map[string]any{"Microflow": "M.Zeta"},
+		"B": map[string]any{"Microflow": "M.Alpha"},
+	}
+	for range 5 {
+		if _, mf, _ := scanWidgetOwnRefs(multi); mf != "M.Alpha" {
+			t.Fatalf("non-deterministic microflow pick: got %q, want M.Alpha", mf)
+		}
+	}
+
+	// No refs.
+	if e, m, n := scanWidgetOwnRefs(map[string]any{"$Type": "Forms$Label"}); e != "" || m != "" || n != "" {
+		t.Errorf("expected no refs, got (%q,%q,%q)", e, m, n)
+	}
+}
+
 func TestExtractLayoutRef(t *testing.T) {
 	tests := []struct {
 		name    string

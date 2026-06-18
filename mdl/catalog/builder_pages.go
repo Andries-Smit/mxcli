@@ -34,9 +34,9 @@ func (b *Builder) buildPages() error {
 	if b.fullMode {
 		widgetStmt, err = b.tx.Prepare(`
 			INSERT INTO widgets_data (Id, Name, WidgetType, ContainerId, ContainerQualifiedName, ContainerType,
-				ModuleName, Folder, EntityRef, AttributeRef, Description,
+				ModuleName, Folder, EntityRef, AttributeRef, MicroflowRef, NanoflowRef, Description,
 				ProjectId, SnapshotId)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`)
 		if err != nil {
 			return err
@@ -112,6 +112,8 @@ func (b *Builder) buildPages() error {
 					folder,
 					w.EntityRef,
 					w.AttributeRef,
+					w.MicroflowRef,
+					w.NanoflowRef,
 					"",
 					projectID, snapshotID,
 				); err != nil {
@@ -183,8 +185,65 @@ type rawWidgetInfo struct {
 	ID           string
 	Name         string
 	WidgetType   string
-	EntityRef    string
+	EntityRef    string // datasource entity (DomainModels$DirectEntityRef.Entity)
 	AttributeRef string
+	MicroflowRef string // action/datasource microflow (Forms$MicroflowSettings.Microflow, …)
+	NanoflowRef  string // action/datasource nanoflow
+}
+
+// widgetChildKeys are the keys under which a widget nests *other* widgets. The
+// per-widget ref scan skips them so a container doesn't absorb its children's
+// references (each child is visited separately by extractWidgetsRecursive).
+var widgetChildKeys = map[string]bool{
+	"Widgets": true, "Rows": true, "FooterWidgets": true, "TabPages": true,
+}
+
+// scanWidgetOwnRefs collects the entity/microflow/nanoflow a widget references in
+// its own (non-child-widget) BSON — datasource entity, on-click microflow, etc.
+// Returns the lexicographically smallest match of each kind so the result is
+// deterministic regardless of BSON map iteration order; page-level dedup in the
+// refs projection makes the per-widget choice immaterial to the final graph.
+func scanWidgetOwnRefs(w map[string]any) (entity, microflow, nanoflow string) {
+	var ents, mfs, nfs []string
+	var walk func(v any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			if s, ok := x["Entity"].(string); ok && s != "" {
+				ents = append(ents, s)
+			}
+			if s, ok := x["Microflow"].(string); ok && s != "" {
+				mfs = append(mfs, s)
+			}
+			if s, ok := x["Nanoflow"].(string); ok && s != "" {
+				nfs = append(nfs, s)
+			}
+			for k, val := range x {
+				if widgetChildKeys[k] {
+					continue
+				}
+				walk(val)
+			}
+		case []any:
+			for _, item := range x {
+				walk(item)
+			}
+		}
+	}
+	walk(w)
+	min := func(xs []string) string {
+		if len(xs) == 0 {
+			return ""
+		}
+		m := xs[0]
+		for _, s := range xs[1:] {
+			if s < m {
+				m = s
+			}
+		}
+		return m
+	}
+	return min(ents), min(mfs), min(nfs)
 }
 
 // extractLayoutRef extracts the layout reference from raw page BSON. Regular
@@ -269,6 +328,10 @@ func extractWidgetsRecursive(w map[string]any) []rawWidgetInfo {
 	if attrRef, ok := w["AttributeRef"].(map[string]any); ok {
 		widget.AttributeRef = extractString(attrRef["Attribute"])
 	}
+
+	// Extract datasource entity + action microflow/nanoflow references from this
+	// widget's own content (not its child widgets).
+	widget.EntityRef, widget.MicroflowRef, widget.NanoflowRef = scanWidgetOwnRefs(w)
 
 	// Skip DivContainer wrapper types - only collect their children
 	if widget.WidgetType != "Forms$DivContainer" && widget.WidgetType != "Pages$DivContainer" {

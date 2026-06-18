@@ -12,7 +12,7 @@ package catalog
 //	    SnapshotSource / SourceId / SourceBranch / SourceRevision columns
 //	    from every row (issue #576).
 //	1 — initial flat schema with denormalized snapshot columns on every row.
-const CatalogSchemaVersion = "5"
+const CatalogSchemaVersion = "6"
 
 // MetaSchemaVersion is the catalog_meta key that records the schema version
 // the cache was built against.
@@ -373,6 +373,8 @@ func (c *Catalog) createTables() error {
 			Folder TEXT,
 			EntityRef TEXT,
 			AttributeRef TEXT,
+			MicroflowRef TEXT,
+			NanoflowRef TEXT,
 			Description TEXT,
 			ProjectId TEXT,
 			SnapshotId TEXT
