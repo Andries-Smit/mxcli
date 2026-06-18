@@ -156,6 +156,42 @@ func actionFromGen(el element.Element) microflows.MicroflowAction {
 		}
 		return out
 
+	case *genMf.CreateListAction:
+		out := &microflows.CreateListAction{
+			EntityQualifiedName: a.EntityQualifiedName(),
+			OutputVariable:      a.OutputVariableName(),
+		}
+		out.ID = model.ID(a.ID())
+		return out
+
+	case *genMf.ChangeListAction:
+		out := &microflows.ChangeListAction{
+			ChangeVariable: a.ChangeVariableName(),
+			Type:           microflows.ChangeListType(a.Type()),
+			Value:          a.Value(),
+		}
+		out.ID = model.ID(a.ID())
+		return out
+
+	case *genMf.AggregateListAction:
+		out := &microflows.AggregateListAction{
+			InputVariable:          a.InputListVariableName(),
+			OutputVariable:         a.OutputVariableName(),
+			Function:               microflows.AggregateFunction(a.AggregateFunction()),
+			AttributeQualifiedName: a.AttributeQualifiedName(),
+			UseExpression:          a.UseExpression(),
+			Expression:             a.Expression(),
+		}
+		out.ID = model.ID(a.ID())
+		return out
+
+	case *genMf.CastAction:
+		// ObjectVariable (the cast input) is not stored via a gen setter, so it is
+		// not reconstructable here; OutputVariable is.
+		out := &microflows.CastAction{OutputVariable: a.OutputVariableName()}
+		out.ID = model.ID(a.ID())
+		return out
+
 	default:
 		return nil
 	}
