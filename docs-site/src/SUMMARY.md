@@ -119,6 +119,7 @@
   - [SHOW CALLERS / CALLEES](tools/callers-callees.md)
   - [SHOW REFERENCES / IMPACT](tools/references-impact.md)
   - [SHOW CONTEXT](tools/show-context.md)
+  - [Graph Analysis](tools/graph-analysis.md)
   - [Full-Text Search](tools/search.md)
 - [Catalog Queries](tools/catalog.md)
   - [REFRESH CATALOG](tools/refresh-catalog.md)

@@ -130,6 +130,21 @@ JOIN CATALOG.ENTITIES e ON ar.EntityId = e.Id
 WHERE e.ModuleName = 'Sales';
 ```
 
+## Graph-Analysis Tables
+
+The dependency graph (`CATALOG.REFS`, full refresh) is analysed by a family of
+`graph_*` views and tables — god nodes, module coupling/cohesion, dead documents,
+communities, cycles, layers, centrality, and the integration surface. The
+community/cycle/layer/centrality tables are populated by `REFRESH CATALOG
+COMMUNITIES`. See **[Graph Analysis](graph-analysis.md)** for the full reference
+and the `mxcli graph-report` command.
+
+```sql
+select * from CATALOG.graph_god_nodes order by Degree desc limit 20;
+select * from CATALOG.graph_module_coupling order by Edges desc;
+show communities;
+```
+
 ## Listing All Tables
 
 To see the complete list of available tables in your catalog (which may vary by project and refresh level):

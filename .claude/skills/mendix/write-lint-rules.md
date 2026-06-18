@@ -33,11 +33,60 @@ def check():
 | `activities_for(microflow_qualified_name)` | list of activity | Activities for a microflow (requires FULL catalog) |
 | `permissions()` | list of permission | All permissions across all element types |
 | `permissions_for(entity_qualified_name)` | list of permission | Access rules for a specific entity |
-| `refs_to(target_name)` | list of reference | Cross-references to a target |
+| `refs_to(target_name)` | list of reference | Cross-references *to* a target |
+| `refs_from(source_name)` | list of reference | Cross-references *from* a source (outbound) |
 | `user_roles()` | list of user_role | User roles from project security |
 | `module_roles()` | list of module_role | All module roles (deduplicated from role mappings) |
 | `role_mappings()` | list of role_mapping | User role to module role assignments |
 | `project_security()` | project_security or None | Project-level security settings (requires MPR reader) |
+
+### Graph-analysis functions (architecture rules)
+
+These expose the dependency-graph facts so you can enforce your **own**
+architecture policy (layering, allowed module dependencies, no cycles, coupling
+budgets). They require `refresh catalog communities` to have populated the graph
+tables; otherwise they return empty/None (the rule degrades gracefully — it does
+not fail). In a session, run `refresh catalog communities` before `lint`.
+
+| Function | Returns | Description |
+|----------|---------|-------------|
+| `layer_of(asset)` | int or None | Topological layer sequence number (no opinion on ordering) |
+| `community_of(asset)` | struct{id, label} or None | The asset's detected community (bounded context) |
+| `cycles()` | list of struct{id, size, members} | Dependency cycles (SCCs > 1 node) |
+| `module_dependencies()` | list of struct{source_module, target_module, ref_kind, edges} | Directed module→module edges |
+| `centrality(asset)` | struct{in, out, total, pagerank, betweenness} or None | Centrality of an asset |
+| `god_nodes(metric="degree"\|"pagerank"\|"betweenness", min=N)` | list of struct{asset, object_type, module_name, degree, pagerank, betweenness} | High-centrality assets above a threshold |
+| `integration_surface()` | list of struct{source_community, target_community, ref_kind, edges, mechanism} | Cross-community contract edges (for app-splitting) |
+
+Example — a team enforcing *its own* strict layering (mxcli ships no such rule):
+
+```python
+RULE_ID = "ARCH900"
+RULE_NAME = "Layering"
+DESCRIPTION = "A module may only depend on lower or equal layers"
+CATEGORY = "architecture"
+SEVERITY = "error"
+
+def check():
+    out = []
+    for d in module_dependencies():
+        if d.ref_kind in ("layout", "show_page"):  # ignore UI navigation
+            continue
+        ls, lt = layer_of(d.source_module + ".x"), layer_of(d.target_module + ".x")
+        # (resolve a real asset per module in practice; shown simplified)
+        if ls != None and lt != None and ls < lt:
+            out.append(violation(message = "%s depends upward on %s" % (d.source_module, d.target_module)))
+    return out
+```
+
+Another team bans a specific dependency:
+
+```python
+def check():
+    return [violation(message = "Payments must not depend on Reporting")
+            for d in module_dependencies()
+            if d.source_module == "Payments" and d.target_module == "Reporting"]
+```
 
 ## Object Properties
 
