@@ -357,6 +357,13 @@ func init() {
 	reportCmd.Flags().StringP("output", "o", "", "Output file path (default: stdout)")
 	reportCmd.Flags().StringSliceP("exclude", "e", nil, "Modules to exclude from report")
 
+	// Graph-report command flags
+	graphReportCmd.Flags().StringP("format", "f", "markdown", "Output format: markdown, json")
+	graphReportCmd.Flags().StringP("output", "o", "", "Output file path (default: stdout)")
+	graphReportCmd.Flags().Int("top", 15, "Max rows per section")
+	graphReportCmd.Flags().Bool("include-framework", false, "Include framework/marketplace modules")
+	graphReportCmd.Flags().StringSliceP("exclude", "e", nil, "Additional modules to exclude")
+
 	// Test command flags
 	testRunCmd.Flags().BoolP("list", "l", false, "List tests without executing")
 	testRunCmd.Flags().StringP("junit", "j", "", "Write JUnit XML results to file")
@@ -390,6 +397,7 @@ func init() {
 	rootCmd.AddCommand(searchCmd)
 	rootCmd.AddCommand(lintCmd)
 	rootCmd.AddCommand(reportCmd)
+	rootCmd.AddCommand(graphReportCmd)
 	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(lspCmd)
 	rootCmd.AddCommand(projectTreeCmd)

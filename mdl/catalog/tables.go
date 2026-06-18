@@ -12,7 +12,7 @@ package catalog
 //	    SnapshotSource / SourceId / SourceBranch / SourceRevision columns
 //	    from every row (issue #576).
 //	1 — initial flat schema with denormalized snapshot columns on every row.
-const CatalogSchemaVersion = "6"
+const CatalogSchemaVersion = "7"
 
 // MetaSchemaVersion is the catalog_meta key that records the schema version
 // the cache was built against.
@@ -1056,6 +1056,73 @@ func (c *Catalog) createTables() error {
 		`CREATE INDEX IF NOT EXISTS idx_constant_values_config ON constant_values(ConfigurationName)`,
 		`CREATE INDEX IF NOT EXISTS idx_jar_deps_module ON jar_dependencies_data(ModuleName)`,
 		`CREATE INDEX IF NOT EXISTS idx_jar_deps_coord ON jar_dependencies_data(Coordinate)`,
+
+		// --- Graph-analysis views (read the refs graph; populated by REFRESH
+		// CATALOG FULL). Module is derived from the qualified-name prefix, NOT by
+		// joining entities — that would drop non-entity targets. ---
+
+		// graph_god_nodes — degree centrality (most depended-upon / highest fan-out).
+		`CREATE VIEW IF NOT EXISTS graph_god_nodes AS
+			WITH deg AS (
+				SELECT TargetName AS Asset, COUNT(*) AS InDeg, 0 AS OutDeg
+				FROM refs WHERE TargetName != '' GROUP BY TargetName
+				UNION ALL
+				SELECT SourceName AS Asset, 0 AS InDeg, COUNT(*) AS OutDeg
+				FROM refs WHERE SourceName != '' GROUP BY SourceName
+			)
+			SELECT Asset,
+				(SELECT ObjectType FROM objects WHERE QualifiedName = Asset LIMIT 1) AS ObjectType,
+				CASE WHEN instr(Asset, '.') > 0 THEN substr(Asset, 1, instr(Asset, '.') - 1) ELSE Asset END AS ModuleName,
+				SUM(InDeg) AS InDegree, SUM(OutDeg) AS OutDegree, SUM(InDeg) + SUM(OutDeg) AS Degree
+			FROM deg GROUP BY Asset`,
+
+		// graph_module_coupling — cross-module edges ("surprise edges").
+		`CREATE VIEW IF NOT EXISTS graph_module_coupling AS
+			SELECT substr(SourceName, 1, instr(SourceName, '.') - 1) AS SourceModule,
+				substr(TargetName, 1, instr(TargetName, '.') - 1) AS TargetModule,
+				COUNT(*) AS Edges,
+				group_concat(DISTINCT RefKind) AS RefKinds
+			FROM refs
+			WHERE instr(SourceName, '.') > 0 AND instr(TargetName, '.') > 0
+				AND substr(SourceName, 1, instr(SourceName, '.') - 1) != substr(TargetName, 1, instr(TargetName, '.') - 1)
+			GROUP BY SourceModule, TargetModule`,
+
+		// graph_module_cohesion — intra- vs inter-module edge ratio per module.
+		`CREATE VIEW IF NOT EXISTS graph_module_cohesion AS
+			WITH e AS (
+				SELECT substr(SourceName, 1, instr(SourceName, '.') - 1) AS SrcMod,
+					CASE WHEN substr(SourceName, 1, instr(SourceName, '.') - 1) = substr(TargetName, 1, instr(TargetName, '.') - 1)
+						THEN 1 ELSE 0 END AS Intra
+				FROM refs WHERE instr(SourceName, '.') > 0 AND instr(TargetName, '.') > 0
+			)
+			SELECT SrcMod AS ModuleName,
+				SUM(Intra) AS IntraEdges, SUM(1 - Intra) AS InterEdges,
+				round(100.0 * SUM(Intra) / COUNT(*), 1) AS CohesionPct
+			FROM e GROUP BY SrcMod`,
+
+		// graph_dead_assets — referenceable documents with no inbound edge.
+		// Restricted to types that *should* be referenced if used; enums/constants/
+		// layouts are excluded because their inbound edges aren't fully captured yet.
+		`CREATE VIEW IF NOT EXISTS graph_dead_assets AS
+			SELECT o.QualifiedName, o.ObjectType, o.ModuleName
+			FROM objects o
+			WHERE o.ObjectType IN ('ENTITY', 'MICROFLOW', 'NANOFLOW', 'PAGE', 'SNIPPET')
+				AND NOT EXISTS (SELECT 1 FROM refs r WHERE r.TargetName = o.QualifiedName)`,
+
+		// graph_refkind_distribution — the edge vocabulary (calibrates the others).
+		`CREATE VIEW IF NOT EXISTS graph_refkind_distribution AS
+			SELECT RefKind, SourceType, TargetType, COUNT(*) AS Count,
+				round(100.0 * COUNT(*) / (SELECT COUNT(*) FROM refs), 1) AS Pct
+			FROM refs GROUP BY RefKind, SourceType, TargetType`,
+
+		// graph_entity_hotspots — entities used by the most flows.
+		`CREATE VIEW IF NOT EXISTS graph_entity_hotspots AS
+			SELECT TargetName AS Entity,
+				COUNT(DISTINCT SourceName) AS UsedByFlows,
+				group_concat(DISTINCT ModuleName) AS AcrossModules
+			FROM refs
+			WHERE TargetType = 'ENTITY' AND SourceType IN ('MICROFLOW', 'NANOFLOW')
+			GROUP BY TargetName`,
 	}
 
 	for _, schema := range schemas {

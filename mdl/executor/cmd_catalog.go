@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -82,6 +83,13 @@ var fullOnlyTables = map[string]bool{
 	"refs":        true,
 	"strings":     true,
 	"permissions": true,
+	// graph_* analysis views read the refs graph, so they need full mode too.
+	"graph_god_nodes":            true,
+	"graph_module_coupling":      true,
+	"graph_module_cohesion":      true,
+	"graph_dead_assets":          true,
+	"graph_refkind_distribution": true,
+	"graph_entity_hotspots":      true,
 }
 
 // sourceOnlyTables are catalog tables only populated by REFRESH CATALOG FULL SOURCE.
@@ -585,83 +593,16 @@ func execShowCatalogStatus(ctx *ExecContext) error {
 	return nil
 }
 
-// convertCatalogTableNames converts CATALOG.xxx to actual table names.
+// catalogTableRefRe matches a `CATALOG.<name>` table reference (case-insensitive).
+var catalogTableRefRe = regexp.MustCompile(`(?i)\bcatalog\.([a-z_][a-z0-9_]*)`)
+
+// convertCatalogTableNames strips the CATALOG. prefix from table references so the
+// query runs against the underlying SQLite views/tables. Generic by design: any
+// CATALOG.<name> is rewritten, so new catalog views (e.g. the graph_* analysis
+// views) work without maintaining a per-name allowlist. An unknown name simply
+// yields SQLite's "no such table" rather than a silent passthrough.
 func convertCatalogTableNames(query string) string {
-	// Case-insensitive replacement
-	replacements := map[string]string{
-		"catalog.modules":                      "modules",
-		"catalog.entities":                     "entities",
-		"catalog.associations":                 "associations",
-		"catalog.attributes":                   "attributes",
-		"catalog.microflows":                   "microflows",
-		"catalog.nanoflows":                    "nanoflows",
-		"catalog.pages":                        "pages",
-		"catalog.snippets":                     "snippets",
-		"catalog.layouts":                      "layouts",
-		"catalog.enumerations":                 "enumerations",
-		"catalog.java_actions":                 "java_actions",
-		"catalog.activities":                   "activities",
-		"catalog.widgets":                      "widgets",
-		"catalog.widget_definitions":           "widget_definitions",
-		"catalog.widget_definition_properties": "widget_definition_properties",
-		"catalog.xpath_expressions":            "xpath_expressions",
-		"catalog.refs":                         "refs",
-		"catalog.role_mappings":                "role_mappings",
-		"catalog.permissions":                  "permissions",
-		"catalog.projects":                     "projects",
-		"catalog.snapshots":                    "snapshots",
-		"catalog.objects":                      "objects",
-		"catalog.strings":                      "strings",
-		"catalog.source":                       "source",
-		"catalog.workflows":                    "workflows",
-		"catalog.odata_clients":                "odata_clients",
-		"catalog.odata_services":               "odata_services",
-		"catalog.business_event_services":      "business_event_services",
-		"catalog.constants":                    "constants",
-		"catalog.constant_values":              "constant_values",
-		"catalog.rest_clients":                 "rest_clients",
-		"catalog.rest_operations":              "rest_operations",
-		"catalog.published_rest_services":      "published_rest_services",
-		"catalog.published_rest_operations":    "published_rest_operations",
-		"catalog.external_entities":            "external_entities",
-		"catalog.external_actions":             "external_actions",
-		"catalog.business_events":              "business_events",
-		"catalog.database_connections":         "database_connections",
-		"catalog.jar_dependencies":             "jar_dependencies",
-		"catalog.contract_entities":            "contract_entities",
-		"catalog.contract_actions":             "contract_actions",
-		"catalog.contract_messages":            "contract_messages",
-		"catalog.json_structures":              "json_structures",
-		"catalog.import_mappings":              "import_mappings",
-		"catalog.export_mappings":              "export_mappings",
-	}
-
-	result := query
-	for from, to := range replacements {
-		// Case-insensitive replace
-		result = replaceIgnoreCase(result, from, to)
-	}
-	return result
-}
-
-// replaceIgnoreCase replaces all occurrences of old with new, ignoring case.
-func replaceIgnoreCase(s, old, new string) string {
-	lower := strings.ToLower(s)
-	oldLower := strings.ToLower(old)
-
-	var result strings.Builder
-	i := 0
-	for {
-		idx := strings.Index(lower[i:], oldLower)
-		if idx == -1 {
-			result.WriteString(s[i:])
-			break
-		}
-		result.WriteString(s[i : i+idx])
-		result.WriteString(new)
-		i += idx + len(old)
-	}
-	return result.String()
+	return catalogTableRefRe.ReplaceAllString(query, "$1")
 }
 
 // outputCatalogResults outputs query results in table or JSON format.
