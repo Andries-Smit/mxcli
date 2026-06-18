@@ -28,6 +28,9 @@ const (
 	RefKindHomePage   = "home_page"  // Navigation home page reference
 	RefKindLoginPage  = "login_page" // Navigation login page reference
 	RefKindMenuItem   = "menu_item"  // Navigation menu item page reference
+	RefKindChange     = "change"     // Microflow changes an entity object
+	RefKindDelete     = "delete"     // Microflow deletes an entity object
+	RefKindCalculate  = "calculate"  // Calculated attribute uses a microflow
 )
 
 // collectActionActivities returns all ActionActivity objects from an ObjectCollection,
@@ -106,6 +109,71 @@ func microflowActionRef(action microflows.MicroflowAction) (targetType, targetNa
 	return "", "", "", false
 }
 
+// entityOfDataType returns the entity qualified name a microflow data type refers
+// to (object or list of objects), or "" for primitive/enum/void types.
+func entityOfDataType(dt microflows.DataType) string {
+	switch t := dt.(type) {
+	case *microflows.ObjectType:
+		return t.EntityQualifiedName
+	case *microflows.ListType:
+		return t.EntityQualifiedName
+	}
+	return ""
+}
+
+// microflowVarActionRef resolves the entity reference of an action that operates
+// on a *variable* (change/delete) rather than naming an entity directly. varEntity
+// maps a (normalised) variable name to the entity qualified name it holds, built
+// by the caller from parameters + create/retrieve outputs in the same flow. This
+// is intra-flow resolution only — no cross-flow dataflow — so it returns ok=false
+// when the variable's entity isn't known locally.
+func microflowVarActionRef(action microflows.MicroflowAction, varEntity map[string]string) (targetType, targetName, refKind string, ok bool) {
+	resolve := func(v string) (string, bool) {
+		qn, found := varEntity[strings.TrimPrefix(v, "$")]
+		return qn, found && qn != ""
+	}
+	switch a := action.(type) {
+	case *microflows.ChangeObjectAction:
+		if qn, found := resolve(a.ChangeVariable); found {
+			return "ENTITY", qn, RefKindChange, true
+		}
+	case *microflows.DeleteObjectAction:
+		if qn, found := resolve(a.DeleteVariable); found {
+			return "ENTITY", qn, RefKindDelete, true
+		}
+	}
+	return "", "", "", false
+}
+
+// buildVarEntityMap builds the variable→entity map for a single flow: seed with
+// object-typed parameters, then walk create/retrieve actions whose output
+// variable holds a known entity. Linear in the number of activities.
+func buildVarEntityMap(params []*microflows.MicroflowParameter, acts []*microflows.ActionActivity) map[string]string {
+	norm := func(v string) string { return strings.TrimPrefix(v, "$") }
+	varEntity := map[string]string{}
+	for _, p := range params {
+		if qn := entityOfDataType(p.Type); qn != "" {
+			varEntity[norm(p.Name)] = qn
+		}
+	}
+	for _, act := range acts {
+		switch a := act.Action.(type) {
+		case *microflows.CreateObjectAction:
+			if a.OutputVariable != "" && a.EntityQualifiedName != "" {
+				varEntity[norm(a.OutputVariable)] = a.EntityQualifiedName
+			}
+		case *microflows.RetrieveAction:
+			if a.OutputVariable == "" || a.Source == nil {
+				continue
+			}
+			if db, ok := a.Source.(*microflows.DatabaseRetrieveSource); ok && db.EntityQualifiedName != "" {
+				varEntity[norm(a.OutputVariable)] = db.EntityQualifiedName
+			}
+		}
+	}
+	return varEntity
+}
+
 // buildReferences extracts cross-references from all documents.
 // This is only run in full mode as it requires parsing all documents.
 func (b *Builder) buildReferences() error {
@@ -129,21 +197,29 @@ func (b *Builder) buildReferences() error {
 	// emitActionRefs walks the action activities of a microflow or nanoflow and
 	// records the document reference each action makes. Nanoflows share the same
 	// action types as microflows, so both flow kinds use the same extraction.
-	emitActionRefs := func(sourceType, sourceID string, containerID model.ID, name string, oc *microflows.MicroflowObjectCollection) {
+	emitActionRefs := func(sourceType, sourceID string, containerID model.ID, name string, params []*microflows.MicroflowParameter, oc *microflows.MicroflowObjectCollection) {
 		if oc == nil {
 			return
 		}
 		moduleName := b.hierarchy.getModuleName(b.hierarchy.findModuleID(containerID))
 		sourceQN := moduleName + "." + name
-		for _, act := range collectActionActivities(oc) {
-			targetType, targetName, refKind, ok := microflowActionRef(act.Action)
-			if !ok {
-				continue
-			}
+		acts := collectActionActivities(oc)
+		// Intra-flow variable→entity map so change/delete (which operate on a
+		// variable, not a named entity) can resolve their target.
+		varEntity := buildVarEntityMap(params, acts)
+		emit := func(targetType, targetName, refKind string) {
 			if _, err := stmt.Exec(sourceType, sourceID, sourceQN,
 				targetType, "", targetName,
 				refKind, moduleName, projectID, snapshotID); err == nil {
 				refCount++
+			}
+		}
+		for _, act := range acts {
+			if tt, tn, rk, ok := microflowActionRef(act.Action); ok {
+				emit(tt, tn, rk)
+			}
+			if tt, tn, rk, ok := microflowVarActionRef(act.Action, varEntity); ok {
+				emit(tt, tn, rk)
 			}
 		}
 	}
@@ -154,7 +230,7 @@ func (b *Builder) buildReferences() error {
 		return err
 	}
 	for _, mf := range mfs {
-		emitActionRefs("MICROFLOW", string(mf.ID), mf.ContainerID, mf.Name, mf.ObjectCollection)
+		emitActionRefs("MICROFLOW", string(mf.ID), mf.ContainerID, mf.Name, mf.Parameters, mf.ObjectCollection)
 	}
 
 	// Extract nanoflow references — nanoflows also call microflows/nanoflows,
@@ -162,7 +238,7 @@ func (b *Builder) buildReferences() error {
 	nfs, err := b.cachedNanoflows()
 	if err == nil {
 		for _, nf := range nfs {
-			emitActionRefs("NANOFLOW", string(nf.ID), nf.ContainerID, nf.Name, nf.ObjectCollection)
+			emitActionRefs("NANOFLOW", string(nf.ID), nf.ContainerID, nf.Name, nf.Parameters, nf.ObjectCollection)
 		}
 	}
 
@@ -182,6 +258,17 @@ func (b *Builder) buildReferences() error {
 						RefKindGeneralize, moduleName, projectID, snapshotID)
 					if err == nil {
 						refCount++
+					}
+				}
+				// Calculated-by: an attribute whose value is computed by a microflow.
+				for _, attr := range ent.Attributes {
+					if attr.Value != nil && attr.Value.MicroflowName != "" {
+						_, err = stmt.Exec("ENTITY", string(ent.ID), sourceQN,
+							"MICROFLOW", "", attr.Value.MicroflowName,
+							RefKindCalculate, moduleName, projectID, snapshotID)
+						if err == nil {
+							refCount++
+						}
 					}
 				}
 			}

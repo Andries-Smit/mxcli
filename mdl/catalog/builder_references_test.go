@@ -97,6 +97,74 @@ func TestCollectActionActivities_SkipsNilActions(t *testing.T) {
 	}
 }
 
+func TestEntityOfDataType(t *testing.T) {
+	cases := []struct {
+		name string
+		dt   microflows.DataType
+		want string
+	}{
+		{"object", &microflows.ObjectType{EntityQualifiedName: "M.Customer"}, "M.Customer"},
+		{"list", &microflows.ListType{EntityQualifiedName: "M.Order"}, "M.Order"},
+		{"string", &microflows.StringType{}, ""},
+		{"nil", nil, ""},
+	}
+	for _, c := range cases {
+		if got := entityOfDataType(c.dt); got != c.want {
+			t.Errorf("%s: entityOfDataType = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestBuildVarEntityMap_And_VarActionRef(t *testing.T) {
+	// A flow: param $In : M.Customer; create $New = M.Order; retrieve $List from
+	// M.Product (db); then change $New, delete $In, change $Unknown (untracked).
+	params := []*microflows.MicroflowParameter{
+		{Name: "In", Type: &microflows.ObjectType{EntityQualifiedName: "M.Customer"}},
+		{Name: "Count", Type: &microflows.IntegerType{}}, // primitive → not mapped
+	}
+	acts := []*microflows.ActionActivity{
+		newAction("c", &microflows.CreateObjectAction{EntityQualifiedName: "M.Order", OutputVariable: "New"}),
+		newAction("r", &microflows.RetrieveAction{
+			OutputVariable: "List",
+			Source:         &microflows.DatabaseRetrieveSource{EntityQualifiedName: "M.Product"},
+		}),
+	}
+	varEntity := buildVarEntityMap(params, acts)
+	wantMap := map[string]string{"In": "M.Customer", "New": "M.Order", "List": "M.Product"}
+	for k, v := range wantMap {
+		if varEntity[k] != v {
+			t.Errorf("varEntity[%q] = %q, want %q", k, varEntity[k], v)
+		}
+	}
+	if _, ok := varEntity["Count"]; ok {
+		t.Error("primitive param should not be mapped")
+	}
+
+	// change/delete resolve via the map (with and without the $ prefix).
+	checks := []struct {
+		name       string
+		action     microflows.MicroflowAction
+		wantOK     bool
+		targetName string
+		refKind    string
+	}{
+		{"change tracked", &microflows.ChangeObjectAction{ChangeVariable: "$New"}, true, "M.Order", RefKindChange},
+		{"delete tracked param", &microflows.DeleteObjectAction{DeleteVariable: "In"}, true, "M.Customer", RefKindDelete},
+		{"change untracked var", &microflows.ChangeObjectAction{ChangeVariable: "$Mystery"}, false, "", ""},
+		{"non var action", &microflows.MicroflowCallAction{}, false, "", ""},
+	}
+	for _, c := range checks {
+		tt, tn, rk, ok := microflowVarActionRef(c.action, varEntity)
+		if ok != c.wantOK {
+			t.Errorf("%s: ok = %v, want %v", c.name, ok, c.wantOK)
+			continue
+		}
+		if ok && (tt != "ENTITY" || tn != c.targetName || rk != c.refKind) {
+			t.Errorf("%s: got (%q,%q,%q), want (ENTITY,%q,%q)", c.name, tt, tn, rk, c.targetName, c.refKind)
+		}
+	}
+}
+
 func TestMicroflowActionRef(t *testing.T) {
 	tests := []struct {
 		name       string
