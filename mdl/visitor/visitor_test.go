@@ -1336,6 +1336,33 @@ func TestParseError_QuotedGrantAttribute(t *testing.T) {
 	}
 }
 
+// TestParseError_MisplacedExtends verifies that an EXTENDS clause placed after
+// the attribute parentheses produces an actionable hint about ordering (#4).
+func TestParseError_MisplacedExtends(t *testing.T) {
+	for _, input := range []string{
+		`create entity Mod.Child (Name: String) extends Mod.Parent;`,
+		`create persistent entity Mod.Child (Name: String) generalization Mod.Parent;`,
+	} {
+		_, errs := Build(input)
+		if len(errs) == 0 {
+			t.Fatalf("expected parse errors for misplaced EXTENDS in %q", input)
+		}
+		found := false
+		for _, err := range errs {
+			if strings.Contains(err.Error(), "must come BEFORE the attribute") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected misplaced-EXTENDS hint for %q, got:", input)
+			for _, err := range errs {
+				t.Errorf("  %v", err)
+			}
+		}
+	}
+}
+
 // TestEnumDefaultQuotedIdentifier verifies that quoted identifiers in enum
 // DEFAULT values are unquoted correctly (issue #11 / BUG-004).
 // e.g. DEFAULT MaisonElegance."FormSubmissionStatus".StatusNew should store

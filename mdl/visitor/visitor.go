@@ -45,6 +45,17 @@ func enhanceErrorMessage(msg string) string {
 			"    GRANT Mod.Role ON Mod.Entity (READ \"Attr1\", \"Attr2\");            (wrong — causes parse error)", msg)
 	}
 
+	// Check for a misplaced EXTENDS / GENERALIZATION clause. It must precede the
+	// attribute list — `create entity Mod.Child extends Mod.Parent ( ... )` — but
+	// users often append it after the closing parenthesis, where ANTLR reports a
+	// generic "extraneous/mismatched input 'extends'".
+	if looksLikeMisplacedExtends(msg) {
+		return fmt.Sprintf("%s\n\n  An EXTENDS (or GENERALIZATION) clause must come BEFORE the attribute\n"+
+			"  parentheses, not after them:\n"+
+			"    create entity Mod.Child extends Mod.Parent (Name: String);  (correct)\n"+
+			"    create entity Mod.Child (Name: String) extends Mod.Parent;  (wrong — causes parse error)", msg)
+	}
+
 	// Check for unescaped apostrophe in string literals first.
 	// When 'it's here' is parsed, ANTLR sees 'it' as a complete string, then
 	// the leftover characters (like "s", "ll", "t") appear as unexpected tokens.
@@ -94,6 +105,14 @@ func enhanceErrorMessage(msg string) string {
 	}
 
 	return msg
+}
+
+// looksLikeMisplacedExtends detects ANTLR errors caused by an EXTENDS /
+// GENERALIZATION clause placed after the entity's attribute parentheses instead
+// of before them. The offending token surfaces as extraneous/mismatched input.
+func looksLikeMisplacedExtends(msg string) bool {
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "input 'extends'") || strings.Contains(lower, "input 'generalization'")
 }
 
 // looksLikeQuotedGrantAttribute detects ANTLR errors from `READ "Attr"` /
