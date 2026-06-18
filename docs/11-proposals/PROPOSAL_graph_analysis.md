@@ -1,6 +1,7 @@
 # Proposal: Graph analysis — architecture report views + Leiden communities
 
-**Status:** Draft
+**Status:** Implemented (branch `misc`, Parts 1 & 2) — pending merge
+**Issue:** #670
 **Date:** 2026-06-18
 
 ## Problem Statement
