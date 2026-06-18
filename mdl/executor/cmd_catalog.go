@@ -473,6 +473,39 @@ func execRefreshCatalogStmt(ctx *ExecContext, stmt *ast.RefreshCatalogStmt) erro
 		}
 	}
 
+	// Communities: augment the EXISTING catalog with the graph-analysis tables
+	// rather than rebuilding it. A rebuild would downgrade a source-mode catalog
+	// to full (dropping the source FTS data) and needlessly re-parse the project —
+	// the graph pass only needs the refs table. ensureCatalog loads the current
+	// full/source cache (preserving its mode) or builds full if none is valid.
+	if stmt.Communities {
+		cachePath := getCachePath(ctx)
+		// If a refs-bearing cache already exists, ensureCatalog loads it
+		// file-backed — AddGraphAnalysis then writes straight to disk, so no
+		// re-save is needed and the existing mode (incl. source FTS) is kept. Only
+		// a freshly-built (in-memory) catalog needs persisting.
+		loadedFromCache := false
+		if cachePath != "" {
+			if valid, _ := isCacheValid(ctx, cachePath, "full"); valid {
+				loadedFromCache = true
+			}
+		}
+		if err := ensureCatalog(ctx, true); err != nil {
+			return err
+		}
+		if err := ctx.Catalog.AddGraphAnalysis(stmt.Resolution); err != nil {
+			return mdlerrors.NewBackend("graph analysis", err)
+		}
+		if !loadedFromCache && cachePath != "" {
+			os.Remove(cachePath)
+			if err := ctx.Catalog.SaveToFile(cachePath); err != nil {
+				fmt.Fprintf(ctx.Output, "Warning: failed to save catalog cache: %v\n", err)
+			}
+		}
+		fmt.Fprintln(ctx.Output, "✓ Graph analysis complete")
+		return nil
+	}
+
 	// Close existing catalog if any
 	if ctx.Catalog != nil {
 		ctx.Catalog.Close()

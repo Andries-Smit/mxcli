@@ -3,6 +3,7 @@
 package catalog
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/mendixlabs/mxcli/mdl/catalog/graph"
@@ -19,6 +20,36 @@ var graphRefKinds = []string{
 // betweennessNodeCap bounds the O(V*E) betweenness computation. Above it,
 // betweenness is skipped (PageRank/communities still run) to keep the pass fast.
 const betweennessNodeCap = 6000
+
+// AddGraphAnalysis runs the graph-analysis pass (communities/cycles/layers/
+// centrality) on an already-built catalog WITHOUT re-parsing. The catalog must
+// already contain the refs table (built in full or source mode). This lets
+// `refresh catalog communities` *augment* the existing catalog instead of
+// rebuilding it — a rebuild downgrades a source-mode catalog to full and drops
+// the source FTS data. The graph rows reuse the catalog's existing SnapshotId so
+// the snapshot-framed views resolve.
+func (c *Catalog) AddGraphAnalysis(resolution float64) error {
+	var snapID string
+	if err := c.db.QueryRow("SELECT SnapshotId FROM snapshots ORDER BY rowid DESC LIMIT 1").Scan(&snapID); err != nil {
+		return fmt.Errorf("catalog has no snapshot (build full first): %w", err)
+	}
+	tx, err := c.db.Begin()
+	if err != nil {
+		return err
+	}
+	b := &Builder{
+		catalog:         c,
+		tx:              tx,
+		snapshot:        &Snapshot{ID: snapID},
+		communitiesMode: true,
+		resolution:      resolution,
+	}
+	if err := b.buildGraphAnalysis(); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
 
 // buildGraphAnalysis runs the pure-Go graph algorithms over the refs graph and
 // writes communities/cycles/layers/centrality. Only runs in communities mode; it
