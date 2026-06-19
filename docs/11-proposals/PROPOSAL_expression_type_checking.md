@@ -2,12 +2,25 @@
 title: Expression Type Checking for mxcli check
 status: draft
 date: 2026-05-10
+revised: 2026-06-19
 ---
 
 # Proposal: Expression Type Checking for mxcli check
 
 **Status:** Draft
-**Date:** 2026-05-10
+**Date:** 2026-05-10 (revised 2026-06-19)
+
+> **2026-06-19 revision.** Implementation investigation overturned this draft's
+> central premise. It assumed our microflow expressions are stored as **raw
+> strings** (so the missing piece was a parser, which `exprcheck` supplies). In
+> fact our visitor **already parses expressions into typed `mdl/ast` nodes**
+> (`FunctionCallExpr`, `BinaryExpr`, `AttributePathExpr`, `QualifiedNameExpr`, …).
+> So we do **not** need `exprcheck`'s lexer/parser — we need its **checker**
+> (type system, function-return table, slot resolver), fed from the AST we
+> already have. The authoritative plan is now
+> **[§ Revised Architecture](#revised-architecture-2026-06-19)**; the original
+> Architecture and Implementation Plan sections below are retained as history but
+> are superseded by it.
 
 ## Problem Statement
 
@@ -120,7 +133,129 @@ Enum values behave differently depending on context:
 
 ---
 
-## Architecture
+## Revised Architecture (2026-06-19)
+
+**Authoritative.** Supersedes the original "Architecture" and "Implementation
+Plan" sections that follow.
+
+### Core principle: one resolution pass, two outputs
+
+Catching expression bugs in `mxcli check` and filling the catalog `refs`/graph
+edges (see [§ Second consumer](#second-consumer-catalog-refs-expression-edges))
+are two products of the **same** operation: resolving the references and types
+inside an expression against the project. Build that once; consume it twice.
+
+```
+                       ┌───────────────────────────────┐
+  our mdl/ast typed    │  converter: mdl/ast → exprcheck │
+  expression nodes ───▶│  (~13 nodes, ≈1:1)             │
+                       └───────────────┬───────────────┘
+                                       ▼
+                    exprcheck checker + resolver (ported, verbatim)
+                    over a Scope ($var→type) + CatalogReader
+                                       │
+                 ┌─────────────────────┴─────────────────────┐
+                 ▼                                             ▼
+        (a) diagnostics                            (b) refs/graph edges
+   mxcli check + LSP                       emit entity/attribute/association/
+   Tier-1: syntax + arg-count (no project) enum/constant edge per resolved
+   Tier-2: type/enum/attr/return (catalog) reference (fills CATALOG.REFS)
+```
+
+### 1. Canonical representation = our `mdl/ast` typed nodes
+
+The visitor already produces typed expression nodes, and they already drive BSON
+serialization and `describe` round-trips. Do **not** fork the representation and
+do **not** keep `exprcheck`'s lexer/parser in the hot path. The node sets are
+near 1:1 (verified): `LiteralExpr`↔`StringLit/NumberLit/BoolLit/EmptyExpr`,
+`VariableExpr`, `AttributePathExpr`, `QualifiedNameExpr`↔`QNameExpr`,
+`FunctionCallExpr`↔`CallExpr`, `BinaryExpr`↔`BinExpr`, `UnaryExpr`, `ParenExpr`,
+`IfThenElseExpr`, `TokenExpr`, `ConstantRefExpr`↔`ConstantRef`. `exprcheck`'s
+`RobustExpr`/`RecoveredExpr`/`Position` are parser **error-recovery** machinery
+we don't need (our parser already produced the tree).
+
+> Keep `exprcheck`'s parser/recovery in the tree but **dormant** — still useful
+> for the one genuine raw-string slot (`ast_microflow.go:797`) and for LSP
+> partial-parse-while-typing. Revisit deleting it later.
+
+### 2. One converter (the only new glue surface)
+
+`mdl/ast.Expression → exprcheck` AST. A single mechanical mapping; lets us keep
+`exprcheck`'s checker / function table / slot resolver **verbatim**, preserving
+easy re-syncs from the engalar fork. The ported `adapters/` layer (which
+extracts a source string and re-parses) is **not** used on our branch.
+
+### 3. The resolver reads an **overlay**, not the catalog alone
+
+This is the correctness crux for large, multi-document scripts. A script that
+`create`s/`alter`s many entities/microflows references symbols that are not on
+disk yet (and forward-references between them). Resolution must therefore be:
+
+```
+resolve(symbol) = script-defined symbols (this run's CREATE/ALTER AST)   ┐ first
+                  ⊕ catalog (existing project on disk)                    ┘ fallback
+```
+
+`ValidateProgram` already does this overlay for **existence** ("skips references
+to objects created within the script"). The type-checking `CatalogReader`
+extends the same overlay to **types**: a script-created entity's attribute types
+come from its CREATE statement's AST; an `alter entity … add/modify attribute`
+applies the delta; everything pre-existing falls back to the catalog. Build the
+script symbol index **once** per run, then layer the catalog under it.
+
+`exprcheck`'s `CatalogReader` seam is exactly the right shape:
+`AttributeKind`, `AttributeEnumQN`, `EnumCases`, `MicroflowReturn`.
+
+**What the catalog already answers vs. gaps:**
+
+| Lookup | Status |
+|--------|--------|
+| `AttributeKind(entity, attr)` | ✓ `attributes_data.DataType` |
+| `MicroflowReturn(qn)` | ✓ `microflows_data.ReturnType` |
+| `EnumCases(enumQN)` | ✗ — `enumerations_data` stores only `ValueCount`. **Add an `enum_values` table / column** (the builder already has `enum.Values` in hand at `builder_modules.go:277`). Also feeds enum-value usage edges for the graph consumer. |
+| script-defined / `alter`ed symbols | ✗ on disk — supplied by the overlay (above) |
+
+### 4. Scale & failure mode
+
+- **Scale:** wrap `CatalogReader` in a **memoized in-memory index** (load
+  entity→attributes and enum→cases once per run). SQLite is fast, but a
+  per-expression-per-member query across thousands of expressions is wasteful.
+  The per-microflow `Scope` is cheap.
+- **Safe degradation:** anything the overlay+catalog cannot resolve →
+  `KindUnknown` → downstream errors suppressed. On a huge script with a stale or
+  partial catalog the checker **catches less**, never raises **false positives**
+  on valid code. Correct behaviour for a `check` gate.
+
+### 5. The two consumers differ on the overlay
+
+- **check-a-script** (consumer a) needs the overlay — it runs against a transient
+  script over an existing project.
+- **refs/graph** (consumer b) runs at `refresh catalog` over the **whole
+  project**; every document is already present, so no overlay and no
+  forward-reference problem — catalog-against-catalog is correct and complete.
+
+### Build order (each independently shippable)
+
+1. **Headless semantic core** — `mdl/ast → exprcheck` converter, `Scope` +
+   first-pass `$var→type` walker, overlay `CatalogReader` (script index ⊕
+   catalog) with memoization, `enum_values` catalog addition. Unit-tested, no
+   `check`/LSP/refs coupling.
+2. **Consumer (a):** wire into `mxcli check` — Tier-1 unconditional, Tier-2 under
+   `--references`; then LSP diagnostics. Delivers the field-report P0.
+3. **Consumer (b):** wire the resolver into the catalog `refs` builder; fold in
+   the hand-rolled change/delete resolution it does today. Delivers graph/
+   community expression-edge completeness (and fills enum/constant nodes that
+   have zero inbound edges today).
+
+### Status of the port
+
+`mdl/exprcheck/` is already ported to this branch (builds, all its tests pass).
+Its core checker/type-system/resolver are reused as above; its parser stays
+dormant; its `adapters/` source-string re-parse path is not used here.
+
+---
+
+## Architecture (original draft — superseded by § Revised Architecture above)
 
 ### 1. Type Representation
 
@@ -243,7 +378,7 @@ inline; catalog-backed checks require the project to be open.
 
 ---
 
-## Implementation Plan
+## Implementation Plan (original draft — superseded by § Revised Architecture "Build order")
 
 ### Phase 1 — Type infrastructure (no project needed)
 
@@ -363,6 +498,14 @@ The engalar fork already carries `mdl/exprcheck/`, a **working and more complete
 implementation of this proposal's Phase 1–2**, architected the same way. This
 section recasts the proposal accordingly: **the recommended path is to port and
 adapt `exprcheck`, not build `mdl/typesystem` from scratch.**
+
+> **Correction (2026-06-19):** this section claimed our expressions are raw
+> strings so a parser is the missing piece. That is **wrong** for the expressions
+> that matter — the visitor already parses DECLARE/SET/RETURN/IF expressions into
+> typed `mdl/ast` nodes. Only one niche slot (`ast_microflow.go:797`) keeps a raw
+> `Expression string`. So we reuse `exprcheck`'s **checker**, not its parser, fed
+> via a `mdl/ast → exprcheck` converter. See § Revised Architecture. The original
+> text below is retained as history.
 
 Decisive detail this draft missed: our microflow/nanoflow expressions are stored
 as **raw strings** (`Expression string` in `ast_microflow.go`) — the typed
