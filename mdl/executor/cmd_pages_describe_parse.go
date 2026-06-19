@@ -822,56 +822,59 @@ func extractDesignProperties(appearance map[string]any) []rawDesignProp {
 		if !ok {
 			continue
 		}
-		typeName, _ := itemMap["$Type"].(string)
-		key, _ := itemMap["Key"].(string)
-		if key == "" {
-			continue
-		}
-
-		switch typeName {
-		case "Forms$DesignPropertyValue":
-			// Studio Pro nested format: Value sub-map contains the actual type
-			valueMap, ok := itemMap["Value"].(map[string]any)
-			if !ok {
-				continue
-			}
-			innerType, _ := valueMap["$Type"].(string)
-			switch innerType {
-			case "Forms$ToggleDesignPropertyValue":
-				result = append(result, rawDesignProp{
-					Key:       key,
-					ValueType: "toggle",
-				})
-			case "Forms$OptionDesignPropertyValue":
-				option, _ := valueMap["Option"].(string)
-				result = append(result, rawDesignProp{
-					Key:       key,
-					ValueType: "option",
-					Option:    option,
-				})
-			case "Forms$CustomDesignPropertyValue":
-				value, _ := valueMap["Value"].(string)
-				result = append(result, rawDesignProp{
-					Key:       key,
-					ValueType: "option", // Treat custom (ToggleButtonGroup) as option for display
-					Option:    value,
-				})
-			}
-		case "Forms$ToggleDesignPropertyValue":
-			// Flat format (backward compat with mxcli-written pages)
-			result = append(result, rawDesignProp{
-				Key:       key,
-				ValueType: "toggle",
-			})
-		case "Forms$OptionDesignPropertyValue":
-			// Flat format (backward compat with mxcli-written pages)
-			option, _ := itemMap["Option"].(string)
-			result = append(result, rawDesignProp{
-				Key:       key,
-				ValueType: "option",
-				Option:    option,
-			})
+		if dp, ok := parseDesignProperty(itemMap); ok {
+			result = append(result, dp)
 		}
 	}
 	return result
+}
+
+// parseDesignProperty parses a single design-property item. It handles both the
+// Studio Pro nested format (Forms$DesignPropertyValue wrapping a typed Value) and
+// the flat format mxcli once wrote. Compound values (Forms$CompoundDesignPropertyValue)
+// recurse over their Properties list (issue #668).
+func parseDesignProperty(itemMap map[string]any) (rawDesignProp, bool) {
+	typeName, _ := itemMap["$Type"].(string)
+	key, _ := itemMap["Key"].(string)
+	if key == "" {
+		return rawDesignProp{}, false
+	}
+
+	switch typeName {
+	case "Forms$DesignPropertyValue":
+		// Studio Pro nested format: Value sub-map contains the actual type
+		valueMap, ok := itemMap["Value"].(map[string]any)
+		if !ok {
+			return rawDesignProp{}, false
+		}
+		switch valueMap["$Type"].(string) {
+		case "Forms$ToggleDesignPropertyValue":
+			return rawDesignProp{Key: key, ValueType: "toggle"}, true
+		case "Forms$OptionDesignPropertyValue":
+			option, _ := valueMap["Option"].(string)
+			return rawDesignProp{Key: key, ValueType: "option", Option: option}, true
+		case "Forms$CustomDesignPropertyValue":
+			value, _ := valueMap["Value"].(string)
+			// Treat custom (ToggleButtonGroup) as option for display
+			return rawDesignProp{Key: key, ValueType: "option", Option: value}, true
+		case "Forms$CompoundDesignPropertyValue":
+			var nested []rawDesignProp
+			for _, sub := range getBsonArrayElements(valueMap["Properties"]) {
+				if subMap, ok := sub.(map[string]any); ok {
+					if dp, ok := parseDesignProperty(subMap); ok {
+						nested = append(nested, dp)
+					}
+				}
+			}
+			return rawDesignProp{Key: key, ValueType: "compound", Nested: nested}, true
+		}
+	case "Forms$ToggleDesignPropertyValue":
+		// Flat format (backward compat with mxcli-written pages)
+		return rawDesignProp{Key: key, ValueType: "toggle"}, true
+	case "Forms$OptionDesignPropertyValue":
+		// Flat format (backward compat with mxcli-written pages)
+		option, _ := itemMap["Option"].(string)
+		return rawDesignProp{Key: key, ValueType: "option", Option: option}, true
+	}
+	return rawDesignProp{}, false
 }

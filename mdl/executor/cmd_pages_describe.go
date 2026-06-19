@@ -568,9 +568,10 @@ type rawExplicitProp struct {
 
 // rawDesignProp represents a parsed design property from BSON.
 type rawDesignProp struct {
-	Key       string // Design property key, e.g., "Spacing top"
-	ValueType string // "toggle" or "option"
-	Option    string // For "option" type: the selected option value
+	Key       string          // Design property key, e.g., "Spacing top"
+	ValueType string          // "toggle", "option", or "compound"
+	Option    string          // For "option" type: the selected option value
+	Nested    []rawDesignProp // For "compound" type: sub-properties (e.g. Spacing → margin-top/bottom)
 }
 
 type rawWidgetRow struct {

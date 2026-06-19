@@ -203,18 +203,9 @@ func execDescribeStyling(ctx *ExecContext, s *ast.DescribeStylingStmt) error {
 			fmt.Fprintf(ctx.Output, "  Style: '%s'\n", w.Style)
 		}
 		if len(w.DesignProperties) > 0 {
-			fmt.Fprintf(ctx.Output, "  DesignProperties: [")
-			for j, dp := range w.DesignProperties {
-				if j > 0 {
-					fmt.Fprint(ctx.Output, ", ")
-				}
-				if dp.ValueType == "toggle" {
-					fmt.Fprintf(ctx.Output, "'%s': on", dp.Key)
-				} else {
-					fmt.Fprintf(ctx.Output, "'%s': '%s'", dp.Key, dp.Option)
-				}
-			}
-			fmt.Fprintln(ctx.Output, "]")
+			// Reuse the DESCRIBE PAGE formatter so toggle/option/compound render
+			// identically across both describe paths (compound = issue #668).
+			fmt.Fprintf(ctx.Output, "  DesignProperties: [%s]\n", joinDesignPropertyEntries(w.DesignProperties))
 		}
 	}
 

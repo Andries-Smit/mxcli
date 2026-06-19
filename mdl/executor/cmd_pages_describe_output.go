@@ -77,6 +77,13 @@ func appendAppearanceProps(props []string, w rawWidget) []string {
 // formatDesignPropertiesMDL formats design properties as MDL V3 syntax.
 // Toggle → 'Key': ON, Option → 'Key': 'Value'
 func formatDesignPropertiesMDL(dps []rawDesignProp) string {
+	return fmt.Sprintf("DesignProperties: [%s]", joinDesignPropertyEntries(dps))
+}
+
+// joinDesignPropertyEntries renders design-property entries as comma-separated
+// MDL. Compound properties recurse into a nested list (issue #668):
+// 'Spacing': ['margin-top': 'Large', 'margin-bottom': 'Medium'].
+func joinDesignPropertyEntries(dps []rawDesignProp) string {
 	var entries []string
 	for _, dp := range dps {
 		switch dp.ValueType {
@@ -84,9 +91,11 @@ func formatDesignPropertiesMDL(dps []rawDesignProp) string {
 			entries = append(entries, fmt.Sprintf("%s: on", mdlQuote(dp.Key)))
 		case "option":
 			entries = append(entries, fmt.Sprintf("%s: %s", mdlQuote(dp.Key), mdlQuote(dp.Option)))
+		case "compound":
+			entries = append(entries, fmt.Sprintf("%s: [%s]", mdlQuote(dp.Key), joinDesignPropertyEntries(dp.Nested)))
 		}
 	}
-	return fmt.Sprintf("DesignProperties: [%s]", strings.Join(entries, ", "))
+	return strings.Join(entries, ", ")
 }
 
 // formatWidgetProps writes a widget line with automatic multi-line wrapping.
