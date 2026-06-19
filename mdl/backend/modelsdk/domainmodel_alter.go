@@ -109,13 +109,28 @@ func (b *Backend) UpdateEntity(domainModelID model.ID, entity *domainmodel.Entit
 		return err
 	}
 	order := dm.EntitiesItems()
-	if findGenEntity(dm, entity.ID) == nil {
+	orig := findGenEntity(dm, entity.ID)
+	if orig == nil {
 		return fmt.Errorf("entity not found: %s", entity.ID)
 	}
 
 	ge := entityToGen(entity, b.moduleNameFor(domainModelID), b.majorVersion())
 	ge.SetID(element.ID(entity.ID))
 	assignEntityIDs(ge)
+
+	// Carry the original raw bytes onto the rebuilt target so the codec treats it
+	// as an EXISTING element: dirty (re-encoded) properties come from ge, while
+	// unmodeled fields — notably the entity GUID — pass through verbatim from raw.
+	// Without this, entityToGen produces a fresh (raw==nil) element and the codec
+	// emits GUID = $ID (EmitGUID default), discarding the on-disk GUID. That GUID
+	// is the entity's stable cross-reference identity: pages/grids and inheriting
+	// entities in other modules resolve members through it, so changing it dangles
+	// those references (CE1613 — GitHub issue #657). Siblings are untouched (raw
+	// passthrough in the list rebuild below), so they already keep their GUID; this
+	// closes the same gap for the ALTER target itself.
+	if raw := orig.Raw(); raw != nil {
+		ge.SetRaw(raw)
+	}
 
 	// Rebuild the list in place: drop all, re-add in original order swapping the
 	// target. Re-added existing elements stay clean (only the list is dirtied),
