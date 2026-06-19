@@ -226,7 +226,50 @@ script symbol index **once** per run, then layer the catalog under it.
   partial catalog the checker **catches less**, never raises **false positives**
   on valid code. Correct behaviour for a `check` gate.
 
-### 5. The two consumers differ on the overlay
+### 5. Freshness: depend on a `ModelResolver` interface, not "the catalog"
+
+If the catalog becomes central to checking, the trap is treating it as *the*
+source the resolver reads. It should not be. The resolver depends on a
+**`ModelResolver` interface** (`AttributeKind`, `AttributeEnumQN`, `EnumCases`,
+`MicroflowReturn`, + entity/attribute existence) plus the script overlay; the
+catalog is just **one implementation** — a derived cache — not the contract. This
+is the ADR-0005 stance (the backend speaks the semantic model) applied to reads.
+With that seam, freshness becomes a **per-backend policy** behind one interface,
+and the script overlay (§ 3) sits on top of either, unchanged:
+
+| Backend | Authoritative source | Freshness policy |
+|---------|----------------------|------------------|
+| MPR-on-disk (file) | `.mpr` files | catalog cache + staleness detection + incremental top-up |
+| MCP / Studio Pro (live) | live in-memory model via MCP/PED | **read-through to the live model** for lookups MCP exposes; disk-catalog fallback for the rest |
+
+**Why this matters per concern:**
+
+- **Disk staleness.** `check`'s failure mode is `KindUnknown` = *catches less,
+  never false-positive*, so a mildly stale catalog degrades gracefully — the
+  freshness bar for an advisory check is far lower than for a build. Refresh is
+  **all-or-nothing today** (`builder.Build` rebuilds everything; no per-document
+  hashing), but `snapshots` already records `SourceRevision`/`SourceBranch`/
+  `SnapshotDate` — a coarse hook. So: (1) **now** — a cheap *staleness warning*
+  (compare working-tree git revision / mtime to `snapshots.SourceRevision`,
+  print *"catalog N revisions stale; run `refresh catalog` for full coverage"*);
+  (2) **next** — **incremental refresh** keyed by per-document content hash
+  (MPR v2's file-per-document layout makes this tractable; full rebuild per check
+  is too slow at scale); (3) **later** — an optional file-watcher (reuse the TUI's
+  fsnotify watcher) to keep it warm for LSP/long sessions. Do **not** auto-refresh
+  everything on every check — that is the expensive trap.
+
+- **MCP / concurrent Studio Pro edits.** Here the disk catalog is not merely stale
+  but the *wrong source of truth*: Studio Pro holds unsaved in-memory edits and
+  the user mutates concurrently, so the disk `.mpr` lags in both directions.
+  Building catalog-sync machinery against a live dirty model is a losing game (and
+  out of scope per the MCP-avoid-MPR-writer-conflicts constraint). The interface
+  reframe sidesteps it: under MCP the `ModelResolver` **reads through to the live
+  model** for what MCP/PED exposes (freshest possible, no drift), falls back to the
+  disk catalog for the rest (`KindUnknown` keeps that safe), and **tolerates
+  races** — `check` is advisory, so a momentarily inconsistent read is acceptable;
+  never lock the model for a lint.
+
+### 6. The two consumers differ on the overlay
 
 - **check-a-script** (consumer a) needs the overlay — it runs against a transient
   script over an existing project.
@@ -237,15 +280,23 @@ script symbol index **once** per run, then layer the catalog under it.
 ### Build order (each independently shippable)
 
 1. **Headless semantic core** — `mdl/ast → exprcheck` converter, `Scope` +
-   first-pass `$var→type` walker, overlay `CatalogReader` (script index ⊕
-   catalog) with memoization, `enum_values` catalog addition. Unit-tested, no
-   `check`/LSP/refs coupling.
+   first-pass `$var→type` walker, and a **`ModelResolver` interface** with an
+   overlay implementation (script index ⊕ catalog) + memoization, `enum_values`
+   catalog addition. Unit-tested, no `check`/LSP/refs coupling. The interface seam
+   is what lets the MCP backend bind live reads later without touching the
+   resolver or overlay.
 2. **Consumer (a):** wire into `mxcli check` — Tier-1 unconditional, Tier-2 under
-   `--references`; then LSP diagnostics. Delivers the field-report P0.
+   `--references`; add the **staleness warning** (§ 5); then LSP diagnostics.
+   Delivers the field-report P0.
 3. **Consumer (b):** wire the resolver into the catalog `refs` builder; fold in
    the hand-rolled change/delete resolution it does today. Delivers graph/
    community expression-edge completeness (and fills enum/constant nodes that
    have zero inbound edges today).
+
+**Independent follow-ups (not blockers for the type-checker):** incremental
+catalog refresh; the LSP file-watcher; MCP `ModelResolver` read-through. These
+improve the whole catalog subsystem, not just type-checking, and `KindUnknown`
+safe-degradation means the checker ships useful without them.
 
 ### Status of the port
 
