@@ -127,6 +127,13 @@ from "tasklist$task";
 - Each ID includes a 7-bit random suffix (0–127) for security; generate a fresh
   random value per row
 
+> **The running app won't see these rows until it reloads.** Direct SQL inserts
+> bypass the runtime's query/cache layer, so `mxcli oql` (which queries the running
+> app) returns `0` for freshly seeded data — this looks like a seeding failure but
+> isn't. Run `mxcli docker reload` (or restart the app) after seeding. To confirm
+> rows landed *before* a reload, query Postgres directly. See
+> [verify-with-oql.md](./verify-with-oql.md).
+
 ---
 
 ## Step 4: Check Association Storage and Optimistic Locking

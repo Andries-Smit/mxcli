@@ -168,6 +168,11 @@ This loop avoids container restarts and database resets, making each iteration t
 
 - **Use `--json` for scripted assertions** — structured output is easier to parse than table format
 - **OQL is read-only** — `mxcli oql` uses the `preview_execute_oql` action which cannot modify data
+- **OQL won't see rows you wrote directly into Postgres until the runtime reloads.** `mxcli oql`
+  executes through the *running app's* query layer (not a separate DB), so rows seeded with direct
+  SQL `INSERT`s (see [demo-data.md](./demo-data.md)) are invisible until the runtime re-reads them.
+  After seeding, run `mxcli docker reload` (or restart the app) before trusting an OQL `count(*)` of
+  `0`. To confirm the rows landed *before* a reload, query Postgres directly (`mxcli sql …`).
 - **Check before and after** — query the state before triggering an action to establish a baseline
 - **Common OQL patterns for testing:**
   - `count(*)` to verify record counts
