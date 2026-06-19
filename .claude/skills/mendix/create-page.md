@@ -314,7 +314,7 @@ datagrid gridName (
 | `Hidable` | `yes`, `hidden`, `no` | `yes` | Can hide column |
 | `ColumnWidth` | `autofill`, `autoFit`, `manual` | `autofill` | Column width mode |
 | `Size` | integer (px) | `1` | Width in pixels (when `ColumnWidth: manual`) |
-| `visible` | expression string | `true` | Conditional visibility (use page variables, NOT `$currentObject`) |
+| `visible` | expression string | `true` | Column-level visibility — hides/shows the whole column, so use page variables, NOT `$currentObject` (per-object widget visibility is different — see "Conditional Visibility and Editability") |
 | `DynamicCellClass` | expression string | (empty) | Dynamic CSS class per cell |
 | `tooltip` | text string | (empty) | Cell tooltip text |
 
@@ -806,11 +806,17 @@ See the dedicated skill file: [ALTER PAGE/SNIPPET](./alter-page.md)
 Any widget can have conditional visibility. Input widgets can also have conditional editability. Use XPath bracket syntax `[expression]`:
 
 ```sql
--- Conditionally visible widget
+-- Conditionally visible widget (boolean attribute)
 textbox txtName (label: 'Name', attribute: Name, visible: [IsActive])
 
--- Conditionally editable input
-textbox txtStatus (label: 'Status', attribute: status, editable: [status != 'Closed'])
+-- Conditionally editable input (boolean)
+textbox txtStatus (label: 'Status', attribute: status, editable: [CanEdit])
+
+-- Enum comparison: use the QUALIFIED enum value and the $currentObject path.
+-- A bare attribute or a quoted string (e.g. [status != 'Closed']) parses fine
+-- but only fails later at MxBuild ("Error(s) in expression").
+textbox txtNotes (label: 'Notes', attribute: Notes,
+  visible: [$currentObject/Status = MES.EquipmentStatus.Running])
 
 -- Combined
 textbox txtEmail (label: 'Email', attribute: Email,
@@ -821,6 +827,20 @@ textbox txtEmail (label: 'Email', attribute: Email,
 textbox txtReadOnly (label: 'Read Only', attribute: Name, editable: Never)
 textbox txtHidden (label: 'Hidden', attribute: Name, visible: false)
 ```
+
+> **Enum comparison differs by context** — and `check` cannot yet catch a wrong
+> form, so these only fail at MxBuild:
+> - **Widget visibility/editability expression** (inside a data container / gallery,
+>   per-object): qualified value + `$currentObject` path —
+>   `[$currentObject/Status = MES.EquipmentStatus.Running]`.
+> - **XPath datasource constraint** (`where […]`): the string key works —
+>   `where [Status = 'Running']` (see [xpath-constraints.md](./xpath-constraints.md)).
+> - **Microflow expression**: qualified value, no `$currentObject` —
+>   `$obj/Status = MES.EquipmentStatus.Running` (see [write-microflows.md](./write-microflows.md)).
+>
+> The `$currentObject` form above is for **widget-level** visibility in a per-object
+> context. It does **not** apply to **DataGrid2 column** `visible:` (next section),
+> which hides/shows the whole column and must use page variables.
 
 ## Known Limitations
 
