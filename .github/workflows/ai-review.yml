@@ -12,7 +12,7 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # Checkout base repo (not PR head) for safe access to CLAUDE.md and proposals.
           # The diff is fetched via GitHub API, not from the PR code.
