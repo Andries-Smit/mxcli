@@ -81,6 +81,10 @@ func stmtSummary(stmt ast.Statement) string {
 		return fmt.Sprintf("create java action %s", s.Name)
 	case *ast.DropJavaActionStmt:
 		return fmt.Sprintf("drop java action %s", s.Name)
+	case *ast.CreateJavaScriptActionStmt:
+		return fmt.Sprintf("create javascript action %s", s.Name)
+	case *ast.DropJavaScriptActionStmt:
+		return fmt.Sprintf("drop javascript action %s", s.Name)
 
 	// Move
 	case *ast.MoveStmt:

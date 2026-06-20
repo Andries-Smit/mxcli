@@ -95,6 +95,7 @@ createStatement
       | createModuleStatement
       | createMicroflowStatement
       | createJavaActionStatement
+      | createJavaScriptActionStatement
       | createPageStatement
       | createSnippetStatement
       | createEnumerationStatement
@@ -302,6 +303,7 @@ dropStatement
     | DROP MODULE qualifiedName
     | DROP NOTEBOOK qualifiedName
     | DROP JAVA ACTION qualifiedName
+    | DROP JAVASCRIPT ACTION qualifiedName
     | DROP INDEX qualifiedName ON qualifiedName
     | DROP ODATA CLIENT qualifiedName
     | DROP ODATA SERVICE qualifiedName

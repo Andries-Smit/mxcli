@@ -59,6 +59,24 @@ javaActionExposedClause
     : EXPOSED AS STRING_LITERAL IN STRING_LITERAL
     ;
 
+/**
+ * JavaScript Action creation with inline JavaScript source code. Mirrors the
+ * Java action shape, plus an optional `platform` clause (Web/Native/Hybrid/All;
+ * defaults to Web). Reuses the javaAction parameter/return/exposed sub-rules.
+ */
+createJavaScriptActionStatement
+    : JAVASCRIPT ACTION qualifiedName
+      LPAREN javaActionParameterList? RPAREN
+      javaActionReturnType?
+      javaActionExposedClause?
+      javaScriptPlatformClause?
+      AS DOLLAR_STRING SEMICOLON?
+    ;
+
+javaScriptPlatformClause
+    : PLATFORM identifierOrKeyword
+    ;
+
 microflowParameterList
     : microflowParameter (COMMA microflowParameter)*
     ;

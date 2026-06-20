@@ -22,4 +22,11 @@ type JavaBackend interface {
 	DeleteJavaSourceFile(moduleName, actionName string) error
 	RenameJavaSourceFile(moduleName, oldName, newName string) error
 	ReadJavaSourceFile(moduleName, actionName string) (string, error)
+
+	CreateJavaScriptAction(jsa *types.JavaScriptAction) error
+	UpdateJavaScriptAction(jsa *types.JavaScriptAction) error
+	DeleteJavaScriptAction(id model.ID) error
+	WriteJavaScriptSourceFile(moduleName, actionName string, jsCode string, params []*types.JavaActionParameter, returnType types.CodeActionReturnType) error
+	DeleteJavaScriptSourceFile(moduleName, actionName string) error
+	RenameJavaScriptSourceFile(moduleName, oldName, newName string) error
 }

@@ -144,6 +144,10 @@ func (unimplemented) CreateJavaAction(_ *javaactions.JavaAction) error {
 	return errUnimplemented("CreateJavaAction")
 }
 
+func (unimplemented) CreateJavaScriptAction(_ *types.JavaScriptAction) error {
+	return errUnimplemented("CreateJavaScriptAction")
+}
+
 func (unimplemented) CreateJsonStructure(_ *types.JsonStructure) error {
 	return errUnimplemented("CreateJsonStructure")
 }
@@ -267,6 +271,14 @@ func (unimplemented) DeleteImportMapping(_ model.ID) error {
 
 func (unimplemented) DeleteJavaAction(_ model.ID) error {
 	return errUnimplemented("DeleteJavaAction")
+}
+
+func (unimplemented) DeleteJavaScriptAction(_ model.ID) error {
+	return errUnimplemented("DeleteJavaScriptAction")
+}
+
+func (unimplemented) DeleteJavaScriptSourceFile(_ string, _ string) error {
+	return errUnimplemented("DeleteJavaScriptSourceFile")
 }
 
 func (unimplemented) DeleteJavaSourceFile(_ string, _ string) error {
@@ -838,6 +850,10 @@ func (unimplemented) RenameDocumentByName(_ string, _ string, _ string) error {
 	return errUnimplemented("RenameDocumentByName")
 }
 
+func (unimplemented) RenameJavaScriptSourceFile(_ string, _ string, _ string) error {
+	return errUnimplemented("RenameJavaScriptSourceFile")
+}
+
 func (unimplemented) RenameJavaSourceFile(_ string, _ string, _ string) error {
 	return errUnimplemented("RenameJavaSourceFile")
 }
@@ -970,6 +986,10 @@ func (unimplemented) UpdateJavaAction(_ *javaactions.JavaAction) error {
 	return errUnimplemented("UpdateJavaAction")
 }
 
+func (unimplemented) UpdateJavaScriptAction(_ *types.JavaScriptAction) error {
+	return errUnimplemented("UpdateJavaScriptAction")
+}
+
 func (unimplemented) UpdateJsonStructure(_ *types.JsonStructure) error {
 	return errUnimplemented("UpdateJsonStructure")
 }
@@ -1043,6 +1063,10 @@ func (unimplemented) UpdateWorkflow(_ *workflows.Workflow) error {
 func (unimplemented) Version() types.MPRVersion {
 	var r0 types.MPRVersion
 	return r0
+}
+
+func (unimplemented) WriteJavaScriptSourceFile(_ string, _ string, _ string, _ []*types.JavaActionParameter, _ types.CodeActionReturnType) error {
+	return errUnimplemented("WriteJavaScriptSourceFile")
 }
 
 func (unimplemented) WriteJavaSourceFile(_ string, _ string, _ string, _ []*types.JavaActionParameter, _ types.CodeActionReturnType, _ []string, _ string) error {

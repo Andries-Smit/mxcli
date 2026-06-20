@@ -847,6 +847,12 @@ Module.OrderResponse_CustomerInfo/Module.CustomerInfo as customer {
 | Drop Java action | `drop java action Module.Name;` | Deletes MPR unit and .java source file |
 | Call from microflow | `$Result = call java action Module.Name(Param = value);` | Inside BEGIN...END |
 | Empty argument | `call java action Module.Name(Param = empty);` | Unbound code-action parameter preserved as empty mapping |
+| Show JavaScript actions | `show javascript actions [in module];` | List all or filtered by module |
+| Describe JavaScript action | `describe javascript action Module.Name;` | Re-executable MDL with signature + body |
+| Create JavaScript action | `create [or modify] javascript action Module.Name(params) returns type [platform Web] as $$ ... $$;` | Writes the unit + `javascriptsource/<Module>/actions/<Name>.js`; OR MODIFY preserves UUID |
+| Create exposed/native | `... exposed as 'caption' in 'Category' platform Native as $$ ... $$;` | `platform` is Web (default), Native, Hybrid, or All |
+| Drop JavaScript action | `drop javascript action Module.Name;` | Deletes MPR unit and .js source file |
+| Call from nanoflow | `$Result = call javascript action Module.Name(Param = value);` | Inside a nanoflow |
 
 **`AS $$ ... $$` is mandatory** — the body cannot be omitted. Omitting it causes `no viable alternative at input '...'`. Use `as $$ return false; $$;` as a stub.
 

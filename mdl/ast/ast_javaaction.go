@@ -43,3 +43,36 @@ type DropJavaActionStmt struct {
 }
 
 func (s *DropJavaActionStmt) isStatement() {}
+
+// CreateJavaScriptActionStmt represents:
+//
+//	CREATE JAVASCRIPT ACTION Module.Name(
+//	  Param: type NOT NULL
+//	) RETURNS type
+//	EXPOSED AS 'caption' IN 'category'
+//	PLATFORM Web
+//	AS $$ ... $$;
+//
+// It mirrors CreateJavaActionStmt with an added Platform (Web/Native/Hybrid/All,
+// default Web). The inline source is JavaScript rather than Java.
+type CreateJavaScriptActionStmt struct {
+	Name            QualifiedName     // Qualified name (Module.ActionName)
+	Parameters      []JavaActionParam // Input parameters
+	ReturnType      DataType          // Return type (can be nil for void)
+	JavaScriptCode  string            // The exported function body (user code)
+	Documentation   string            // Optional documentation comment
+	TypeParameters  []string          // Type parameter names (e.g., ["pEntity"])
+	ExposedCaption  string            // EXPOSED AS 'caption'
+	ExposedCategory string            // IN 'category'
+	Platform        string            // PLATFORM Web|Native|Hybrid|All (default Web)
+	CreateOrModify  bool              // true for CREATE OR MODIFY / CREATE OR REPLACE
+}
+
+func (s *CreateJavaScriptActionStmt) isStatement() {}
+
+// DropJavaScriptActionStmt represents: DROP JAVASCRIPT ACTION Module.Name
+type DropJavaScriptActionStmt struct {
+	Name QualifiedName
+}
+
+func (s *DropJavaScriptActionStmt) isStatement() {}

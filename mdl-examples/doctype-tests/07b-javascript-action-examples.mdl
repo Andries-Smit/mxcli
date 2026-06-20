@@ -1,0 +1,78 @@
+-- ============================================================================
+-- JavaScript Action Examples - Comprehensive Reference
+-- ============================================================================
+--
+-- Demonstrates CREATE / DROP JAVASCRIPT ACTION. A JavaScript action writes both
+-- a model unit (JavaScriptActions$JavaScriptAction) and a source file under
+-- javascriptsource/<Module>/actions/<Name>.js. Actions are callable from
+-- nanoflows via CALL JAVASCRIPT ACTION.
+--
+-- Syntax:
+--   CREATE [OR MODIFY] JAVASCRIPT ACTION Module.Name(params)
+--     RETURNS Type
+--     [EXPOSED AS 'caption' IN 'category']
+--     [PLATFORM Web|Native|Hybrid|All]   -- default Web
+--   AS $$ <javascript> $$;
+--
+-- Usage:
+--   mxcli check mdl-examples/doctype-tests/07b-javascript-action-examples.mdl
+--   mxcli exec  mdl-examples/doctype-tests/07b-javascript-action-examples.mdl -p app.mpr
+-- ============================================================================
+
+-- MARK: Setup
+
+create module JsTest;
+
+-- MARK: Basic JavaScript action (default platform Web)
+
+create javascript action JsTest.IsStrictMode() returns Boolean
+as $$
+return Promise.resolve((function () { return !this; })());
+$$;
+
+-- MARK: With parameters + return type
+
+create javascript action JsTest.Add(
+  A: Integer not null,
+  B: Integer not null
+) returns Integer
+as $$
+return Promise.resolve(A + B);
+$$;
+
+-- MARK: Exposed (toolbox) action targeting native
+
+create javascript action JsTest.ShowToast(
+  Message: String not null,
+  Duration: Integer
+) returns Boolean
+exposed as 'Show Toast' in 'UI'
+platform Native
+as $$
+console.log(Message);
+return Promise.resolve(true);
+$$;
+
+-- MARK: Idempotent update (CREATE OR MODIFY preserves the UUID)
+
+create or modify javascript action JsTest.Add(
+  A: Integer not null,
+  B: Integer not null,
+  C: Integer
+) returns Integer
+as $$
+return Promise.resolve(A + B + (C || 0));
+$$;
+
+-- MARK: Inspect
+
+show javascript actions in JsTest;
+describe javascript action JsTest.ShowToast;
+
+-- exit before cleanup so Studio Pro can inspect the created actions;
+-- everything below the exit is teardown for repeatable test runs.
+exit;
+
+drop javascript action JsTest.IsStrictMode;
+drop javascript action JsTest.Add;
+drop javascript action JsTest.ShowToast;

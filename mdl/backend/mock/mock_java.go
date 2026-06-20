@@ -91,3 +91,45 @@ func (m *MockBackend) ReadJavaSourceFile(moduleName, actionName string) (string,
 	}
 	return "", nil
 }
+
+func (m *MockBackend) CreateJavaScriptAction(jsa *types.JavaScriptAction) error {
+	if m.CreateJavaScriptActionFunc != nil {
+		return m.CreateJavaScriptActionFunc(jsa)
+	}
+	return nil
+}
+
+func (m *MockBackend) UpdateJavaScriptAction(jsa *types.JavaScriptAction) error {
+	if m.UpdateJavaScriptActionFunc != nil {
+		return m.UpdateJavaScriptActionFunc(jsa)
+	}
+	return nil
+}
+
+func (m *MockBackend) DeleteJavaScriptAction(id model.ID) error {
+	if m.DeleteJavaScriptActionFunc != nil {
+		return m.DeleteJavaScriptActionFunc(id)
+	}
+	return nil
+}
+
+func (m *MockBackend) WriteJavaScriptSourceFile(moduleName, actionName string, jsCode string, params []*types.JavaActionParameter, returnType types.CodeActionReturnType) error {
+	if m.WriteJavaScriptSourceFileFunc != nil {
+		return m.WriteJavaScriptSourceFileFunc(moduleName, actionName, jsCode, params, returnType)
+	}
+	return nil
+}
+
+func (m *MockBackend) DeleteJavaScriptSourceFile(moduleName, actionName string) error {
+	if m.DeleteJavaScriptSourceFileFunc != nil {
+		return m.DeleteJavaScriptSourceFileFunc(moduleName, actionName)
+	}
+	return nil
+}
+
+func (m *MockBackend) RenameJavaScriptSourceFile(moduleName, oldName, newName string) error {
+	if m.RenameJavaScriptSourceFileFunc != nil {
+		return m.RenameJavaScriptSourceFileFunc(moduleName, oldName, newName)
+	}
+	return nil
+}

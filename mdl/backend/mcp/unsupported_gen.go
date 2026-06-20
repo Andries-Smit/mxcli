@@ -169,6 +169,11 @@ func (unsupportedBackend) CreateJavaAction(_ *javaactions.JavaAction) (err0 erro
 	return
 }
 
+func (unsupportedBackend) CreateJavaScriptAction(_ *types.JavaScriptAction) (err0 error) {
+	err0 = errUnsupported("CreateJavaScriptAction")
+	return
+}
+
 func (unsupportedBackend) CreateJsonStructure(_ *types.JsonStructure) (err0 error) {
 	err0 = errUnsupported("CreateJsonStructure")
 	return
@@ -321,6 +326,16 @@ func (unsupportedBackend) DeleteImportMapping(_ model.ID) (err0 error) {
 
 func (unsupportedBackend) DeleteJavaAction(_ model.ID) (err0 error) {
 	err0 = errUnsupported("DeleteJavaAction")
+	return
+}
+
+func (unsupportedBackend) DeleteJavaScriptAction(_ model.ID) (err0 error) {
+	err0 = errUnsupported("DeleteJavaScriptAction")
+	return
+}
+
+func (unsupportedBackend) DeleteJavaScriptSourceFile(_ string, _ string) (err0 error) {
+	err0 = errUnsupported("DeleteJavaScriptSourceFile")
 	return
 }
 
@@ -919,6 +934,11 @@ func (unsupportedBackend) RenameDocumentByName(_ string, _ string, _ string) (er
 	return
 }
 
+func (unsupportedBackend) RenameJavaScriptSourceFile(_ string, _ string, _ string) (err0 error) {
+	err0 = errUnsupported("RenameJavaScriptSourceFile")
+	return
+}
+
 func (unsupportedBackend) RenameJavaSourceFile(_ string, _ string, _ string) (err0 error) {
 	err0 = errUnsupported("RenameJavaSourceFile")
 	return
@@ -1072,6 +1092,11 @@ func (unsupportedBackend) UpdateJavaAction(_ *javaactions.JavaAction) (err0 erro
 	return
 }
 
+func (unsupportedBackend) UpdateJavaScriptAction(_ *types.JavaScriptAction) (err0 error) {
+	err0 = errUnsupported("UpdateJavaScriptAction")
+	return
+}
+
 func (unsupportedBackend) UpdateJsonStructure(_ *types.JsonStructure) (err0 error) {
 	err0 = errUnsupported("UpdateJsonStructure")
 	return
@@ -1161,7 +1186,12 @@ func (unsupportedBackend) Version() (r0 types.MPRVersion) {
 	return
 }
 
-func (unsupportedBackend) WriteJavaSourceFile(_ string, _ string, _ string, _ []*javaactions.JavaActionParameter, _ javaactions.CodeActionReturnType, _ []string, _ string) (err0 error) {
+func (unsupportedBackend) WriteJavaScriptSourceFile(_ string, _ string, _ string, _ []*types.JavaActionParameter, _ types.CodeActionReturnType) (err0 error) {
+	err0 = errUnsupported("WriteJavaScriptSourceFile")
+	return
+}
+
+func (unsupportedBackend) WriteJavaSourceFile(_ string, _ string, _ string, _ []*types.JavaActionParameter, _ types.CodeActionReturnType, _ []string, _ string) (err0 error) {
 	err0 = errUnsupported("WriteJavaSourceFile")
 	return
 }

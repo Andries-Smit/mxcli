@@ -441,6 +441,7 @@ var mdlGeneratedKeywords = []protocol.CompletionItem{
 	{Label: "TABLES", Kind: protocol.CompletionItemKindKeyword, Detail: "REST keyword"},
 	{Label: "VIEWS", Kind: protocol.CompletionItemKindKeyword, Detail: "REST keyword"},
 	{Label: "EXPOSED", Kind: protocol.CompletionItemKindKeyword, Detail: "REST keyword"},
+	{Label: "PLATFORM", Kind: protocol.CompletionItemKindKeyword, Detail: "REST keyword"},
 	{Label: "PARAMETER", Kind: protocol.CompletionItemKindKeyword, Detail: "REST keyword"},
 	{Label: "PARAMETERS", Kind: protocol.CompletionItemKindKeyword, Detail: "REST keyword"},
 	{Label: "HEADERS", Kind: protocol.CompletionItemKindKeyword, Detail: "REST keyword"},

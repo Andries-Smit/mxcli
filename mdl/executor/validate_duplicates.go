@@ -108,6 +108,8 @@ func stmtCreateInfo(stmt ast.Statement) (docType, name string, idempotent bool) 
 		return "snippet", s.Name.String(), s.IsModify || s.IsReplace
 	case *ast.CreateJavaActionStmt:
 		return "javaaction", s.Name.String(), s.CreateOrModify
+	case *ast.CreateJavaScriptActionStmt:
+		return "javascriptaction", s.Name.String(), s.CreateOrModify
 	case *ast.CreateWorkflowStmt:
 		return "workflow", s.Name.String(), s.CreateOrModify
 	case *ast.CreateBusinessEventServiceStmt:
@@ -160,6 +162,8 @@ func stmtDropInfo(stmt ast.Statement) (docType, name string) {
 		return "snippet", s.Name.String()
 	case *ast.DropJavaActionStmt:
 		return "javaaction", s.Name.String()
+	case *ast.DropJavaScriptActionStmt:
+		return "javascriptaction", s.Name.String()
 	case *ast.DropWorkflowStmt:
 		return "workflow", s.Name.String()
 	case *ast.DropBusinessEventServiceStmt:

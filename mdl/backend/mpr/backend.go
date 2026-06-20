@@ -613,6 +613,24 @@ func (b *MprBackend) DeleteJavaSourceFile(moduleName, actionName string) error {
 func (b *MprBackend) RenameJavaSourceFile(moduleName, oldName, newName string) error {
 	return b.writer.RenameJavaSourceFile(moduleName, oldName, newName)
 }
+func (b *MprBackend) CreateJavaScriptAction(jsa *types.JavaScriptAction) error {
+	return b.writer.CreateJavaScriptAction(jsa)
+}
+func (b *MprBackend) UpdateJavaScriptAction(jsa *types.JavaScriptAction) error {
+	return b.writer.UpdateJavaScriptAction(jsa)
+}
+func (b *MprBackend) DeleteJavaScriptAction(id model.ID) error {
+	return b.writer.DeleteJavaScriptAction(id)
+}
+func (b *MprBackend) WriteJavaScriptSourceFile(moduleName, actionName string, jsCode string, params []*types.JavaActionParameter, returnType types.CodeActionReturnType) error {
+	return b.writer.WriteJavaScriptSourceFile(moduleName, actionName, jsCode, params, returnType)
+}
+func (b *MprBackend) DeleteJavaScriptSourceFile(moduleName, actionName string) error {
+	return b.writer.DeleteJavaScriptSourceFile(moduleName, actionName)
+}
+func (b *MprBackend) RenameJavaScriptSourceFile(moduleName, oldName, newName string) error {
+	return b.writer.RenameJavaScriptSourceFile(moduleName, oldName, newName)
+}
 
 // ReadJavaSourceFile delegates to writer because the mpr SDK places this
 // read operation on Writer (it needs write-transaction access to the

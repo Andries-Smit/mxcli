@@ -328,6 +328,18 @@ func init() {
 		},
 		Syntax:  "CREATE [OR MODIFY] JAVA ACTION Module.Name(\n  Param: Type [NOT NULL],\n  EntityType: ENTITY <pEntity> NOT NULL,\n  Obj: pEntity\n) RETURNS ReturnType\n[EXPOSED AS 'Label' IN 'Category']\nAS $$\n// Java code — AS $$ ... $$ is mandatory, cannot be omitted\n$$;\n\nOR MODIFY: updates signature/body in-place, preserves UUID.",
 		Example: "CREATE JAVA ACTION Utils.FormatCurrency(\n  Amount: Decimal NOT NULL\n) RETURNS String\nEXPOSED AS 'Format Currency' IN 'Formatting'\nAS $$\nreturn String.format(\"%.2f\", Amount);\n$$;\n\n-- Generic entity validator with type parameter\nCREATE JAVA ACTION Utils.IsValid(\n  EntityType: ENTITY <pEntity> NOT NULL,\n  Obj: pEntity NOT NULL\n) RETURNS Boolean\nAS $$\nreturn Obj != null;\n$$;\n\n-- Idempotent update (preserves UUID)\nCREATE OR MODIFY JAVA ACTION Utils.FormatCurrency(\n  Amount: Decimal NOT NULL,\n  Decimals: Integer NOT NULL\n) RETURNS String\nAS $$\nreturn String.format(\"%.\" + Decimals + \"f\", Amount);\n$$;",
+		SeeAlso: []string{"java-action", "javascript-action"},
+	})
+
+	Register(SyntaxFeature{
+		Path:    "javascript-action",
+		Summary: "JavaScript actions — client-side JS callable from nanoflows",
+		Keywords: []string{
+			"javascript action", "javascript", "js action", "call javascript",
+			"platform", "exposed as", "javascriptaction",
+		},
+		Syntax:  "SHOW JAVASCRIPT ACTIONS [IN Module];\nDESCRIBE JAVASCRIPT ACTION Module.Name;\nCREATE [OR MODIFY] JAVASCRIPT ACTION Module.Name(...) RETURNS Type [PLATFORM Web|Native|Hybrid|All] AS $$ ... $$;\nDROP JAVASCRIPT ACTION Module.Name;\n\nWrites the unit plus javascriptsource/<Module>/actions/<Name>.js. AS $$ ... $$ is mandatory. PLATFORM defaults to Web.",
+		Example: "CREATE JAVASCRIPT ACTION Utils.IsStrictMode() RETURNS Boolean\nPLATFORM Web\nAS $$\nreturn Promise.resolve((function(){ return !this; })());\n$$;\n\n-- Exposed, native, with parameters\nCREATE JAVASCRIPT ACTION Utils.ShowToast(\n  Message: String NOT NULL,\n  Duration: Integer\n) RETURNS Boolean\nEXPOSED AS 'Show Toast' IN 'UI'\nPLATFORM Native\nAS $$\nreturn Promise.resolve(true);\n$$;",
 		SeeAlso: []string{"java-action"},
 	})
 

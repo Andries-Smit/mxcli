@@ -764,6 +764,10 @@ func (b *Builder) ExitDropStatement(ctx *parser.DropStatementContext) {
 		b.statements = append(b.statements, &ast.DropSnippetStmt{
 			Name: buildQualifiedName(names[0]),
 		})
+	} else if ctx.JAVASCRIPT() != nil && ctx.ACTION() != nil {
+		b.statements = append(b.statements, &ast.DropJavaScriptActionStmt{
+			Name: buildQualifiedName(names[0]),
+		})
 	} else if ctx.JAVA() != nil && ctx.ACTION() != nil {
 		b.statements = append(b.statements, &ast.DropJavaActionStmt{
 			Name: buildQualifiedName(names[0]),

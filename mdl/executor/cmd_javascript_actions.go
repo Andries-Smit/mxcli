@@ -141,27 +141,13 @@ func describeJavaScriptAction(ctx *ExecContext, name ast.QualifiedName) error {
 	}
 	sb.WriteString(")")
 
-	// Platform
-	platform := jsa.Platform
-	if platform == "" {
-		platform = "All"
-	}
-	if platform != "All" {
-		sb.WriteString("\n  PLATFORM ")
-		sb.WriteString(platform)
-	}
+	// Clauses are emitted in grammar order (returns, exposed, platform, body) so
+	// the DESCRIBE output re-parses as a CREATE JAVASCRIPT ACTION.
 
 	// Return type
 	if jsa.ReturnType != nil {
 		sb.WriteString("\n  returns ")
 		sb.WriteString(formatJavaActionReturnType(jsa.ReturnType))
-	}
-
-	// RETURN NAME metadata
-	if jsa.ActionDefaultReturnName != "" {
-		sb.WriteString("\n-- return NAME: '")
-		sb.WriteString(jsa.ActionDefaultReturnName)
-		sb.WriteString("'")
 	}
 
 	// EXPOSED AS clause
@@ -171,34 +157,42 @@ func describeJavaScriptAction(ctx *ExecContext, name ast.QualifiedName) error {
 		sb.WriteString("' in '")
 		sb.WriteString(jsa.MicroflowActionInfo.Category)
 		sb.WriteString("'")
-		if n := len(jsa.MicroflowActionInfo.IconData); n > 0 {
-			fmt.Fprintf(&sb, "\n-- icon: %d bytes", n)
-		}
 	}
 
-	// JavaScript source code
+	// PLATFORM clause (always emitted so the platform setting round-trips).
+	platform := jsa.Platform
+	if platform == "" {
+		platform = "Web"
+	}
+	sb.WriteString("\n  platform ")
+	sb.WriteString(platform)
+
+	// JavaScript source. The grammar requires an `as $$ ... $$` body, so always
+	// emit one; when the .js source can't be read (add-on modules without source
+	// on disk) emit a placeholder so the output still re-parses (cf. #637).
 	userCode, extraCode := readJavaScriptActionSource(ctx.MprPath, name.Module, name.Name)
+	sb.WriteString("\nas $$\n")
 	if userCode != "" {
-		sb.WriteString("\nas $$\n")
 		sb.WriteString(userCode)
-		sb.WriteString("\n$$")
+	} else {
+		sb.WriteString("// JavaScript source not available from this project; body omitted by DESCRIBE.")
 	}
-
-	sb.WriteString(";")
+	sb.WriteString("\n$$;")
 
 	fmt.Fprintln(ctx.Output, sb.String())
 
-	// Additional info as comments
+	// Additional info as comments.
+	if jsa.ActionDefaultReturnName != "" {
+		fmt.Fprintf(ctx.Output, "-- return NAME: '%s'\n", jsa.ActionDefaultReturnName)
+	}
+	if jsa.MicroflowActionInfo != nil && len(jsa.MicroflowActionInfo.IconData) > 0 {
+		fmt.Fprintf(ctx.Output, "-- icon: %d bytes\n", len(jsa.MicroflowActionInfo.IconData))
+	}
 	if jsa.ExportLevel != "" && jsa.ExportLevel != "Hidden" {
 		fmt.Fprintf(ctx.Output, "-- export level: %s\n", jsa.ExportLevel)
 	}
 	if jsa.Excluded {
 		fmt.Fprintln(ctx.Output, "-- EXCLUDED: true")
-	}
-	if platform != "All" {
-		// already shown inline
-	} else {
-		fmt.Fprintln(ctx.Output, "-- PLATFORM: All")
 	}
 	if extraCode != "" {
 		fmt.Fprintln(ctx.Output, "-- EXTRA CODE:")
@@ -232,33 +226,35 @@ func readJavaScriptActionSource(mprPath, moduleName, actionName string) (userCod
 
 	source := string(content)
 
-	// Extract user code
-	beginUserCode := "// begin user CODE"
-	endUserCode := "// end user CODE"
-	if beginIdx := strings.Index(source, beginUserCode); beginIdx != -1 {
-		if endIdx := strings.Index(source, endUserCode); endIdx != -1 && endIdx > beginIdx {
-			uc := source[beginIdx+len(beginUserCode) : endIdx]
-			uc = strings.TrimPrefix(uc, "\n")
-			uc = strings.TrimSuffix(uc, "\n")
-			uc = strings.TrimRight(uc, " \t")
-			userCode = uc
-		}
+	// Marker casing varies (Studio Pro / the warning banner use uppercase
+	// "BEGIN USER CODE"; some older content used lowercase), so match
+	// case-insensitively.
+	if uc, ok := sliceBetweenFold(source, "// BEGIN USER CODE", "// END USER CODE"); ok {
+		uc = strings.TrimPrefix(uc, "\n")
+		uc = strings.TrimSuffix(uc, "\n")
+		userCode = strings.TrimRight(uc, " \t")
 	}
-
-	// Extract extra code
-	beginExtraCode := "// begin EXTRA CODE"
-	endExtraCode := "// end EXTRA CODE"
-	if beginIdx := strings.Index(source, beginExtraCode); beginIdx != -1 {
-		if endIdx := strings.Index(source, endExtraCode); endIdx != -1 && endIdx > beginIdx {
-			ec := source[beginIdx+len(beginExtraCode) : endIdx]
-			ec = strings.TrimSpace(ec)
-			if ec != "" {
-				extraCode = ec
-			}
-		}
+	if ec, ok := sliceBetweenFold(source, "// BEGIN EXTRA CODE", "// END EXTRA CODE"); ok {
+		extraCode = strings.TrimSpace(ec)
 	}
 
 	return userCode, extraCode
+}
+
+// sliceBetweenFold returns the substring of s between the first case-insensitive
+// occurrence of begin and the following case-insensitive occurrence of end.
+func sliceBetweenFold(s, begin, end string) (string, bool) {
+	lower := strings.ToLower(s)
+	bi := strings.Index(lower, strings.ToLower(begin))
+	if bi == -1 {
+		return "", false
+	}
+	rest := bi + len(begin)
+	ei := strings.Index(lower[rest:], strings.ToLower(end))
+	if ei == -1 {
+		return "", false
+	}
+	return s[rest : rest+ei], true
 }
 
 // formatJavaScriptActionType formats a JavaScript action parameter type for MDL output.

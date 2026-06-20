@@ -223,6 +223,12 @@ type MockBackend struct {
 	DeleteJavaSourceFileFunc       func(moduleName, actionName string) error
 	RenameJavaSourceFileFunc       func(moduleName, oldName, newName string) error
 	ReadJavaSourceFileFunc         func(moduleName, actionName string) (string, error)
+	CreateJavaScriptActionFunc     func(jsa *types.JavaScriptAction) error
+	UpdateJavaScriptActionFunc     func(jsa *types.JavaScriptAction) error
+	DeleteJavaScriptActionFunc     func(id model.ID) error
+	WriteJavaScriptSourceFileFunc  func(moduleName, actionName string, jsCode string, params []*types.JavaActionParameter, returnType types.CodeActionReturnType) error
+	DeleteJavaScriptSourceFileFunc func(moduleName, actionName string) error
+	RenameJavaScriptSourceFileFunc func(moduleName, oldName, newName string) error
 
 	// WorkflowBackend
 	ListWorkflowsFunc  func() ([]*workflows.Workflow, error)
