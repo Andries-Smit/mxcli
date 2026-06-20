@@ -13,7 +13,9 @@ package executor
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/mendixlabs/mxcli/mdl/ast"
@@ -142,7 +144,55 @@ func validateStaticWidget(w *ast.WidgetV3, locationPrefix string) []linter.Viola
 		})
 	}
 
+	// A dynamic text whose template references a {N} placeholder with no matching
+	// parameter binding is an orphaned ClientTemplate — MxBuild fails with CE0720
+	// and Studio Pro throws a NullReferenceException when the widget is opened
+	// (issue #650). Catch it at check time.
+	if v := validateDynamicTextPlaceholders(w, locationPrefix); v != nil {
+		out = append(out, *v)
+	}
+
 	return out
+}
+
+var templatePlaceholderRe = regexp.MustCompile(`\{(\d+)\}`)
+
+// validateDynamicTextPlaceholders flags a dynamictext whose Content template has
+// a placeholder index higher than the number of bound parameters. Parameter
+// sources mirror buildDynamicTextV3: explicit ContentParams, a single Attribute
+// binding, or a whole-content reference (which carries no {N}, so is irrelevant
+// here).
+func validateDynamicTextPlaceholders(w *ast.WidgetV3, locationPrefix string) *linter.Violation {
+	if !strings.EqualFold(w.Type, "dynamictext") {
+		return nil
+	}
+	content := w.GetContent()
+	maxIdx := 0
+	for _, m := range templatePlaceholderRe.FindAllStringSubmatch(content, -1) {
+		if n, err := strconv.Atoi(m[1]); err == nil && n > maxIdx {
+			maxIdx = n
+		}
+	}
+	if maxIdx == 0 {
+		return nil // no placeholders → nothing to orphan
+	}
+	params := 0
+	if cp := w.GetContentParams(); len(cp) > 0 {
+		params = len(cp)
+	} else if w.GetAttribute() != "" {
+		params = 1
+	}
+	if maxIdx <= params {
+		return nil
+	}
+	return &linter.Violation{
+		RuleID:   "MDL-WIDGET04",
+		Severity: linter.SeverityError,
+		Message: fmt.Sprintf(
+			"%s: widget `%s` (dynamictext) references template placeholder {%d} but only %d parameter(s) are bound — bind it with `Attribute: <attr>` or `ContentParams: [{%d} = <attr>]`. An orphaned placeholder crashes Studio Pro.",
+			locationPrefix, w.Name, maxIdx, params, maxIdx,
+		),
+	}
 }
 
 // validatePluggableWidgetProperties checks every AST property key on a

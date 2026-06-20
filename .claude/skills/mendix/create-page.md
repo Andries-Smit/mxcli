@@ -176,6 +176,10 @@ dynamictext greeting (content: 'Welcome, {1}!', contentparams: [{1} = $Customer.
 
 -- Template with attribute from current DataView context (simple attribute name)
 dynamictext email (content: 'Email: {1}', contentparams: [{1} = Email])
+
+-- Bind directly to an attribute of the surrounding DataView/ListView/Gallery
+-- entity. `Attribute: X` is shorthand for `content: '{1}', contentparams: [{1} = X]`.
+dynamictext title (Attribute: Title)
 ```
 
 **ContentParams Reference Types:**
@@ -184,6 +188,12 @@ dynamictext email (content: 'Email: {1}', contentparams: [{1} = Email])
 | `$ParamName.Attr` | Page parameter attribute | `$Product.Name` |
 | `AttrName` | Current DataView/Gallery entity | `Name`, `Email` |
 | `'literal'` | String literal expression | `'Hello'` |
+
+> **Never leave a `{N}` placeholder unbound.** `content: '{1}'` with no
+> `Attribute:`/`ContentParams:` is an orphaned template — `mxcli check` rejects it
+> (MDL-WIDGET04), MxBuild fails with CE0720, and Studio Pro throws a
+> NullReferenceException when the widget is opened. Bind every placeholder, or use
+> a plain static `content: 'text'`.
 
 ### ACTIONBUTTON Widget
 

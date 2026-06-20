@@ -1,0 +1,25 @@
+-- Bug #650: an orphaned dynamictext template placeholder must be rejected by check
+--
+-- NEGATIVE TEST (.fail.mdl) — this script is EXPECTED to fail `mxcli check`.
+-- `make check-mdl` inverts the exit code for .fail.mdl files: an unexpected
+-- pass would be reported as a regression of the MDL-WIDGET04 rule.
+--
+-- Symptom: `dynamictext (Content: '{1}')` with no parameter binding wrote an
+-- orphaned ClientTemplate. `mxcli check` passed, but MxBuild fails with CE0720
+-- and Studio Pro throws a NullReferenceException when the widget is opened.
+--
+-- Fix: mxcli check now flags a {N} placeholder with fewer than N bound
+-- parameters (MDL-WIDGET04). Bind it with `Attribute:` or `ContentParams:`.
+--
+-- Expected: `mxcli check` exits non-zero with MDL-WIDGET04 on txtOrphan.
+
+create page BugTest650.OrphanPage
+(
+  title: 'Orphan',
+  layout: Atlas_Core.Atlas_Default
+)
+{
+  listview lv (datasource: database BugTest650.Task) {
+    dynamictext txtOrphan (Content: '{1}')
+  }
+}

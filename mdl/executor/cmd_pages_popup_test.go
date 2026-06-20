@@ -49,3 +49,44 @@ func TestBuildPageV3_PopupDefaults(t *testing.T) {
 		t.Errorf("got %d/%d/%v, want 600/600/false", page.PopupWidth, page.PopupHeight, page.PopupResizable)
 	}
 }
+
+// Issue #650 — DYNAMICTEXT (Attribute: X) must bind the template parameter, not
+// leave an orphaned {1}. buildDynamicTextV3 should produce exactly one bound
+// ClientTemplateParameter.
+func TestBuildDynamicTextV3_AttributeBinds(t *testing.T) {
+	pb := newPopupPageBuilder()
+	w := &ast.WidgetV3{Type: "dynamictext", Name: "txt", Properties: map[string]any{"Attribute": "Title"}}
+	dt, err := pb.buildDynamicTextV3(w)
+	if err != nil {
+		t.Fatalf("buildDynamicTextV3: %v", err)
+	}
+	if dt.Content == nil {
+		t.Fatal("Content template is nil")
+	}
+	if got := dt.Content.Template.GetTranslation("en_US"); got != "{1}" {
+		t.Errorf("template = %q, want {1}", got)
+	}
+	if len(dt.Content.Parameters) != 1 {
+		t.Fatalf("expected 1 bound parameter, got %d (orphaned placeholder)", len(dt.Content.Parameters))
+	}
+	p := dt.Content.Parameters[0]
+	if p.AttributeRef == "" && p.Expression == "" && p.SourceVariable == "" {
+		t.Error("parameter has no binding (AttributeRef/Expression/SourceVariable all empty)")
+	}
+}
+
+// A content-less dynamictext with no binding is unchanged (no panic, no params).
+func TestBuildDynamicTextV3_StaticContent(t *testing.T) {
+	pb := newPopupPageBuilder()
+	w := &ast.WidgetV3{Type: "dynamictext", Name: "txt", Properties: map[string]any{"Content": "Hello"}}
+	dt, err := pb.buildDynamicTextV3(w)
+	if err != nil {
+		t.Fatalf("buildDynamicTextV3: %v", err)
+	}
+	if got := dt.Content.Template.GetTranslation("en_US"); got != "Hello" {
+		t.Errorf("template = %q, want Hello", got)
+	}
+	if len(dt.Content.Parameters) != 0 {
+		t.Errorf("expected 0 params for static text, got %d", len(dt.Content.Parameters))
+	}
+}

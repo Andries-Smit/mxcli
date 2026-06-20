@@ -1,0 +1,43 @@
+-- ============================================================================
+-- Bug #650: DYNAMICTEXT Attribute binding inside LISTVIEW silently dropped
+-- ============================================================================
+--
+-- Symptom (before fix):
+--   `DYNAMICTEXT txt (Attribute: Title)` reported success but persisted
+--   `Content: '{1}'` with NO parameter binding — an orphaned template placeholder.
+--   Studio Pro then threw System.NullReferenceException
+--   (ClientTemplateFormPart.CollectControls) when the widget was opened, and
+--   MxBuild failed with CE0720.
+--
+-- Root cause: buildDynamicTextV3 read Content/ContentParams but never read the
+--   `Attribute:` property, so the binding was discarded and the template defaulted
+--   to the orphaned "{1}".
+--
+-- After fix:
+--   `Attribute: X` binds the dynamic text to that attribute — equivalent to
+--   `ContentParams: [{1} = X]`. Non-String attributes are wrapped in toString().
+--   `mxcli check` also rejects an orphaned `{1}` (MDL-WIDGET04) — see the
+--   .fail.mdl companion.
+--
+-- Usage:
+--   mxcli exec mdl-examples/bug-tests/650-dynamictext-attribute-binding.mdl -p app.mpr
+--   describe shows `Content: '{1}', ContentParams: [{1} = Title]`.
+-- ============================================================================
+
+create entity BugTest650.Task ( Title: String, Count: Integer );
+
+create page BugTest650.TaskList
+(
+  title: 'Task List',
+  layout: Atlas_Core.Atlas_Default
+)
+{
+  listview lvTasks (datasource: database BugTest650.Task) {
+    -- String attribute → direct binding
+    dynamictext txtTitle (Attribute: Title)
+    -- Integer attribute → toString() binding
+    dynamictext txtCount (Attribute: Count)
+  }
+}
+
+describe page BugTest650.TaskList;
