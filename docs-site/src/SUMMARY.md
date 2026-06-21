@@ -234,6 +234,7 @@
   - [CREATE NANOFLOW](reference/microflow/create-nanoflow.md)
   - [DROP MICROFLOW / NANOFLOW](reference/microflow/drop-microflow.md)
   - [CREATE JAVA ACTION](reference/microflow/create-java-action.md)
+  - [CREATE JAVASCRIPT ACTION](reference/microflow/create-javascript-action.md)
 - [Page Statements](reference/page/README.md)
   - [CREATE PAGE](reference/page/create-page.md)
   - [CREATE SNIPPET](reference/page/create-snippet.md)
