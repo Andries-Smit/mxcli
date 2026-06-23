@@ -257,6 +257,12 @@ func serializeReturnType(t javaactions.CodeActionReturnType) bson.D {
 			{Key: "$ID", Value: idToBsonBinary(string(v.ID))},
 			{Key: "$Type", Value: "CodeActions$DateTimeType"},
 		}
+	case *javaactions.EnumerationType:
+		return bson.D{
+			{Key: "$ID", Value: idToBsonBinary(string(v.ID))},
+			{Key: "$Type", Value: "CodeActions$EnumerationType"},
+			{Key: "Enumeration", Value: v.Enumeration},
+		}
 	case *javaactions.EntityType:
 		// Use ConcreteEntityType for return types
 		return bson.D{
@@ -378,6 +384,12 @@ func serializeInnerType(t javaactions.CodeActionParameterType) bson.D {
 		return bson.D{
 			{Key: "$ID", Value: idToBsonBinary(string(v.ID))},
 			{Key: "$Type", Value: "CodeActions$DateTimeType"},
+		}
+	case *javaactions.EnumerationType:
+		return bson.D{
+			{Key: "$ID", Value: idToBsonBinary(string(v.ID))},
+			{Key: "$Type", Value: "CodeActions$EnumerationType"},
+			{Key: "Enumeration", Value: v.Enumeration},
 		}
 	case *javaactions.EntityType:
 		// Use ConcreteEntityType for entity parameters

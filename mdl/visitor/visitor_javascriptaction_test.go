@@ -88,3 +88,37 @@ func TestDropJavaScriptAction_Parsing(t *testing.T) {
 		t.Errorf("name = %s.%s", stmt.Name.Module, stmt.Name.Name)
 	}
 }
+
+// Issue #680: explicit ENUM / Enumeration(...) types must be flagged as enums so
+// the executor serializes them as enumeration params (not entity refs); a bare
+// Module.Name must NOT be flagged (it can't be told apart from an entity).
+func TestJavaAction_EnumParamFlaggedExplicit(t *testing.T) {
+	input := `CREATE JAVA ACTION M.A(
+  Fmt: Enumeration(Barcode.BarcodeFormat) NOT NULL,
+  Node: ENUM M.LogNodes,
+  Obj: M.SomeEntity
+) RETURNS ENUM M.Status
+AS $$ return null; $$;`
+	prog, errs := Build(input)
+	if len(errs) > 0 {
+		t.Fatalf("parse errors: %v", errs)
+	}
+	stmt := prog.Statements[0].(*ast.CreateJavaActionStmt)
+	if len(stmt.Parameters) != 3 {
+		t.Fatalf("expected 3 params, got %d", len(stmt.Parameters))
+	}
+	// Enumeration(...) and ENUM ... → ExplicitEnum
+	if !stmt.Parameters[0].Type.ExplicitEnum {
+		t.Error("Enumeration(...) param should be ExplicitEnum")
+	}
+	if !stmt.Parameters[1].Type.ExplicitEnum {
+		t.Error("ENUM param should be ExplicitEnum")
+	}
+	// bare Module.Name → NOT explicit (ambiguous with entity)
+	if stmt.Parameters[2].Type.ExplicitEnum {
+		t.Error("bare Module.Name param must NOT be ExplicitEnum")
+	}
+	if !stmt.ReturnType.ExplicitEnum {
+		t.Error("ENUM return type should be ExplicitEnum")
+	}
+}

@@ -279,6 +279,11 @@ func codeActionParamTypeToGen(t javaactions.CodeActionParameterType) element.Ele
 // codeActionInnerTypeToGen converts the inner type carried by a BasicParameterType.
 func codeActionInnerTypeToGen(t javaactions.CodeActionParameterType) element.Element {
 	switch v := t.(type) {
+	case *javaactions.EnumerationType:
+		e := genCa.NewEnumerationType()
+		assignID(e)
+		e.SetEnumerationQualifiedName(v.Enumeration)
+		return e
 	case *javaactions.EntityType:
 		e := genCa.NewConcreteEntityType()
 		assignID(e)
@@ -307,6 +312,11 @@ func codeActionReturnTypeToGen(t javaactions.CodeActionReturnType) element.Eleme
 	switch v := t.(type) {
 	case nil:
 		return newPrimitiveCAType("VoidType")
+	case *javaactions.EnumerationType:
+		e := genCa.NewEnumerationType()
+		assignID(e)
+		e.SetEnumerationQualifiedName(v.Enumeration)
+		return e
 	case *javaactions.EntityType:
 		e := genCa.NewConcreteEntityType()
 		assignID(e)

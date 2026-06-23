@@ -498,9 +498,20 @@ func astDataTypeToJavaActionParamType(dt ast.DataType) javaactions.CodeActionPar
 			},
 		}
 	case ast.TypeEntity, ast.TypeEnumeration:
-		// TypeEnumeration with a qualified name is treated as entity type here,
-		// since the visitor can't distinguish entity types from enumeration types
-		// for bare qualified names like Module.EntityName.
+		// An unambiguous `ENUM`/`Enumeration(...)` type must serialize as an
+		// enumeration parameter, not an entity reference (#680). A bare
+		// qualified name (ExplicitEnum=false) can't be told apart from an entity
+		// by the parser, so it stays an entity type here — callers that have the
+		// project loaded resolve it via resolveCodeActionParamType.
+		if dt.Kind == ast.TypeEnumeration && dt.ExplicitEnum && dt.EnumRef != nil {
+			return &javaactions.EnumerationType{
+				BaseElement: model.BaseElement{
+					ID:       model.ID(types.GenerateID()),
+					TypeName: "CodeActions$EnumerationType",
+				},
+				Enumeration: dt.EnumRef.Module + "." + dt.EnumRef.Name,
+			}
+		}
 		entityName := ""
 		if dt.EntityRef != nil {
 			entityName = dt.EntityRef.Module + "." + dt.EntityRef.Name
@@ -590,9 +601,19 @@ func astDataTypeToJavaActionReturnType(dt ast.DataType) javaactions.CodeActionRe
 			},
 		}
 	case ast.TypeEntity, ast.TypeEnumeration:
-		// TypeEnumeration with a qualified name is treated as entity type here,
-		// since the visitor can't distinguish entity types from enumeration types.
+		// An unambiguous `ENUM`/`Enumeration(...)` return type serializes as an
+		// enumeration, not an entity reference (#680). A bare qualified name
+		// can't be told apart from an entity, so it stays an entity type.
 		// "void" parses as a bare qualified name; treat it as VoidType.
+		if dt.Kind == ast.TypeEnumeration && dt.ExplicitEnum && dt.EnumRef != nil {
+			return &javaactions.EnumerationType{
+				BaseElement: model.BaseElement{
+					ID:       model.ID(types.GenerateID()),
+					TypeName: "CodeActions$EnumerationType",
+				},
+				Enumeration: dt.EnumRef.Module + "." + dt.EnumRef.Name,
+			}
+		}
 		entityName := ""
 		if dt.EntityRef != nil {
 			entityName = dt.EntityRef.Module + "." + dt.EntityRef.Name

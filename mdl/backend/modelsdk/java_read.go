@@ -132,6 +132,8 @@ func codeActionParamTypeFromGen(el element.Element) javaactions.CodeActionParame
 // directly-typed element) to the semantic parameter type.
 func codeActionBasicFromGen(el element.Element) javaactions.CodeActionParameterType {
 	switch t := el.(type) {
+	case *genCa.EnumerationType:
+		return &javaactions.EnumerationType{Enumeration: t.EnumerationQualifiedName()}
 	case *genCa.ConcreteEntityType:
 		return &javaactions.EntityType{Entity: t.EntityQualifiedName()}
 	case *genCa.ListType:
@@ -157,6 +159,8 @@ func codeActionReturnTypeFromGen(el element.Element) javaactions.CodeActionRetur
 	switch t := el.(type) {
 	case nil, *genCa.VoidType:
 		return nil
+	case *genCa.EnumerationType:
+		return &javaactions.EnumerationType{Enumeration: t.EnumerationQualifiedName()}
 	case *genCa.ConcreteEntityType:
 		return &javaactions.EntityType{Entity: t.EntityQualifiedName()}
 	case *genCa.ListType:

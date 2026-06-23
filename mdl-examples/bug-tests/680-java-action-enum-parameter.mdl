@@ -1,0 +1,39 @@
+-- ============================================================================
+-- Bug #680: CREATE JAVA ACTION enumeration parameter serialized as entity ref
+-- ============================================================================
+--
+-- Before the fix, a parameter or return type written with the explicit
+-- `Enumeration(Module.Enum)` / `ENUM Module.Enum` syntax was serialized as an
+-- entity/object reference (CodeActions$ConcreteEntityType with the enum's name in
+-- the Entity slot). `mxcli check` and `exec` succeeded, but `mxbuild`/Studio Pro
+-- rejected the model:
+--   Property 'Entity' of Java action parameter 'format':
+--   The selected entity 'Module.Enum' no longer exists.
+--
+-- After the fix, explicit enum types serialize as CodeActions$EnumerationType
+-- (wrapped in BasicParameterType for parameters) with the Enumeration by-name
+-- ref — the shape Studio Pro produces — so the project builds.
+--
+-- Usage:
+--   mxcli check mdl-examples/bug-tests/680-java-action-enum-parameter.mdl
+--   mxcli exec  mdl-examples/bug-tests/680-java-action-enum-parameter.mdl -p App.mpr
+-- ============================================================================
+
+create module BugTest680;
+
+create enumeration BugTest680.BarcodeFormat (
+  QR 'QR Code',
+  EAN13 'EAN-13',
+  Code128 'Code 128'
+);
+
+-- Both the Enumeration(...) and ENUM ... forms must produce enumeration params,
+-- and an enum return type must produce an enumeration return.
+create java action BugTest680.JA_GenerateBarcode(
+  "text": String not null,
+  "format": Enumeration(BugTest680.BarcodeFormat) not null,
+  "fallback": ENUM BugTest680.BarcodeFormat
+) returns Enumeration(BugTest680.BarcodeFormat)
+as $$
+return null;
+$$;

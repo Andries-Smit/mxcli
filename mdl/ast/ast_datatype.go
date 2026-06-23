@@ -16,6 +16,13 @@ type DataType struct {
 	EntityRef       *QualifiedName // For Entity or List of Entity types
 	TemplateContext string         // For StringTemplate(Sql), stores "Sql", "OQL", etc.
 	TypeParamName   string         // For TypeEntityTypeParam: the declared name (e.g., "pEntity")
+	// ExplicitEnum is true when the type was written with the unambiguous
+	// `ENUM Module.Name` / `Enumeration(Module.Name)` syntax (vs. a bare
+	// `Module.Name`, which the parser cannot tell apart from an entity and also
+	// records as TypeEnumeration). Consumers that must serialize entity vs.
+	// enumeration distinctly (e.g. Java/JavaScript action parameters, #680) use
+	// this as the authoritative signal that the name is an enumeration.
+	ExplicitEnum bool
 }
 
 // DataTypeKind represents the kind of data type.

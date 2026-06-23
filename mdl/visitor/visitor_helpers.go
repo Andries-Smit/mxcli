@@ -346,11 +346,11 @@ func buildDataType(ctx parser.IDataTypeContext) ast.DataType {
 		}
 	}
 
-	// Handle ENUMERATION(QualifiedName) or ENUM QualifiedName
+	// Handle ENUMERATION(QualifiedName) or ENUM QualifiedName — unambiguous enum.
 	if dtCtx.ENUMERATION() != nil || dtCtx.ENUM_TYPE() != nil {
 		if qn := dtCtx.QualifiedName(); qn != nil {
 			name := buildQualifiedName(qn)
-			return ast.DataType{Kind: ast.TypeEnumeration, EnumRef: &name}
+			return ast.DataType{Kind: ast.TypeEnumeration, EnumRef: &name, ExplicitEnum: true}
 		}
 	}
 
