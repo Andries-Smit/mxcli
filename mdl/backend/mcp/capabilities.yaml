@@ -25,7 +25,7 @@ features:
   - key: entities
     feature: "Entities"
     available: true
-    note: "CREATE/DROP (+ NOT NULL / UNIQUE validation rules on create); ALTER add/drop/rename attribute, entity & attribute documentation; generalization (extends)"
+    note: "CREATE/DROP (+ NOT NULL / UNIQUE validation rules on create); ALTER add/drop/rename attribute, entity & attribute documentation; attribute default values (Studio Pro 11.12+, via the value/defaultValue path-op); generalization (extends)"
   - key: associations
     feature: "Associations"
     available: true

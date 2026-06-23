@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mendixlabs/mxcli/mdl/types"
 	"github.com/mendixlabs/mxcli/model"
 	"github.com/mendixlabs/mxcli/sdk/domainmodel"
 )
@@ -72,6 +73,9 @@ func (b *Backend) CreateEntity(domainModelID model.ID, entity *domainmodel.Entit
 	if err != nil {
 		return err
 	}
+	if err := b.gateAttributeDefaults(entity.Attributes); err != nil {
+		return err
+	}
 	value, err := b.buildEntityValue(entity)
 	if err != nil {
 		return err
@@ -89,6 +93,15 @@ func (b *Backend) CreateEntity(domainModelID model.ID, entity *domainmodel.Entit
 	// — PED's schema directs you to add them as separate DomainModels$ValidationRule
 	// elements once the entity exists.
 	if err := b.addValidationRules(moduleName, entity); err != nil {
+		return err
+	}
+	// Default values aren't carried by the constructor either — set them via a
+	// path-op now that the entity (and its StoredValues) exist (#641-area; 11.12+).
+	entIdx, err := b.entityIndex(moduleName, entity.Name)
+	if err != nil {
+		return err
+	}
+	if err := b.applyAttributeDefaults(moduleName, entIdx, entity.Attributes); err != nil {
 		return err
 	}
 	return b.pedCheckErrors(moduleName)
@@ -127,6 +140,9 @@ func (b *Backend) AddAttribute(domainModelID model.ID, entityID model.ID, attr *
 	if err != nil {
 		return err
 	}
+	if err := b.gateAttributeDefaults([]*domainmodel.Attribute{attr}); err != nil {
+		return err
+	}
 	idx, err := b.entityIndex(moduleName, name)
 	if err != nil {
 		return err
@@ -142,6 +158,9 @@ func (b *Backend) AddAttribute(domainModelID model.ID, entityID model.ID, attr *
 		Path:      fmt.Sprintf("/entities/%d/attributes", idx),
 		Operation: pedOperation{Type: "add", Value: value},
 	}); err != nil {
+		return err
+	}
+	if err := b.applyAttributeDefaults(moduleName, idx, []*domainmodel.Attribute{attr}); err != nil {
 		return err
 	}
 	return b.pedCheckErrors(moduleName)
@@ -168,6 +187,9 @@ func (b *Backend) UpdateEntity(domainModelID model.ID, entity *domainmodel.Entit
 		return err
 	}
 	if err := guardUnsupportedEntityFeatures(entity); err != nil {
+		return err
+	}
+	if err := b.gateAttributeDefaults(entity.Attributes); err != nil {
 		return err
 	}
 	entIdx, err := b.entityIndex(moduleName, entity.Name)
@@ -240,6 +262,10 @@ func (b *Backend) UpdateEntity(domainModelID model.ID, entity *domainmodel.Entit
 			})
 		}
 		if err := b.pedUpdate(moduleName, ops...); err != nil {
+			return err
+		}
+		// Set defaults on the just-added attributes (constructor can't carry them).
+		if err := b.applyAttributeDefaults(moduleName, entIdx, toAdd); err != nil {
 			return err
 		}
 	}
@@ -337,10 +363,25 @@ func (b *Backend) applyInPlaceEntityChanges(moduleName string, entIdx int, entit
 			})
 		}
 	}
-	if len(ops) == 0 {
+	// Attribute default values change in place too (the common case: set a default
+	// on an existing attribute). Handled via applyAttributeDefaults, which reads the
+	// live defaults and only sets the ones that differ.
+	hasDefaults := false
+	for _, a := range entity.Attributes {
+		if _, ok := pedAttributeDefault(a); ok {
+			hasDefaults = true
+			break
+		}
+	}
+	if len(ops) == 0 && !hasDefaults {
 		return nil // nothing changed (idempotent)
 	}
-	if err := b.pedUpdate(moduleName, ops...); err != nil {
+	if len(ops) > 0 {
+		if err := b.pedUpdate(moduleName, ops...); err != nil {
+			return err
+		}
+	}
+	if err := b.applyAttributeDefaults(moduleName, entIdx, entity.Attributes); err != nil {
 		return err
 	}
 	return b.pedCheckErrors(moduleName)
@@ -654,7 +695,7 @@ func (b *Backend) buildAttributeValue(a *domainmodel.Attribute) (*pedAttribute, 
 	if err != nil {
 		return nil, fmt.Errorf("attribute %q: %w", a.Name, err)
 	}
-	if err := guardAttributeValue(a, typeName); err != nil {
+	if err := guardAttributeValue(a); err != nil {
 		return nil, err
 	}
 	pa := &pedAttribute{SType: "DomainModels$Attribute", Name: a.Name, Type: pedType}
@@ -665,22 +706,152 @@ func (b *Backend) buildAttributeValue(a *domainmodel.Attribute) (*pedAttribute, 
 }
 
 // guardAttributeValue rejects attribute value settings the PED constructor
-// cannot carry. A Boolean's auto-added `false` default is allowed through
-// (dropped), since it is Mendix's own default.
-func guardAttributeValue(a *domainmodel.Attribute, typeName string) error {
+// cannot carry. Calculated attributes are unsupported. Default values ARE
+// supported (Studio Pro 11.12+), but the constructor can't carry them — they are
+// applied as a follow-up ped_update_document path-op (see applyAttributeDefaults);
+// the version gate lives in gateAttributeDefaults, called up-front by each write.
+func guardAttributeValue(a *domainmodel.Attribute) error {
 	if a.Value == nil {
 		return nil
 	}
 	if a.Value.Type == "CalculatedValue" {
 		return fmt.Errorf("attribute %q: calculated attributes are not yet supported by the MCP backend", a.Name)
 	}
-	if a.Value.DefaultValue != "" {
-		if typeName == "Boolean" && strings.EqualFold(a.Value.DefaultValue, "false") {
-			return nil // harmless: Boolean's default is false anyway
+	return nil
+}
+
+// pedAttributeDefault returns the value PED stores for an attribute's default,
+// and whether a default should be set at all. PED's DomainModels$StoredValue
+// stores the BARE value verbatim — including for enums, where it keeps just the
+// value name (e.g. "Draft", not "MES.WorkOrderStatus.Draft"), exactly matching
+// what the executor puts in DefaultValue. Verified live on Studio Pro 11.12:
+// setting the bare value succeeds, reads back bare, and passes ped_check_errors.
+// A Boolean's `false` is treated as no default (it is Mendix's own implicit
+// default); calculated/empty values carry no settable default.
+func pedAttributeDefault(a *domainmodel.Attribute) (string, bool) {
+	if a.Value == nil || a.Value.Type == "CalculatedValue" || a.Value.DefaultValue == "" {
+		return "", false
+	}
+	v := a.Value.DefaultValue
+	if _, ok := a.Type.(*domainmodel.BooleanAttributeType); ok && strings.EqualFold(v, "false") {
+		return "", false
+	}
+	return v, true
+}
+
+// gateAttributeDefaults rejects (up-front, before any write) setting an attribute
+// default on a Studio Pro older than 11.12, whose PED server lacks the
+// value/defaultValue path-op. Keeps the failure clean instead of letting the
+// path-op error mid-write.
+func (b *Backend) gateAttributeDefaults(attrs []*domainmodel.Attribute) error {
+	var pv *types.ProjectVersion
+	if b.reader != nil {
+		pv = b.ProjectVersion()
+	}
+	if attributeDefaultsSupported(pv) {
+		return nil
+	}
+	for _, a := range attrs {
+		if _, ok := pedAttributeDefault(a); ok {
+			return fmt.Errorf("attribute %q: setting a default value via the MCP backend requires Studio Pro 11.12+ "+
+				"(the PED defaultValue path-op); run this against a local .mpr instead", a.Name)
 		}
-		return fmt.Errorf("attribute %q: default values are not yet supported by the MCP backend", a.Name)
 	}
 	return nil
+}
+
+// attributeDefaultsSupported reports whether the connected Studio Pro is new
+// enough for the PED value/defaultValue path-op (11.12+).
+func attributeDefaultsSupported(pv *types.ProjectVersion) bool {
+	return pv != nil && pv.IsAtLeast(11, 12)
+}
+
+// liveAttributeDefaults reads each attribute's current StoredValue.defaultValue
+// (empty string when unset, or for a calculated/view value), indexed by attribute
+// position. It reads the whole `value` object — which always exists — and extracts
+// defaultValue, rather than the leaf (which may be absent when unset, and a
+// missing-leaf read can error).
+func (b *Backend) liveAttributeDefaults(moduleName string, entIdx, attrCount int) ([]string, error) {
+	if attrCount == 0 {
+		return nil, nil
+	}
+	paths := make([]string, 0, attrCount)
+	for i := range attrCount {
+		paths = append(paths, fmt.Sprintf("/entities/%d/attributes/%d/value", entIdx, i))
+	}
+	res, err := b.client.CallTool("ped_read_document", map[string]any{
+		"documentType": domainModelDocType,
+		"documentName": moduleName,
+		"paths":        paths,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if res.IsError {
+		return nil, fmt.Errorf("ped_read_document %s defaults: %s", moduleName, pedStripReminder(res.Text))
+	}
+	byPath, err := parsePedResults(pedStripReminder(res.Text))
+	if err != nil {
+		return nil, fmt.Errorf("parse defaults of %s: %w", moduleName, err)
+	}
+	out := make([]string, attrCount)
+	for i := range attrCount {
+		var v struct {
+			DefaultValue string `json:"defaultValue"`
+		}
+		_ = json.Unmarshal(byPath[fmt.Sprintf("/entities/%d/attributes/%d/value", entIdx, i)], &v)
+		out[i] = v.DefaultValue
+	}
+	return out, nil
+}
+
+// applyAttributeDefaults sets DomainModels$StoredValue.defaultValue for each
+// attribute whose desired default differs from the live model, via
+// ped_update_document `set` path-ops (the create constructor can't carry it). It
+// re-reads the live model to resolve attribute array indices and skip values that
+// are already correct, so it is idempotent and works for both freshly-created and
+// existing attributes. Requires Studio Pro 11.12+ (gated up-front by
+// gateAttributeDefaults).
+func (b *Backend) applyAttributeDefaults(moduleName string, entIdx int, attrs []*domainmodel.Attribute) error {
+	want := make(map[string]string)
+	for _, a := range attrs {
+		if v, ok := pedAttributeDefault(a); ok {
+			want[a.Name] = v
+		}
+	}
+	if len(want) == 0 {
+		return nil
+	}
+	liveNames, err := b.liveAttributeNames(moduleName, entIdx)
+	if err != nil {
+		return err
+	}
+	liveDefaults, err := b.liveAttributeDefaults(moduleName, entIdx, len(liveNames))
+	if err != nil {
+		return err
+	}
+	idxByName := make(map[string]int, len(liveNames))
+	for i, n := range liveNames {
+		idxByName[n] = i
+	}
+	var ops []pedOpEntry
+	for name, v := range want {
+		i, ok := idxByName[name]
+		if !ok {
+			return fmt.Errorf("attribute %q not found in live model when setting its default", name)
+		}
+		if i < len(liveDefaults) && liveDefaults[i] == v {
+			continue // already set
+		}
+		ops = append(ops, pedOpEntry{
+			Path:      fmt.Sprintf("/entities/%d/attributes/%d/value/defaultValue", entIdx, i),
+			Operation: pedOperation{Type: "set", Value: v},
+		})
+	}
+	if len(ops) == 0 {
+		return nil
+	}
+	return b.pedUpdate(moduleName, ops...)
 }
 
 // pedAttributeType maps a domain-model attribute type name onto the PED
@@ -937,6 +1108,9 @@ func (b *Backend) ensureSchema(elementTypes ...string) error {
 	}
 	if res.IsError {
 		return fmt.Errorf("ped_get_schema %v: %s", needed, res.Text)
+	}
+	if b.schemaFetched == nil {
+		b.schemaFetched = map[string]bool{}
 	}
 	for _, t := range needed {
 		b.schemaFetched[t] = true

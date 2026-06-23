@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mendixlabs/mxcli/mdl/types"
 	"github.com/mendixlabs/mxcli/model"
 	"github.com/mendixlabs/mxcli/sdk/domainmodel"
 )
@@ -110,7 +111,7 @@ func TestBuildEntityValue_RejectsUnsupportedFeatures(t *testing.T) {
 	}
 }
 
-func TestBuildAttributeValue_RejectsCalculatedAndNonDefaultValues(t *testing.T) {
+func TestBuildAttributeValue_RejectsCalculated(t *testing.T) {
 	b := &Backend{}
 	calc := attr("Full", &domainmodel.StringAttributeType{})
 	calc.Value = &domainmodel.AttributeValue{Type: "CalculatedValue"}
@@ -118,10 +119,83 @@ func TestBuildAttributeValue_RejectsCalculatedAndNonDefaultValues(t *testing.T) 
 		t.Error("expected calculated attribute to be rejected")
 	}
 
+	// A default value is no longer rejected here — the constructor doesn't carry
+	// it (it's set via a follow-up path-op), so buildAttributeValue accepts it.
 	deflt := attr("Qty", &domainmodel.IntegerAttributeType{})
 	deflt.Value = &domainmodel.AttributeValue{DefaultValue: "5"}
-	if _, err := b.buildAttributeValue(deflt); err == nil {
-		t.Error("expected non-Boolean default to be rejected")
+	if _, err := b.buildAttributeValue(deflt); err != nil {
+		t.Errorf("default value should be accepted by buildAttributeValue now, got: %v", err)
+	}
+}
+
+// Issue: attribute default values via PED path-op (Studio Pro 11.12+).
+func TestPedAttributeDefault(t *testing.T) {
+	mk := func(typ domainmodel.AttributeType, def string) *domainmodel.Attribute {
+		a := attr("A", typ)
+		if def != "" {
+			a.Value = &domainmodel.AttributeValue{DefaultValue: def}
+		}
+		return a
+	}
+	cases := []struct {
+		name    string
+		attr    *domainmodel.Attribute
+		wantVal string
+		wantSet bool
+	}{
+		{"no value", mk(&domainmodel.StringAttributeType{}, ""), "", false},
+		{"string default", mk(&domainmodel.StringAttributeType{}, "hi"), "hi", true},
+		{"integer default", mk(&domainmodel.IntegerAttributeType{}, "0"), "0", true},
+		{"boolean true", mk(&domainmodel.BooleanAttributeType{}, "true"), "true", true},
+		{"boolean false dropped", mk(&domainmodel.BooleanAttributeType{}, "false"), "", false},
+		// Enums are stored BARE by PED (verified live on 11.12) — the executor
+		// already provides the bare value name, sent as-is.
+		{"enum bare value", mk(&domainmodel.EnumerationAttributeType{EnumerationRef: "MES.WorkOrderStatus"}, "Draft"), "Draft", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			v, ok := pedAttributeDefault(c.attr)
+			if ok != c.wantSet || v != c.wantVal {
+				t.Errorf("pedAttributeDefault = (%q,%v), want (%q,%v)", v, ok, c.wantVal, c.wantSet)
+			}
+		})
+	}
+
+	// Calculated value carries no settable default.
+	calc := attr("C", &domainmodel.StringAttributeType{})
+	calc.Value = &domainmodel.AttributeValue{Type: "CalculatedValue"}
+	if _, ok := pedAttributeDefault(calc); ok {
+		t.Error("calculated value should not be a settable default")
+	}
+}
+
+func TestAttributeDefaultsSupported(t *testing.T) {
+	if attributeDefaultsSupported(nil) {
+		t.Error("nil version must not be supported")
+	}
+	if attributeDefaultsSupported(&types.ProjectVersion{MajorVersion: 11, MinorVersion: 11}) {
+		t.Error("11.11 must not be supported")
+	}
+	if !attributeDefaultsSupported(&types.ProjectVersion{MajorVersion: 11, MinorVersion: 12}) {
+		t.Error("11.12 must be supported")
+	}
+	if !attributeDefaultsSupported(&types.ProjectVersion{MajorVersion: 12, MinorVersion: 0}) {
+		t.Error("12.0 must be supported")
+	}
+}
+
+// On an unknown/old version the gate rejects a default up-front; without a
+// default it passes regardless of version.
+func TestGateAttributeDefaults(t *testing.T) {
+	b := &Backend{} // nil reader → version unknown → treated as < 11.12
+	withDefault := attr("Qty", &domainmodel.IntegerAttributeType{})
+	withDefault.Value = &domainmodel.AttributeValue{DefaultValue: "5"}
+	if err := b.gateAttributeDefaults([]*domainmodel.Attribute{withDefault}); err == nil {
+		t.Error("expected gate to reject a default on an unknown/old version")
+	}
+	plain := attr("Name", &domainmodel.StringAttributeType{})
+	if err := b.gateAttributeDefaults([]*domainmodel.Attribute{plain}); err != nil {
+		t.Errorf("plain attribute should pass the gate, got: %v", err)
 	}
 }
 
