@@ -1488,10 +1488,10 @@ create page JaTest.JavaActionTestPage
       }
     }
     row rowLevel2Btns2 {
-      column col2d (desktopwidth: 4) {
+      column col2d (desktopwidth: 6) {
         actionbutton btnM013 (caption: 'M013 FormatDate', action: microflow JaTest.Test_M013, buttonstyle: primary)
       }
-      column col2e (desktopwidth: 4) {
+      column col2e (desktopwidth: 6) {
         actionbutton btnM014 (caption: 'M014 CalculateTax', action: microflow JaTest.Test_M014, buttonstyle: primary)
       }
     }
@@ -1564,7 +1564,7 @@ create page JaTest.JavaActionTestPage
       }
     }
     row rowLevel6Btns2 {
-      column col6d (desktopwidth: 4) {
+      column col6d (desktopwidth: 12) {
         actionbutton btnM053 (caption: 'M053 Conditional', action: microflow JaTest.Test_M053, buttonstyle: default)
       }
     }
@@ -1586,7 +1586,7 @@ create page JaTest.JavaActionTestPage
       }
     }
     row rowLevel7Btns2 {
-      column col7d (desktopwidth: 4) {
+      column col7d (desktopwidth: 12) {
         actionbutton btnM063 (caption: 'M063 QueueTask', action: microflow JaTest.Test_M063, buttonstyle: default)
       }
     }
@@ -1829,6 +1829,57 @@ return s;
 $$;
 
 drop java action JaTest.PadString;
+
+-- MARK: Level 11 - Enumeration parameters
+
+-- ============================================================================
+-- LEVEL 11: Enumeration parameters and return types (issue #680)
+-- ============================================================================
+-- A parameter or return type written with the explicit Enumeration(Module.Enum)
+-- or ENUM Module.Enum syntax serializes as a true enumeration
+-- (CodeActions$EnumerationType) — NOT an entity reference. Studio Pro generates
+-- `jatest.proxies.Priority current` in the action stub, and the project builds.
+-- (Before #680 the parameter was written as an entity ref and mxbuild failed
+-- with "The selected entity 'JaTest.Priority' no longer exists".)
+
+create enumeration JaTest.Priority (
+  Low 'Low',
+  Medium 'Medium',
+  High 'High'
+);
+
+-- 11.1: Enumeration parameter (Enumeration(...) form) + enumeration return type
+create java action JaTest.EscalatePriority(
+  Current: Enumeration(JaTest.Priority) not null
+) returns Enumeration(JaTest.Priority)
+as $$
+// Stub: a real implementation would bump the priority one level
+return Current;
+$$;
+
+-- 11.2: Enumeration parameter (ENUM form) alongside primitive parameters
+create java action JaTest.LogWithPriority(
+  Message: string not null,
+  Level: ENUM JaTest.Priority not null
+) returns boolean
+as $$
+return Message != null;
+$$;
+
+-- 11.3: Microflow passing an enumeration value to the Java action.
+-- Use the explicit ENUM / Enumeration(...) syntax for enumeration-typed
+-- microflow parameters and return types too — a bare `JaTest.Priority` is
+-- read as an entity reference (same ambiguity as #680).
+create microflow JaTest.M080_Escalate ($Current: ENUM JaTest.Priority)
+returns ENUM JaTest.Priority as $MF80_New
+begin
+  $MF80_New = call java action JaTest.EscalatePriority(
+    Current = $Current
+  );
+
+  return $MF80_New;
+end;
+/
 
 -- ============================================================================
 -- Java Action Feature Summary

@@ -64,10 +64,37 @@ as $$
 return Promise.resolve(A + B + (C || 0));
 $$;
 
+-- MARK: Enumeration parameter (issue #680)
+
+-- A parameter or return typed with Enumeration(Module.Enum) / ENUM Module.Enum
+-- serializes as a true enumeration (CodeActions$EnumerationType), not an entity
+-- reference — so the project builds. Both forms are shown below.
+
+create enumeration JsTest.Severity (
+  Info 'Info',
+  Warning 'Warning',
+  Error 'Error'
+);
+
+create javascript action JsTest.FormatSeverity(
+  Level: Enumeration(JsTest.Severity) not null
+) returns String
+as $$
+return Promise.resolve(String(Level));
+$$;
+
+create javascript action JsTest.NextSeverity(
+  Current: ENUM JsTest.Severity not null
+) returns Enumeration(JsTest.Severity)
+as $$
+return Promise.resolve(Current);
+$$;
+
 -- MARK: Inspect
 
 show javascript actions in JsTest;
 describe javascript action JsTest.ShowToast;
+describe javascript action JsTest.FormatSeverity;
 
 -- exit before cleanup so Studio Pro can inspect the created actions;
 -- everything below the exit is teardown for repeatable test runs.
@@ -76,3 +103,5 @@ exit;
 drop javascript action JsTest.IsStrictMode;
 drop javascript action JsTest.Add;
 drop javascript action JsTest.ShowToast;
+drop javascript action JsTest.FormatSeverity;
+drop javascript action JsTest.NextSeverity;
