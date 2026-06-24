@@ -16,9 +16,41 @@ import (
 	"testing"
 
 	"github.com/mendixlabs/mxcli/mdl/ast"
+	"github.com/mendixlabs/mxcli/mdl/backend"
+	modelsdkbackend "github.com/mendixlabs/mxcli/mdl/backend/modelsdk"
+	mprbackend "github.com/mendixlabs/mxcli/mdl/backend/mpr"
 	"github.com/mendixlabs/mxcli/mdl/types"
 	"github.com/mendixlabs/mxcli/mdl/visitor"
 )
+
+// gateEngine pairs an engine name with its backend factory. The gate runs every
+// doctype script through exec + mx check on BOTH engines: modelsdk (the default)
+// and legacy. Previously it only ran legacy, so modelsdk-only serialization
+// regressions (dangling pointers, lossy round-trips, missing serializers) went
+// uncaught — see issue #691.
+type gateEngine struct {
+	name    string
+	factory func() backend.FullBackend
+}
+
+var gateEngines = []gateEngine{
+	{"modelsdk", func() backend.FullBackend { return modelsdkbackend.New() }},
+	{"legacy", func() backend.FullBackend { return mprbackend.New() }},
+}
+
+// engineScriptSkip marks (engine/script) pairs to skip, with a reason. Use only
+// for a script that fails on ONE engine for a tracked, not-yet-actionable reason
+// (e.g. a known modelsdk gap on a specific document type). A script broken on
+// BOTH engines belongs in scriptSkipList instead. Key format: "<engine>/<file>".
+var engineScriptSkip = map[string]string{
+	// SOAP web-service calls aren't serialized by the codec engine yet — legacy
+	// is the documented fallback for SOAP (cmd/mxcli/engine.go). On modelsdk the
+	// `call web service` activity serializes with no action → CE0008/CE0109.
+	"modelsdk/06b-soap-examples.mdl": "modelsdk doesn't write SOAP web-service calls yet (legacy fallback); tracked",
+	// The legacy widget builder has no `barchart` pluggable-widget template, so
+	// page build fails ("template not found: barchart"). Passes on modelsdk.
+	"legacy/34-chart-widget-examples.mdl": "legacy widget builder lacks the barchart template (works on modelsdk); tracked",
+}
 
 // scriptModuleDeps maps script filenames to marketplace module MPKs they require.
 // These modules are imported via `mx module-import` before executing the script.
@@ -104,93 +136,101 @@ func TestMxCheck_DoctypeScripts(t *testing.T) {
 			t.Fatalf("Failed to read %s: %v", name, err)
 		}
 
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
+		for _, eng := range gateEngines {
+			name, content, eng := name, content, eng // capture per iteration
+			subName := name + "/" + eng.name
+			if reason, skip := engineScriptSkip[eng.name+"/"+name]; skip {
+				t.Run(subName, func(t *testing.T) { t.Skipf("engine-specific skip: %s", reason) })
+				continue
+			}
+			t.Run(subName, func(t *testing.T) {
+				t.Parallel()
 
-			// Fresh project for each script
-			env := setupTestEnv(t)
-			defer env.teardown()
+				// Fresh project for each script/engine
+				env := setupTestEnvWithBackend(t, eng.factory)
+				defer env.teardown()
 
-			// Import required marketplace modules before executing script
-			if deps, ok := scriptModuleDeps[name]; ok && modulesDir != "" && mxPath != "" {
-				// Disconnect so mx can access the MPR file
+				// Import required marketplace modules before executing script
+				if deps, ok := scriptModuleDeps[name]; ok && modulesDir != "" && mxPath != "" {
+					// Disconnect so mx can access the MPR file
+					env.executor.Execute(&ast.DisconnectStmt{})
+
+					for _, mpk := range deps {
+						mpkPath := filepath.Join(modulesDir, mpk)
+						if _, err := os.Stat(mpkPath); err != nil {
+							t.Logf("Skipping module import (not found): %s", mpkPath)
+							continue
+						}
+						cmd := exec.Command(mxPath, "module-import", mpkPath, env.projectPath)
+						if out, err := cmd.CombinedOutput(); err != nil {
+							t.Logf("Warning: module import failed for %s: %v\n%s", mpk, err, string(out))
+						}
+					}
+
+					// Reconnect after module import
+					if err := env.executor.Execute(&ast.ConnectStmt{Path: env.projectPath}); err != nil {
+						t.Fatalf("Failed to reconnect after module import: %v", err)
+					}
+				}
+
+				// Filter out version-gated sections that don't match this project's Mendix version
+				pv := env.executor.Backend().ProjectVersion()
+				filtered, skippedLines := filterByVersion(string(content), pv)
+				if skippedLines > 0 {
+					t.Logf("Mendix %s: skipped %d version-gated lines", pv.ProductVersion, skippedLines)
+				}
+
+				// Execute the script
+				prog, errs := visitor.Build(filtered)
+				if len(errs) > 0 {
+					t.Fatalf("Parse error: %v", errs[0])
+				}
+
+				// A trailing `exit;` is a legitimate clean halt — several fixtures use
+				// it to leave artifacts in the project for Studio Pro inspection. Treat
+				// ErrExit as success, not an execution failure.
+				if err := env.executor.ExecuteProgram(prog); err != nil && !errors.Is(err, ErrExit) {
+					t.Errorf("Execution error: %v", err)
+				}
+
+				// Flush to disk
 				env.executor.Execute(&ast.DisconnectStmt{})
 
-				for _, mpk := range deps {
-					mpkPath := filepath.Join(modulesDir, mpk)
-					if _, err := os.Stat(mpkPath); err != nil {
-						t.Logf("Skipping module import (not found): %s", mpkPath)
-						continue
-					}
-					cmd := exec.Command(mxPath, "module-import", mpkPath, env.projectPath)
-					if out, err := cmd.CombinedOutput(); err != nil {
-						t.Logf("Warning: module import failed for %s: %v\n%s", mpk, err, string(out))
-					}
+				// Update widgets for scripts that create pluggable widgets (prevents CE0463).
+				// Skip for other scripts — update-widgets can corrupt non-widget projects.
+				if strings.Contains(name, "page") || strings.Contains(name, "widget") {
+					runMxUpdateWidgets(t, env.projectPath)
 				}
 
-				// Reconnect after module import
-				if err := env.executor.Execute(&ast.ConnectStmt{Path: env.projectPath}); err != nil {
-					t.Fatalf("Failed to reconnect after module import: %v", err)
-				}
-			}
-
-			// Filter out version-gated sections that don't match this project's Mendix version
-			pv := env.executor.Backend().ProjectVersion()
-			filtered, skippedLines := filterByVersion(string(content), pv)
-			if skippedLines > 0 {
-				t.Logf("Mendix %s: skipped %d version-gated lines", pv.ProductVersion, skippedLines)
-			}
-
-			// Execute the script
-			prog, errs := visitor.Build(filtered)
-			if len(errs) > 0 {
-				t.Fatalf("Parse error: %v", errs[0])
-			}
-
-			// A trailing `exit;` is a legitimate clean halt — several fixtures use
-			// it to leave artifacts in the project for Studio Pro inspection. Treat
-			// ErrExit as success, not an execution failure.
-			if err := env.executor.ExecuteProgram(prog); err != nil && !errors.Is(err, ErrExit) {
-				t.Errorf("Execution error: %v", err)
-			}
-
-			// Flush to disk
-			env.executor.Execute(&ast.DisconnectStmt{})
-
-			// Update widgets for scripts that create pluggable widgets (prevents CE0463).
-			// Skip for other scripts — update-widgets can corrupt non-widget projects.
-			if strings.Contains(name, "page") || strings.Contains(name, "widget") {
-				runMxUpdateWidgets(t, env.projectPath)
-			}
-
-			// Run mx check
-			output, mxErr := runMxCheck(t, env.projectPath)
-			if mxErr != nil {
-				// Check for actual errors: [error] lines, crash messages, or unhandled exceptions
-				hasErrors := strings.Contains(output, "[error]") || strings.Contains(output, "error:") ||
-					strings.Contains(output, "Exception:")
-				if hasErrors {
-					// Check if all errors are from known CE codes (limitations of syntax showcases)
-					knownCodes := []string{
-						"CE0161", // XPath serializer limitation (global)
-						"CE0463", // Widget template version mismatch (templates are from 11.6, may differ on 10.x)
-					}
-					if codes, ok := scriptKnownCEErrors[name]; ok {
-						knownCodes = append(knownCodes, codes...)
-					}
-					if allErrorsKnown(output, knownCodes) {
-						t.Logf("mx check has known limitations only (%d errors):\n%s",
-							strings.Count(output, "[error]"), output)
+				// Run mx check
+				output, mxErr := runMxCheck(t, env.projectPath)
+				if mxErr != nil {
+					// Check for actual errors: [error] lines, crash messages, or unhandled exceptions
+					hasErrors := strings.Contains(output, "[error]") || strings.Contains(output, "error:") ||
+						strings.Contains(output, "Exception:")
+					if hasErrors {
+						// Check if all errors are from known CE codes (limitations of syntax showcases)
+						knownCodes := []string{
+							"CE0161", // XPath serializer limitation (global)
+							"CE0463", // Widget template version mismatch (templates are from 11.6, may differ on 10.x)
+						}
+						if codes, ok := scriptKnownCEErrors[name]; ok {
+							knownCodes = append(knownCodes, codes...)
+						}
+						if allErrorsKnown(output, knownCodes) {
+							t.Logf("mx check has known limitations only (%d errors):\n%s",
+								strings.Count(output, "[error]"), output)
+						} else {
+							t.Errorf("mx check found errors:\n%s", output)
+						}
 					} else {
-						t.Errorf("mx check found errors:\n%s", output)
+						t.Logf("mx check output:\n%s", output)
 					}
 				} else {
-					t.Logf("mx check output:\n%s", output)
+					t.Logf("mx check passed: 0 errors")
 				}
-			} else {
-				t.Logf("mx check passed: 0 errors")
-			}
-		})
+			})
+		}
 	}
 }
 

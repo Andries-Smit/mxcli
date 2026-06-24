@@ -280,13 +280,21 @@ func copyDir(src, dst string) error {
 
 // setupTestEnv creates a new test environment with a fresh copy of the source project.
 func setupTestEnv(t *testing.T) *testEnv {
+	return setupTestEnvWithBackend(t, func() backend.FullBackend { return mprbackend.New() })
+}
+
+// setupTestEnvWithBackend is setupTestEnv parametrized by the engine's backend
+// factory, so a test can exercise the same script on both the modelsdk (default)
+// and legacy engines (see TestMxCheck_DoctypeScripts). setupTestEnv keeps the
+// legacy default for the many tests that don't care which engine they run on.
+func setupTestEnvWithBackend(t *testing.T, factory func() backend.FullBackend) *testEnv {
 	t.Helper()
 
 	projectPath := copyTestProject(t)
 
 	output := &bytes.Buffer{}
 	exec := New(output)
-	exec.SetBackendFactory(func() backend.FullBackend { return mprbackend.New() })
+	exec.SetBackendFactory(factory)
 
 	// Connect to project
 	connectStmt := &ast.ConnectStmt{
