@@ -1531,29 +1531,50 @@ func cloneVisited(visited map[model.ID]bool) map[model.ID]bool {
 
 // findBranchFlows separates flows from a split into TRUE and FALSE branches based on CaseValue.
 // Returns (trueFlow, falseFlow). Either may be nil if the branch doesn't exist.
+//
+// A binary exclusive split has exactly one true and one false branch. When a
+// project stores a branch's case value in a shape this matcher doesn't
+// recognize (e.g. an ExpressionCase carrying the condition text instead of the
+// literal "true"/"false" sentinel), the recognized side is still matched and
+// the unrecognized side is left for by-elimination recovery below — otherwise
+// the whole branch body would be dropped (DESCRIBE skipping the then part).
 func findBranchFlows(flows []*microflows.SequenceFlow) (trueFlow, falseFlow *microflows.SequenceFlow) {
+	var unmatched []*microflows.SequenceFlow
 	for _, flow := range flows {
+		if flow.IsErrorHandler {
+			continue
+		}
 		if flow.CaseValue == nil {
+			unmatched = append(unmatched, flow)
 			continue
 		}
 		switch cv := flow.CaseValue.(type) {
 		case *microflows.ExpressionCase:
-			if cv.Expression == "true" {
+			switch cv.Expression {
+			case "true":
 				trueFlow = flow
-			} else if cv.Expression == "false" {
+			case "false":
 				falseFlow = flow
+			default:
+				unmatched = append(unmatched, flow)
 			}
 		case *microflows.EnumerationCase:
-			if cv.Value == "true" {
+			switch cv.Value {
+			case "true":
 				trueFlow = flow
-			} else if cv.Value == "false" {
+			case "false":
 				falseFlow = flow
+			default:
+				unmatched = append(unmatched, flow)
 			}
 		case microflows.EnumerationCase:
-			if cv.Value == "true" {
+			switch cv.Value {
+			case "true":
 				trueFlow = flow
-			} else if cv.Value == "false" {
+			case "false":
 				falseFlow = flow
+			default:
+				unmatched = append(unmatched, flow)
 			}
 		case *microflows.BooleanCase:
 			if cv.Value {
@@ -1567,6 +1588,22 @@ func findBranchFlows(flows []*microflows.SequenceFlow) (trueFlow, falseFlow *mic
 			} else {
 				falseFlow = flow
 			}
+		default:
+			unmatched = append(unmatched, flow)
+		}
+	}
+
+	// By elimination: if exactly one side was recognized and a single other
+	// branch was left unmatched, that branch must be the missing side. This
+	// keeps the then (or else) body from being dropped when its case value is
+	// stored in an unrecognized shape. Only applied for a clean 1-and-1 split —
+	// if both sides are unknown we can't tell true from false, so we leave them
+	// nil rather than guess.
+	if len(unmatched) == 1 {
+		if trueFlow == nil && falseFlow != nil {
+			trueFlow = unmatched[0]
+		} else if falseFlow == nil && trueFlow != nil {
+			falseFlow = unmatched[0]
 		}
 	}
 	return trueFlow, falseFlow

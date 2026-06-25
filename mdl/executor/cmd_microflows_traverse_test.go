@@ -231,6 +231,83 @@ func TestTraverseFlow_IfWithoutElse(t *testing.T) {
 	}
 }
 
+// TestTraverseFlow_UnrecognizedTrueBranchCaseValue guards against a class of
+// bug reported as "DESCRIBE MICROFLOW skips the then part of if/then/else".
+//
+// The then body is only emitted when findBranchFlows can identify the TRUE
+// branch, which it does by matching the SequenceFlow's CaseValue against the
+// literal "true" sentinel. If a project stores the true branch's case value in
+// a shape the matcher doesn't recognize (here: an ExpressionCase carrying the
+// condition text rather than the literal "true"), findBranchFlows used to
+// return trueFlow=nil while still recognizing the false branch — producing
+//
+//	if $x > 0 then
+//	else
+//	  <false body>
+//	end if;
+//
+// i.e. the entire then body vanished. A binary exclusive split has exactly one
+// true and one false branch, so when one side is recognized and a single other
+// branch is left unmatched, that branch must be the missing side. This test
+// asserts the then body survives by elimination.
+func TestTraverseFlow_UnrecognizedTrueBranchCaseValue(t *testing.T) {
+	e := newTestExecutor()
+
+	activityMap := map[model.ID]microflows.MicroflowObject{
+		mkID("start"): &microflows.StartEvent{BaseMicroflowObject: mkObj("start")},
+		mkID("split"): &microflows.ExclusiveSplit{
+			BaseMicroflowObject: mkObj("split"),
+			SplitCondition:      &microflows.ExpressionSplitCondition{Expression: "$x > 0"},
+		},
+		mkID("true_act"): &microflows.ActionActivity{
+			BaseActivity: microflows.BaseActivity{BaseMicroflowObject: mkObj("true_act")},
+			Action:       &microflows.LogMessageAction{LogLevel: "Info", LogNodeName: "'App'", MessageTemplate: &model.Text{Translations: map[string]string{"en_US": "positive"}}},
+		},
+		mkID("false_act"): &microflows.ActionActivity{
+			BaseActivity: microflows.BaseActivity{BaseMicroflowObject: mkObj("false_act")},
+			Action:       &microflows.LogMessageAction{LogLevel: "Info", LogNodeName: "'App'", MessageTemplate: &model.Text{Translations: map[string]string{"en_US": "negative"}}},
+		},
+		mkID("merge"): &microflows.ExclusiveMerge{BaseMicroflowObject: mkObj("merge")},
+		mkID("end"):   &microflows.EndEvent{BaseMicroflowObject: mkObj("end")},
+	}
+
+	flowsByOrigin := map[model.ID][]*microflows.SequenceFlow{
+		mkID("start"): {mkFlow("start", "split")},
+		mkID("split"): {
+			// TRUE branch carries an unrecognized case value (the condition text,
+			// not the literal "true" sentinel) — findBranchFlows can't match it.
+			mkBranchFlow("split", "true_act", &microflows.ExpressionCase{Expression: "$x > 0"}),
+			mkBranchFlow("split", "false_act", &microflows.ExpressionCase{Expression: "false"}),
+		},
+		mkID("true_act"):  {mkFlow("true_act", "merge")},
+		mkID("false_act"): {mkFlow("false_act", "merge")},
+		mkID("merge"):     {mkFlow("merge", "end")},
+	}
+
+	splitMergeMap := map[model.ID]model.ID{
+		mkID("split"): mkID("merge"),
+	}
+
+	var lines []string
+	visited := make(map[model.ID]bool)
+	e.traverseFlow(mkID("start"), activityMap, flowsByOrigin, splitMergeMap, visited, nil, nil, &lines, 1, nil, 0, nil)
+
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "positive") {
+		t.Errorf("then body was dropped — expected 'positive' in output:\n%s", joined)
+	}
+	if !strings.Contains(joined, "negative") {
+		t.Errorf("else body was dropped — expected 'negative' in output:\n%s", joined)
+	}
+
+	// The then body must appear before the else keyword, not be swallowed into it.
+	thenIdx := strings.Index(joined, "positive")
+	elseIdx := strings.Index(joined, "else")
+	if thenIdx >= 0 && elseIdx >= 0 && thenIdx > elseIdx {
+		t.Errorf("then body emitted after else — branches mis-ordered:\n%s", joined)
+	}
+}
+
 func TestTraverseFlow_LoopBodyMergesParentFlowsForExistingOrigin(t *testing.T) {
 	e := newTestExecutor()
 
