@@ -743,6 +743,7 @@ type ScheduledEvent struct {
 }
 
 // intervalToSeconds converts a Mendix interval value and type to seconds.
+// Returns 0 for unrecognised interval types (treated as "not convertible").
 func intervalToSeconds(interval int, intervalType string) int {
 	multipliers := map[string]int{
 		"Second": 1,
@@ -769,14 +770,25 @@ func (ctx *LintContext) ScheduledEvents() iter.Seq[ScheduledEvent] {
 
 		// Build module ID → name map from catalog.
 		moduleNames := map[model.ID]string{}
+		// Build microflow UUID → qualified name map from catalog.
+		// Falls back to the raw UUID when the catalog has not been built yet.
+		microflowNames := map[string]string{}
 		if ctx.db != nil {
-			rows, err := ctx.db.Query(`SELECT Id, Name FROM modules`)
-			if err == nil {
+			if rows, err := ctx.db.Query(`SELECT Id, Name FROM modules`); err == nil {
 				defer rows.Close()
 				for rows.Next() {
 					var id, name string
 					if rows.Scan(&id, &name) == nil {
 						moduleNames[model.ID(id)] = name
+					}
+				}
+			}
+			if rows, err := ctx.db.Query(`SELECT Id, QualifiedName FROM microflows`); err == nil {
+				defer rows.Close()
+				for rows.Next() {
+					var id, qname string
+					if rows.Scan(&id, &qname) == nil {
+						microflowNames[id] = qname
 					}
 				}
 			}
@@ -792,11 +804,15 @@ func (ctx *LintContext) ScheduledEvents() iter.Seq[ScheduledEvent] {
 			if ctx.IsExcluded(moduleName) {
 				continue
 			}
+			mfName := microflowNames[string(e.MicroflowID)]
+			if mfName == "" {
+				mfName = string(e.MicroflowID)
+			}
 			se := ScheduledEvent{
 				Name:            e.Name,
 				QualifiedName:   moduleName + "." + e.Name,
 				ModuleName:      moduleName,
-				MicroflowName:   string(e.MicroflowID),
+				MicroflowName:   mfName,
 				IntervalSeconds: intervalToSeconds(e.Interval, e.IntervalType),
 				Enabled:         e.Enabled,
 			}
