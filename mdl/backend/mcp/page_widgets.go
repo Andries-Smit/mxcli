@@ -10,7 +10,7 @@ import (
 	"github.com/mendixlabs/mxcli/sdk/pages"
 )
 
-// mapPageWidget maps one executor page widget onto its pg_write_page (Pages$*)
+// mapPageWidget maps one executor page widget onto its pg_patch_page (Pages$*)
 // form, then attaches any conditional-visibility setting (VISIBLE IF) uniformly.
 func (b *Backend) mapPageWidget(w pages.Widget) (map[string]any, error) {
 	m, err := b.mapPageWidgetBody(w)
@@ -234,7 +234,7 @@ func (b *Backend) mapPageWidgetBody(w pages.Widget) (map[string]any, error) {
 	case *pages.CustomWidget:
 		return b.mapCustomWidget(wd)
 	case *pages.DataGrid:
-		return nil, fmt.Errorf("legacy DataGrid is not supported by the MCP backend — pg_write_page has no Pages$DataGrid type (use a ListView, or DataGrid 2 which is a pluggable widget)")
+		return nil, fmt.Errorf("legacy DataGrid is not supported by the MCP backend — pg_patch_page has no Pages$DataGrid type (use a ListView, or DataGrid 2 which is a pluggable widget)")
 	case *pages.TextBox:
 		return inputWidget("Pages$TextBox", wd.Name, wd.Label, wd.AttributePath, wd.Class, wd.Style), nil
 	case *pages.CheckBox:
@@ -472,7 +472,7 @@ func pageAppearance(class, style string) map[string]any {
 }
 
 // designPropertiesMap renders a widget's design properties into the object shape
-// pg_write_page expects (verified against testdata/pg-page-contact-newedit-
+// pg_patch_page expects (verified against testdata/pg-page-contact-newedit-
 // designprops.json): keys are "<kind>:<DisplayName>" — "toggle:" with a bool
 // value, "option:" with a string value, "compound:" with a nested object of the
 // same shape (e.g. "compound:Spacing": {"option:margin-top": "L"}). "custom"

@@ -106,4 +106,4 @@ features:
   - key: pages_foldered
     feature: "Pages into folders"
     available: false
-    note: "pg_write_page has no folderPath (page lands at the module root)"
+    note: "pg_patch_page has no folderPath param (page lands at the module root)"

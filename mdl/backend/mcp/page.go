@@ -11,17 +11,19 @@ import (
 	"github.com/mendixlabs/mxcli/sdk/pages"
 )
 
-// Pages use a SEPARATE write protocol (pg_write_page), not PED — the PED tools
-// are forbidden for pages. pg_write_page takes a high-level widget tree; this
-// file maps the executor's pages.Page (shell + LayoutCall slots + pages.Widget
-// tree) onto that tree. Widget/action coverage grows one type at a time, like
-// the microflow activities; unmapped widgets/actions are rejected with a clear
-// error. See docs/03-development/PED_MCP_CAPABILITIES.md.
+// Pages use a SEPARATE write protocol (pg_patch_page), not PED — the PED tools
+// are forbidden for pages. pg_patch_page takes a high-level widget tree (the
+// "LightPage"); this file maps the executor's pages.Page (shell + LayoutCall
+// slots + pages.Widget tree) onto that tree. Widget/action coverage grows one
+// type at a time, like the microflow activities; unmapped widgets/actions are
+// rejected with a clear error. See docs/03-development/PED_MCP_CAPABILITIES.md.
+// (Studio Pro 11.12 replaced the older pg_write_page with pg_patch_page.)
 
-// CreatePage creates a page via pg_write_page. A foldered page (folder clause)
-// is created at the module root: pg_write_page takes no folderPath, so unlike the
-// ped_* document creates a page can't be placed in a folder over MCP — the page is
-// still created (addressable by its qualified name), just not foldered.
+// CreatePage creates a page via pg_patch_page (a root-replace patch). A foldered
+// page (folder clause) is created at the module root: pg_patch_page takes no
+// folderPath, so unlike the ped_* document creates a page can't be placed in a
+// folder over MCP — the page is still created (addressable by its qualified
+// name), just not foldered.
 func (b *Backend) CreatePage(page *pages.Page) error {
 	moduleName, _, err := b.resolveDocContainer(page.ContainerID)
 	if err != nil {
@@ -34,7 +36,7 @@ func (b *Backend) CreatePage(page *pages.Page) error {
 	}
 
 	// Build the layout-slot content widgets. Each LayoutCall argument fills one
-	// layout slot; pg_write_page wraps each as a Pages$Content with a slot name.
+	// layout slot; pg_patch_page wraps each as a Pages$Content with a slot name.
 	slotWidgets := make([]any, 0)
 	if page.LayoutCall != nil {
 		for i, arg := range page.LayoutCall.Arguments {
@@ -152,7 +154,7 @@ func pageParameters(params []*pages.PageParameter) []any {
 	for _, p := range params {
 		po := map[string]any{"$Type": "Pages$PageParameter", "name": p.Name, "isRequired": p.IsRequired}
 		if p.EntityName != "" {
-			// pg_write_page wants the entity type as a nested parameterType element
+			// pg_patch_page wants the entity type as a nested parameterType element
 			// (DataTypes$ObjectType.entity), not a flat `entity` field — a flat field
 			// is ignored and the parameter degrades to DataTypes$UnknownType.
 			po["parameterType"] = map[string]any{
@@ -166,7 +168,7 @@ func pageParameters(params []*pages.PageParameter) []any {
 }
 
 // pgReadPage reads a page's current high-level content tree via pg_read_page.
-// The result is the same content shape pg_write_page accepts, so it round-trips
+// The result is the same LightPage shape pg_patch_page accepts, so it round-trips
 // for read-modify-write (ALTER PAGE).
 func (b *Backend) pgReadPage(moduleName, pageName string) (map[string]any, error) {
 	res, err := b.client.CallTool("pg_read_page", map[string]any{
@@ -187,20 +189,29 @@ func (b *Backend) pgReadPage(moduleName, pageName string) (map[string]any, error
 	return content, nil
 }
 
-// pgWritePage calls the pg_write_page tool and surfaces failures (which, unlike
-// ped_*, are reported as a non-"success" result text).
+// pgWritePage writes a whole page (create or full overwrite) via pg_patch_page.
+//
+// Studio Pro 11.12 removed pg_write_page in favour of pg_patch_page (RFC 6902
+// JSON Patch). A whole-page write is a single root-replace patch
+// ({op:"replace", path:"", value:<full LightPage>}); pg_patch_page creates the
+// page if it does not exist yet, so this one call serves both CreatePage and the
+// mutator's Save(). The `value` is the same LightPage content pg_write_page took,
+// so the content builders are unchanged. Failures are reported as a non-"success"
+// result text (like the old tool), not res.IsError.
 func (b *Backend) pgWritePage(moduleName, pageName string, content any) error {
-	res, err := b.client.CallTool("pg_write_page", map[string]any{
+	res, err := b.client.CallTool("pg_patch_page", map[string]any{
 		"moduleName": moduleName,
 		"pageName":   pageName,
-		"content":    content,
+		"patches": []any{
+			map[string]any{"op": "replace", "path": "", "value": content},
+		},
 	})
 	if err != nil {
 		return err
 	}
 	text := pedStripReminder(res.Text)
 	if res.IsError || !strings.Contains(strings.ToLower(text), "success") {
-		return fmt.Errorf("pg_write_page %s.%s: %s", moduleName, pageName, text)
+		return fmt.Errorf("pg_patch_page %s.%s: %s", moduleName, pageName, text)
 	}
 	b.markDirty(moduleName)
 	return nil

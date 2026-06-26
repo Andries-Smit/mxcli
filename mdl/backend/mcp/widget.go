@@ -104,7 +104,7 @@ func sortedKeys(m map[string][]pages.Widget) []string {
 }
 
 // mcpCustomWidget is the recorded high-level pg form of one pluggable widget:
-// its widget id and the `object` property bag that pg_write_page expands into a
+// its widget id and the `object` property bag that pg_patch_page expands into a
 // full widget (Studio Pro fills every default, so only the meaningful, MDL-
 // derived properties need to be set — this is what sidesteps the CE0463
 // template-mismatch class of bugs that the BSON writer path hits).
@@ -128,7 +128,7 @@ func supportedWidgetIDs() []string {
 // LoadWidgetTemplate returns an MCP-specific pluggable-widget builder. Unlike the
 // MPR builder (which mutates an embedded BSON template), this one records the
 // engine's semantic property operations into a high-level pg `object` map. No
-// template BSON is needed — Studio Pro owns serialization over pg_write_page —
+// template BSON is needed — Studio Pro owns serialization over pg_patch_page —
 // so the projectPath is ignored and the CE0463 template-mismatch class of bugs
 // does not arise on the MCP path.
 func (b *Backend) LoadWidgetTemplate(widgetID string, _ string) (backend.WidgetObjectBuilder, error) {
@@ -242,7 +242,7 @@ func gridSortBar(sorting []*pages.GridSort) map[string]any {
 // SetSelection sets a selection-typed property (e.g. a DataGrid's itemSelection).
 // In pg these are plain string enums ("None" / "Single" / "Multi"), so the value
 // is stored directly. (The MPR path's richer multi-selection cloning is not
-// needed — Studio Pro expands the rest on pg_write_page.)
+// needed — Studio Pro expands the rest on pg_patch_page.)
 func (w *mcpWidgetBuilder) SetSelection(propertyKey, value string) {
 	if value != "" {
 		w.object[propertyKey] = value
@@ -345,7 +345,7 @@ func (w *mcpWidgetBuilder) SetObjectList(propertyKey string, items []backend.Obj
 // widgets.def.json. The shared engine's auto-datasource pass reads this to route
 // the AST data source through SetDataSource (the MCP path has no template, so
 // this is the only metadata it needs). Other property types are not needed —
-// Studio Pro expands every default on pg_write_page.
+// Studio Pro expands every default on pg_patch_page.
 func (w *mcpWidgetBuilder) PropertyTypeIDs() map[string]pages.PropertyTypeIDEntry {
 	out := make(map[string]pages.PropertyTypeIDEntry, len(w.def.DataSourceProperties))
 	for _, key := range w.def.DataSourceProperties {

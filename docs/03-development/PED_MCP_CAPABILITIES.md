@@ -88,8 +88,8 @@ Captured live 2026-06-23 (`cmd/mcpprobe -method tools/list`). The 11.11 matrix a
 
 | Change | Tool | Effect on the backend |
 |--------|------|-----------------------|
-| **Removed** | `pg_write_page` | **Breaking.** Replaced by `pg_patch_page`. The page backend (`page.go`, `page_mutator.go`, `page_widgets.go`) calls `pg_write_page`, which now returns `"Tool pg_write_page not found"` → **MCP page authoring is broken on 11.12** until migrated. |
-| **Added** | `pg_patch_page` | Pages via JSON Patch (RFC 6902): create = one `{op:"replace", path:"", value:<full LightPage>}`; patch existing = targeted ops (path must reference an existing element). Migrating both fixes the breakage **and** enables in-place page ALTER over MCP (previously a gap — pages were full-replace only). |
+| **Removed** | `pg_write_page` | **Breaking** (was: MCP page authoring broken on 11.12). **Migrated (#697):** `page.go`'s `pgWritePage` now calls `pg_patch_page` instead. Verified live — page create round-trips. |
+| **Added** | `pg_patch_page` | Pages via JSON Patch (RFC 6902): create/whole-page-write = one `{op:"replace", path:"", value:<full LightPage>}` (the `value` is the same LightPage `pg_write_page` took, so the content builders are unchanged); patch existing = targeted ops (path must reference an existing element). mxcli routes both CreatePage and the mutator's `Save()` through the root-replace form (#697). Targeted-op ALTER (vs. the current read-modify-replace-whole) is a possible future optimisation. |
 | **Added** | `list_modules` | Returns `[{moduleName, writable, fromMarketplace}]`. **Closes the "No list-modules tool" gap** (see below) — pure-MCP module enumeration is now possible, reducing the hard dependency on a matching local `.mpr`. |
 | **Added** | `install_marketplace_module` | `{moduleName, versionId, conflictResolution}` — installs a Marketplace module into the open project. (Not used by the backend yet.) |
 

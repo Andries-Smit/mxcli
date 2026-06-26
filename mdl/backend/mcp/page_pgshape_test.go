@@ -8,7 +8,7 @@ import (
 	"github.com/mendixlabs/mxcli/sdk/pages"
 )
 
-// These tests pin the pg_write_page payload shapes to what Studio Pro actually
+// These tests pin the pg_patch_page (LightPage) payload shapes to what Studio Pro actually
 // produces, captured live in testdata/pg-page-contact-newedit*.json. They guard
 // three fixes for MCP page authoring: typed parameters, edit-button client
 // actions, and design properties.
@@ -31,7 +31,7 @@ func TestPageParameters_TypedParam(t *testing.T) {
 	if p["isRequired"] != true {
 		t.Errorf("isRequired = %v, want true", p["isRequired"])
 	}
-	// The old flat `entity` field (which pg_write_page ignored → UnknownType) must be gone.
+	// The old flat `entity` field (which pg_patch_page ignores → UnknownType) must be gone.
 	if _, bad := p["entity"]; bad {
 		t.Errorf("flat `entity` field must not be emitted: %v", p)
 	}

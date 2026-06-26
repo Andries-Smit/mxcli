@@ -14,7 +14,7 @@ import (
 
 // ALTER PAGE over MCP is a read-modify-write on pg's high-level content tree:
 // pg_read_page loads the current widget tree, the mutator edits it in memory, and
-// Save() writes it back with pg_write_page. This file implements the structural
+// Save() writes it back with pg_patch_page (a root-replace patch). This file implements the structural
 // operations (INSERT / DROP / REPLACE widget, SET DataSource, SET Layout) plus the
 // introspection the executor needs to build inserted widgets. Property-name
 // translation (SET <widget> (Prop: value)) and the column/design/pluggable/
