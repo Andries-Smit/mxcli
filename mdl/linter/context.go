@@ -24,6 +24,7 @@ type LintReader interface {
 	ListModules() ([]*model.Module, error)
 	ListFolders() ([]*types.FolderInfo, error)
 	GetRawUnit(id model.ID) (map[string]any, error)
+	ListScheduledEvents() ([]*model.ScheduledEvent, error)
 }
 
 // LintContext wraps a catalog and provides rule-friendly APIs.
@@ -725,6 +726,97 @@ func (ctx *LintContext) Snippets() iter.Seq[Snippet] {
 			}
 
 			if !yield(s) {
+				return
+			}
+		}
+	}
+}
+
+// ScheduledEvent represents a scheduled event document.
+type ScheduledEvent struct {
+	Name            string
+	QualifiedName   string
+	ModuleName      string
+	MicroflowName   string // qualified name of the microflow to execute
+	IntervalSeconds int
+	Enabled         bool
+}
+
+// intervalToSeconds converts a Mendix interval value and type to seconds.
+// Returns 0 for unrecognised interval types (treated as "not convertible").
+func intervalToSeconds(interval int, intervalType string) int {
+	multipliers := map[string]int{
+		"Second": 1,
+		"Minute": 60,
+		"Hour":   3600,
+		"Day":    86400,
+		"Week":   604800,
+		"Month":  2592000,
+		"Year":   31536000,
+	}
+	if mult, ok := multipliers[intervalType]; ok {
+		return interval * mult
+	}
+	return 0
+}
+
+// ScheduledEvents returns an iterator over all scheduled events (excluding system modules).
+// Returns an empty iterator if no reader is available.
+func (ctx *LintContext) ScheduledEvents() iter.Seq[ScheduledEvent] {
+	return func(yield func(ScheduledEvent) bool) {
+		if ctx.reader == nil {
+			return
+		}
+
+		// Build module ID → name map from catalog.
+		moduleNames := map[model.ID]string{}
+		// Build microflow UUID → qualified name map from catalog.
+		// Falls back to the raw UUID when the catalog has not been built yet.
+		microflowNames := map[string]string{}
+		if ctx.db != nil {
+			if rows, err := ctx.db.Query(`SELECT Id, Name FROM modules`); err == nil {
+				defer rows.Close()
+				for rows.Next() {
+					var id, name string
+					if rows.Scan(&id, &name) == nil {
+						moduleNames[model.ID(id)] = name
+					}
+				}
+			}
+			if rows, err := ctx.db.Query(`SELECT Id, QualifiedName FROM microflows`); err == nil {
+				defer rows.Close()
+				for rows.Next() {
+					var id, qname string
+					if rows.Scan(&id, &qname) == nil {
+						microflowNames[id] = qname
+					}
+				}
+			}
+		}
+
+		events, err := ctx.reader.ListScheduledEvents()
+		if err != nil {
+			return
+		}
+
+		for _, e := range events {
+			moduleName := moduleNames[e.ContainerID]
+			if ctx.IsExcluded(moduleName) {
+				continue
+			}
+			mfName := microflowNames[string(e.MicroflowID)]
+			if mfName == "" {
+				mfName = string(e.MicroflowID)
+			}
+			se := ScheduledEvent{
+				Name:            e.Name,
+				QualifiedName:   moduleName + "." + e.Name,
+				ModuleName:      moduleName,
+				MicroflowName:   mfName,
+				IntervalSeconds: intervalToSeconds(e.Interval, e.IntervalType),
+				Enabled:         e.Enabled,
+			}
+			if !yield(se) {
 				return
 			}
 		}
