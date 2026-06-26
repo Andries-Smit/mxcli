@@ -75,8 +75,12 @@ features:
 
   # Display-only blocked rows (not method-gated — these are whole features the backend
   # doesn't implement, or PED-fundamental limits unlikely to be lifted).
-  - key: security_integrations_nav
-    feature: "Security (roles, access, demo users), Navigation, OData/REST, mappings, settings"
+  - key: navigation
+    feature: "Navigation (web profile: home page, login/not-found page, menu tree)"
+    available: true
+    note: "CREATE OR REPLACE NAVIGATION on a web profile, via generic ped_update_document path-ops on the project-level Navigation$NavigationDocument (menu items use Menus$MenuItem + Pages$*ClientAction; the menu is cleared then rebuilt). Native profiles (bottom-bar items, native home) and role-based home pages are not authored yet"
+  - key: security_integrations
+    feature: "Security (roles, access, demo users), OData/REST, mappings, settings"
     available: false
     note: "no PED write path"
   - key: attribute_type_change

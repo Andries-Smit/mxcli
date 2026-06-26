@@ -97,6 +97,8 @@ Tools already present in 11.11 and unchanged (do **not** re-add as "new"): `ped_
 
 **New authoring capability — attribute default values (implemented, `domainmodel.go`).** PED's `DomainModels$StoredValue.defaultValue` is settable via a `ped_update_document` path-op (`/entities/N/attributes/M/value/defaultValue`); the create constructor still can't carry it, so it's set as a follow-up after the attribute exists (`applyAttributeDefaults`). Verified live on 11.12: enums store **bare** (`Draft`, not `MES.WorkOrderStatus.Draft`); PED accepts bare or qualified input but normalises to bare. **Gated on the project Mendix version (11.12+), not the server version** (frozen at 1.0.0 — see the caveat under Server identity). The entity/attribute `$constructor` schema is otherwise unchanged from 11.11; its text now hints `DomainModels$Index` and `DomainModels$ValidationRule` are addable the same constructor-then-path-op way — candidates to wire next, like defaults.
 
+**New authoring capability — navigation (implemented, `navigation.go`; issue #699).** The project-level `Navigation$NavigationDocument` has no dedicated PED tool, but it is reachable through the **generic** document tools (`ped_read_document` / `ped_update_document` with `documentType` set and `documentName` **omitted** — project-level). `CREATE OR REPLACE NAVIGATION` on a **web** profile is authored as path-ops: scalar leaves are `set` in place (`/profiles/N/homePage/page`, `/profiles/N/loginPageSettings/page`), a currently-null element (`notFoundHomepage`) is `set` whole, and the menu (`menuItemCollection.items`, an array) is **cleared then rebuilt** — removes and adds go in **separate** calls (PED forbids batching add+remove on one array path). Menu items are `Menus$MenuItem` constructors: `caption` is a **plain string** (PED wraps it into `Texts$Text`), the action is `Pages$PageClientAction` (page ref under `pageSettings.page`), `Pages$MicroflowClientAction` (`microflowSettings.microflow`), or `Pages$NoClientAction` (container); sub-items recurse. Verified live on 11.12 by reproducing a full menu (3 page items + an Admin container with 2 children). Gates/limits: `ped_check_errors` cannot address the project-level nav doc, so the `ped_update_document` result is the validation gate (a bad page ref fails the op); **native** profiles and **role-based home pages** are rejected (not wired); and Studio Pro often answers a nav write with `-32000 Request timed out` while the edit still applies (slow nav re-render) — the backend surfaces an actionable hint rather than auto-retrying the non-idempotent op.
+
 ## Capability gaps (11.11)
 
 These are the *absences* that bound what the backend can do. They are as
@@ -507,7 +509,7 @@ Wired/tested status: ✅ dependable · ⚠️ UI-automation, unreliable (see abo
 | Pages | `delete_document` | W | ✅ real `DROP` of standalone docs (wired) |
 | Pages | `exclude_document` | W | ○ |
 | Pages | `generate_overview_pages` | W | ○ CRUD list + new-edit pages |
-| Navigation | `manage_navigation` | W | ○ menu structure, home page, role gating (PED has no nav path) |
+| Navigation | `manage_navigation` | W | ○ menu structure, home page, role gating (Concord convenience; mxcli now authors web-profile nav directly via generic `ped_update_document` on `Navigation$NavigationDocument` — see below) |
 | Project settings | `read_configurations` | R | ○ |
 | Project settings | `set_configuration` | W | ○ |
 | Project settings | `read_runtime_settings` | R | ○ |
@@ -540,8 +542,9 @@ Wired/tested status: ✅ dependable · ⚠️ UI-automation, unreliable (see abo
 **Highest-value unwired gap-closers** (would fill PED limits the matrix currently
 marks unsupported, pending probe + identity-preservation vetting per
 [ADR-0002](../13-decisions/0002-backend-abstraction.md) and the "don't fake
-identity ops" rule): the `rename_*` family (true renames vs PED's `set /name`) and
-`manage_navigation` (no PED nav write path). `check_project_errors` and
+identity ops" rule): the `rename_*` family (true renames vs PED's `set /name`).
+(Navigation is no longer in this list — mxcli authors web-profile navigation
+directly over PED; see the navigation note below.) `check_project_errors` and
 `refresh_project` are also candidates. `delete_model_element` is low priority (PED
 already removes entities/associations).
 
