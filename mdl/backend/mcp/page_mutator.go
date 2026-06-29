@@ -339,11 +339,8 @@ func (m *mcpPageMutator) SetWidgetProperty(widgetRef, prop string, value any) er
 	if widgetRef == "" {
 		// Page-level SET (no ON clause): Title, Url, PopupWidth/PopupHeight/
 		// PopupResizable, etc. These map onto the pg page object itself, not a
-		// widget. Their pg content-tree representation hasn't been probed/mapped
-		// against pg_read_page yet, so reject honestly rather than guess at the
-		// key names (and avoid the misleading "widget \"\" not found"). The MPR
-		// engines support these via the shared pagemutator's applyPageLevelSetMut.
-		return fmt.Errorf("setting page-level property %q is not yet supported by the MCP backend", prop)
+		// widget.
+		return m.setPageLevelProperty(prop, value)
 	}
 	_, _, _, w, ok := findWidget(m.content, widgetRef)
 	if !ok {
@@ -388,6 +385,34 @@ func (m *mcpPageMutator) SetWidgetProperty(widgetRef, prop string, value any) er
 		return fmt.Errorf("SET %s (%s: …): property %q is not yet supported by the MCP backend", widgetRef, prop, prop)
 	}
 	return nil
+}
+
+// setPageLevelProperty applies a page-level SET (no widget target) onto the pg
+// LightPage content tree. Pages go through the pg_* protocol, not PED, so the
+// only page-level fields that can be set are the ones the LightPage exposes.
+//
+// The LightPage carries the page title as a plain top-level "title" string (the
+// same key CreatePage writes and pg_read_page returns). Url and the pop-up
+// settings (PopupWidth/Height/Resizable/CloseAction) are NOT part of the
+// LightPage shape — its schema is additionalProperties:false, so injecting those
+// keys would make pg_patch_page reject the whole root-replace patch (taking any
+// bundled Title change down with it). They are rejected here, before Save(), so
+// they never poison the content tree; set them in Studio Pro. (If a future pg
+// server exposes them on the LightPage, add the mapping here.)
+func (m *mcpPageMutator) setPageLevelProperty(prop string, value any) error {
+	switch strings.ToLower(prop) {
+	case "title":
+		s, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("page Title must be a string, got %T", value)
+		}
+		m.content["title"] = s
+		return nil
+	default:
+		return fmt.Errorf("setting page-level property %q is not supported by the MCP backend "+
+			"(pages go through the pg_* tools, not PED; the pg LightPage exposes only the page Title at page level — "+
+			"set Url and pop-up settings in Studio Pro)", prop)
+	}
 }
 
 func toStr(v any) string {

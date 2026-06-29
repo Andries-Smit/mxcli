@@ -45,7 +45,7 @@ features:
   - key: pages
     feature: "Pages"
     available: true
-    note: "CREATE + ALTER (widget coverage grows per type)"
+    note: "CREATE + ALTER (widget coverage grows per type); ALTER page-level SET Title (maps onto the pg LightPage's top-level title). Url and pop-up settings (PopupWidth/Height/Resizable/CloseAction) are NOT on the pg LightPage shape (schema is additionalProperties:false) — set them in Studio Pro"
   - key: workflows
     feature: "Workflows"
     available: true

@@ -134,11 +134,35 @@ func TestPageMutator_SetLayoutAndUnsupported(t *testing.T) {
 	}
 }
 
-// Page-level SET (empty widgetRef) — Title / pop-up dimensions / etc. — is not
-// yet mapped onto the pg content tree. It must reject clearly rather than report
-// the misleading "widget \"\" not found" (issue #661).
-func TestPageMutator_PageLevelSet_Rejected(t *testing.T) {
-	for _, prop := range []string{"Title", "PopupWidth", "PopupHeight", "PopupResizable"} {
+// Page-level SET Title (empty widgetRef) maps onto the pg LightPage's top-level
+// "title" key — the same key CreatePage writes and pg_read_page returns.
+func TestPageMutator_PageLevelSet_Title(t *testing.T) {
+	m := newTestMutator()
+	if err := m.SetWidgetProperty("", "Title", "Edit Expense"); err != nil {
+		t.Fatalf("SET Title: %v", err)
+	}
+	if m.content["title"] != "Edit Expense" {
+		t.Fatalf("title = %v, want \"Edit Expense\"", m.content["title"])
+	}
+	// Lowercase from the executor must work too.
+	if err := m.SetWidgetProperty("", "title", "Lower"); err != nil {
+		t.Fatalf("SET title (lowercase): %v", err)
+	}
+	if m.content["title"] != "Lower" {
+		t.Fatalf("title = %v, want \"Lower\"", m.content["title"])
+	}
+	// A non-string Title is rejected (no silent coercion).
+	if err := m.SetWidgetProperty("", "Title", 42); err == nil {
+		t.Error("non-string Title should be rejected")
+	}
+}
+
+// Url and pop-up settings are not part of the pg LightPage shape (its schema is
+// additionalProperties:false), so they must reject clearly — before Save(), so
+// they never poison the content tree — rather than report the misleading
+// "widget \"\" not found" (issue #661).
+func TestPageMutator_PageLevelSet_Unsupported(t *testing.T) {
+	for _, prop := range []string{"Url", "PopupWidth", "PopupHeight", "PopupResizable", "PopupCloseAction"} {
 		m := newTestMutator()
 		err := m.SetWidgetProperty("", prop, 800)
 		if err == nil {
@@ -146,6 +170,10 @@ func TestPageMutator_PageLevelSet_Rejected(t *testing.T) {
 		}
 		if got := err.Error(); !contains(got, "page-level property") || !contains(got, "MCP backend") {
 			t.Errorf("%s: unclear error %q", prop, got)
+		}
+		// The unsupported key must NOT have leaked into the content tree.
+		if _, leaked := m.content[strings.ToLower(prop)]; leaked {
+			t.Errorf("%s: rejected property leaked into content tree", prop)
 		}
 	}
 }
