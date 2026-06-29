@@ -141,6 +141,19 @@ func TestMapDataViewSource(t *testing.T) {
 	if err != nil || pv["sourceVariable"] == nil {
 		t.Fatalf("param source: %+v / %v", pv, err)
 	}
+	// context (parameter-bound) source with a resolved entity must carry BOTH the
+	// sourceVariable binding AND entityRef — otherwise the data view has no entity
+	// configured on its source (CE0488). Regression for the MCP page-authoring gap.
+	ctx, err := mapDataViewSource(&pages.DataViewSource{ParameterName: "Product", EntityName: "MES.Product"})
+	if err != nil {
+		t.Fatalf("context source: %v", err)
+	}
+	if sv, _ := ctx["sourceVariable"].(map[string]any); sv["pageParameter"] != "Product" {
+		t.Fatalf("context source missing/var wrong sourceVariable: %+v", ctx)
+	}
+	if ref, _ := ctx["entityRef"].(map[string]any); ref["entity"] != "MES.Product" {
+		t.Fatalf("context source missing entityRef (CE0488): %+v", ctx)
+	}
 	// direct entity -> entityRef
 	er, err := mapDataViewSource(&pages.DataViewSource{EntityName: "Sales.Order"})
 	if err != nil {

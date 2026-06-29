@@ -297,21 +297,29 @@ func mapListViewSource(ds pages.DataSource) (map[string]any, error) {
 func mapDataViewSource(ds pages.DataSource) (map[string]any, error) {
 	switch s := ds.(type) {
 	case *pages.DataViewSource:
+		if s.ParameterName == "" && s.EntityName == "" {
+			return nil, fmt.Errorf("data view source has neither a page parameter nor an entity")
+		}
 		src := map[string]any{"$Type": "Pages$DataViewSource", "forceFullObjects": false}
-		switch {
-		case s.ParameterName != "":
+		// A context (parameter-bound) data view still needs its entity configured
+		// ON the data source: Studio Pro writes entityRef AND the sourceVariable
+		// binding together (see testdata/pg-page-contact-newedit.json). Setting
+		// only sourceVariable leaves the source with no entity → CE0488 "No entity
+		// configured for the data source of this data view". The executor resolves
+		// the page parameter's entity into EntityName (cmd_pages_builder_v3.go), so
+		// it is available here even when a parameter is the source.
+		if s.EntityName != "" {
+			src["entityRef"] = map[string]any{
+				"$Type":  "DomainModels$DirectEntityRef",
+				"entity": s.EntityName,
+			}
+		}
+		if s.ParameterName != "" {
 			src["sourceVariable"] = map[string]any{
 				"$Type":         "Pages$PageVariable",
 				"pageParameter": s.ParameterName,
 				"useAllPages":   false,
 			}
-		case s.EntityName != "":
-			src["entityRef"] = map[string]any{
-				"$Type":  "DomainModels$DirectEntityRef",
-				"entity": s.EntityName,
-			}
-		default:
-			return nil, fmt.Errorf("data view source has neither a page parameter nor an entity")
 		}
 		return src, nil
 	case *pages.MicroflowSource:
