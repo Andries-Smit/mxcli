@@ -342,6 +342,37 @@ func actionFromGen(el element.Element) microflows.MicroflowAction {
 		}
 		return out
 
+	case *genMf.WebServiceCallAction:
+		// Legacy SOAP CALL WEB SERVICE. Without this case it renders
+		// "-- Empty action". Mirror legacy parseWebServiceCallAction: read the
+		// structured fields, and when the action carries any field the structured
+		// describe form can't represent, stash the raw BSON so the renderer emits
+		// `call web service raw '<base64>'` (the same fallback legacy uses).
+		raw := a.Raw()
+		out := &microflows.WebServiceCallAction{
+			ErrorHandlingType: microflows.ErrorHandlingType(rawStr(raw, "ErrorHandlingType")),
+			ServiceID:         model.ID(rawStr(raw, "ImportedService")),
+			OperationName:     rawStr(raw, "OperationName"),
+			TimeoutExpression: rawStr(raw, "TimeOutExpression"),
+		}
+		out.ID = model.ID(a.ID())
+		if rh, ok := raw.Lookup("NewResultHandling").DocumentOK(); ok {
+			out.OutputVariable = rawStr(rh, "ResultVariableName")
+			out.UseReturnVariable = out.OutputVariable != ""
+			if imc, ok := rh.Lookup("ImportMappingCall").DocumentOK(); ok {
+				out.ReceiveMappingID = model.ID(rawStr(imc, "ReturnValueMapping"))
+			}
+		}
+		if rqh, ok := raw.Lookup("RequestHandling").DocumentOK(); ok {
+			if emc, ok := rqh.Lookup("ExportMappingCall").DocumentOK(); ok {
+				out.SendMappingID = model.ID(rawStr(emc, "Mapping"))
+			}
+		}
+		if webServiceActionRequiresRawBSON(raw) {
+			out.RawBSON = raw
+		}
+		return out
+
 	case *genMf.DownloadFileAction:
 		// DOWNLOAD FILE. Without this case it renders "-- Empty action". Mirror
 		// legacy parseDownloadFileAction, including the Rollback default for an
@@ -618,6 +649,35 @@ func readMappingCall(doc, imc bson.Raw) (h *microflows.ResultHandlingMapping, fo
 		vtType = rawStr(vt, "$Type")
 	}
 	return h, force, vtType
+}
+
+// webServiceActionRequiresRawBSON reports whether a CALL WEB SERVICE action
+// carries any field the structured describe form can't represent, in which case
+// the renderer emits the `call web service raw '<base64>'` fallback. Mirrors the
+// legacy webServiceActionRequiresRawBSON supported-key set exactly so both engines
+// agree on when to fall back.
+func webServiceActionRequiresRawBSON(raw bson.Raw) bool {
+	supported := map[string]bool{
+		"$ID":               true,
+		"$Type":             true,
+		"ErrorHandlingType": true,
+		"ImportedService":   true,
+		"OperationName":     true,
+		"TimeOutExpression": true,
+		"UseRequestTimeOut": true,
+		"NewResultHandling": true,
+		"RequestHandling":   true,
+	}
+	els, err := raw.Elements()
+	if err != nil {
+		return true
+	}
+	for _, el := range els {
+		if !supported[el.Key()] {
+			return true
+		}
+	}
+	return false
 }
 
 // rawStr reads a string field from a raw BSON document, returning "" if the field
