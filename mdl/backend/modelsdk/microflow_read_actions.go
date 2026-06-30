@@ -684,7 +684,13 @@ func listOperationFromRaw(doc bson.Raw) microflows.ListOperation {
 // SortingsList → Sortings array. The first array element is the typed-array marker
 // (an int, not a document) and is skipped by the DocumentOK guard.
 func sortItemsFromRaw(doc bson.Raw) []*microflows.SortItem {
+	// The SortingsList wrapper is keyed "Sortings" on a Sort list operation but
+	// "NewSortings" on a DatabaseRetrieveSource — accept both so retrieve "sort by"
+	// clauses aren't dropped.
 	slDoc, ok := doc.Lookup("Sortings").DocumentOK()
+	if !ok {
+		slDoc, ok = doc.Lookup("NewSortings").DocumentOK()
+	}
 	if !ok {
 		return nil
 	}
@@ -743,6 +749,9 @@ func retrieveSourceFromGen(el element.Element) microflows.RetrieveSource {
 			EntityQualifiedName: g.EntityQualifiedName(),
 			XPathConstraint:     g.XPathConstraint(),
 			Range:               rangeFromGen(g.Range()),
+			// Sort columns live in the NewSortings child; without this the
+			// retrieve's "sort by …" clause is dropped.
+			Sorting: sortItemsFromRaw(g.Raw()),
 		}
 		s.ID = model.ID(g.ID())
 		return s
