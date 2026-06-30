@@ -342,6 +342,53 @@ func actionFromGen(el element.Element) microflows.MicroflowAction {
 		}
 		return out
 
+	case *genMf.ExportXmlAction:
+		// EXPORT TO MAPPING. The mapping/argument live in ResultHandling
+		// (Microflows$MappingRequestHandling) and the output variable in
+		// OutputMethod (ExportXmlAction$StringExport) — read from raw, mirroring
+		// legacy parseExportXmlAction. Without this case it renders "-- Empty action".
+		out := &microflows.ExportXmlAction{
+			ErrorHandlingType:    microflows.ErrorHandlingType(a.ErrorHandlingType()),
+			IsValidationRequired: a.IsValidationRequired(),
+		}
+		out.ID = model.ID(a.ID())
+		raw := a.Raw()
+		if om, ok := raw.Lookup("OutputMethod").DocumentOK(); ok {
+			out.OutputVariable = rawStr(om, "OutputVariableName")
+		}
+		if rh, ok := raw.Lookup("ResultHandling").DocumentOK(); ok {
+			h := &microflows.MappingRequestHandling{
+				MappingID:         model.ID(rawStr(rh, "MappingId")),
+				ContentType:       rawStr(rh, "ContentType"),
+				ParameterVariable: rawStr(rh, "MappingVariableName"),
+			}
+			h.ID = model.ID(rawStr(rh, "$ID"))
+			out.RequestHandling = h
+		}
+		return out
+
+	case *genMf.ImportXmlAction:
+		// IMPORT FROM MAPPING. The mapping ref + cardinality live in
+		// ResultHandling.ImportMappingCall — read from raw, mirroring legacy
+		// parseImportXmlAction (the force fallback folds ForceSingleOccurrence into
+		// SingleObject). Without this case it renders "-- Empty action".
+		out := &microflows.ImportXmlAction{
+			ErrorHandlingType:    microflows.ErrorHandlingType(a.ErrorHandlingType()),
+			IsValidationRequired: a.IsValidationRequired(),
+			XmlDocumentVariable:  a.XmlDocumentVariableName(),
+		}
+		out.ID = model.ID(a.ID())
+		if rh, ok := a.Raw().Lookup("ResultHandling").DocumentOK(); ok {
+			if imc, ok := rh.Lookup("ImportMappingCall").DocumentOK(); ok {
+				h, force, _ := readMappingCall(rh, imc)
+				if !h.SingleObject && force {
+					h.SingleObject = true
+				}
+				out.ResultHandling = h
+			}
+		}
+		return out
+
 	default:
 		return nil
 	}
@@ -497,18 +544,13 @@ func restResultHandlingFromRaw(doc bson.Raw) microflows.ResultHandling {
 	id := model.ID(rawStr(doc, "$ID"))
 	resultVar := rawStr(doc, "ResultVariableName")
 	if imc, ok := doc.Lookup("ImportMappingCall").DocumentOK(); ok {
-		h := &microflows.ResultHandlingMapping{
-			ResultVariable: resultVar,
-			MappingID:      model.ID(rawStr(imc, "ReturnValueMapping")),
-		}
-		h.ID = id
-		if rng, ok := imc.Lookup("Range").DocumentOK(); ok {
-			if b, ok := rng.Lookup("SingleObject").BooleanOK(); ok {
-				h.SingleObject = b
-			}
-		}
-		if vt, ok := doc.Lookup("VariableType").DocumentOK(); ok {
-			h.ResultEntityID = model.ID(rawStr(vt, "Entity"))
+		h, _, vtType := readMappingCall(doc, imc)
+		// An object (not list) result variable type means a single object, so the
+		// describer prints "as Entity" rather than "as list of Entity" — matches
+		// legacy parseResultHandling; without it single-object mappings wrongly
+		// render as lists.
+		if vtType == "DataTypes$ObjectType" {
+			h.SingleObject = true
 		}
 		return h
 	}
@@ -531,6 +573,35 @@ func restResultHandlingFromRaw(doc bson.Raw) microflows.ResultHandling {
 		h.ID = id
 		return h
 	}
+}
+
+// readMappingCall reconstructs the *ResultHandlingMapping fields shared by REST
+// result handling and IMPORT FROM MAPPING: the mapping reference (newer BSON
+// uses "Mapping", older "ReturnValueMapping"), the result entity, the
+// ForceSingleOccurrence flag, and the Range.SingleObject flag. Callers apply
+// their own remaining single-object rule (REST: object var type; XML import:
+// the force fallback) so each matches its legacy parser exactly. doc is the
+// result-handling document; imc is its ImportMappingCall sub-document.
+func readMappingCall(doc, imc bson.Raw) (h *microflows.ResultHandlingMapping, force bool, vtType string) {
+	h = &microflows.ResultHandlingMapping{ResultVariable: rawStr(doc, "ResultVariableName")}
+	h.ID = model.ID(rawStr(doc, "$ID"))
+	mapping := rawStr(imc, "Mapping")
+	if mapping == "" {
+		mapping = rawStr(imc, "ReturnValueMapping")
+	}
+	h.MappingID = model.ID(mapping)
+	force, _ = imc.Lookup("ForceSingleOccurrence").BooleanOK()
+	h.ForceSingleOccurrence = &force
+	if rng, ok := imc.Lookup("Range").DocumentOK(); ok {
+		if b, ok := rng.Lookup("SingleObject").BooleanOK(); ok {
+			h.SingleObject = b
+		}
+	}
+	if vt, ok := doc.Lookup("VariableType").DocumentOK(); ok {
+		h.ResultEntityID = model.ID(rawStr(vt, "Entity"))
+		vtType = rawStr(vt, "$Type")
+	}
+	return h, force, vtType
 }
 
 // rawStr reads a string field from a raw BSON document, returning "" if the field
