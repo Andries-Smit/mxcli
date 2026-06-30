@@ -176,8 +176,39 @@ func loopSourceFromGen(el element.Element) microflows.LoopSource {
 // splitConditionFromGen reconstructs an exclusive split's condition (the `if <expr>`
 // expression). Inverse of splitConditionToGen.
 func splitConditionFromGen(el element.Element) microflows.SplitCondition {
-	if g, ok := el.(*genMf.ExpressionSplitCondition); ok {
+	switch g := el.(type) {
+	case *genMf.ExpressionSplitCondition:
 		return &microflows.ExpressionSplitCondition{Expression: g.Expression()}
+	case *genMf.RuleSplitCondition:
+		// A rule-based split. Without this the condition reads as nil and the
+		// renderer falls back to "if true then …", losing the real rule call.
+		rc, ok := g.RuleCall().(*genMf.RuleCall)
+		if !ok || rc == nil {
+			return nil
+		}
+		// The rule reference is stored under the "Microflow" key (rules share the
+		// microflow namespace — see sdk/mpr/parser_microflow.go:479). Gen decodes
+		// the property as "Rule", so RuleQualifiedName() is empty here; read the
+		// storage key off the raw BSON, as the action readers do for other
+		// storage-name fields.
+		name := rc.RuleQualifiedName()
+		if name == "" {
+			if s, ok := rc.Raw().Lookup("Microflow").StringValueOK(); ok {
+				name = s
+			}
+		}
+		cond := &microflows.RuleSplitCondition{RuleQualifiedName: name}
+		for _, el := range rc.ParameterMappingsItems() {
+			pm, ok := el.(*genMf.RuleCallParameterMapping)
+			if !ok {
+				continue
+			}
+			cond.ParameterMappings = append(cond.ParameterMappings, &microflows.RuleCallParameterMapping{
+				ParameterName: pm.ParameterQualifiedName(),
+				Argument:      pm.Argument(),
+			})
+		}
+		return cond
 	}
 	return nil
 }
