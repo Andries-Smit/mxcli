@@ -106,14 +106,14 @@ func describePage(ctx *ExecContext, name ast.QualifiedName) error {
 	if folderPath := h.BuildFolderPath(foundPage.ContainerID); folderPath != "" {
 		props = append(props, fmt.Sprintf("Folder: %s", mdlQuote(folderPath)))
 	}
-	// Pop-up dimensions (issue #661) — emit only non-default values so the
-	// CREATE PAGE header round-trips. Defaults are 600/600/false; a non-pop-up
-	// content page stores 0, which we also skip.
+	// Pop-up dimensions (issues #661, #713) — emit only non-default values so
+	// the CREATE PAGE header round-trips. Studio Pro's default is 0/0 (auto-size);
+	// an explicit non-zero value (e.g. 600) is emitted so it round-trips.
 	if rawData != nil {
-		if w := toInt(rawData["PopupWidth"]); w != 0 && w != 600 {
+		if w := toInt(rawData["PopupWidth"]); w != 0 {
 			props = append(props, fmt.Sprintf("PopupWidth: %d", w))
 		}
-		if hgt := toInt(rawData["PopupHeight"]); hgt != 0 && hgt != 600 {
+		if hgt := toInt(rawData["PopupHeight"]); hgt != 0 {
 			props = append(props, fmt.Sprintf("PopupHeight: %d", hgt))
 		}
 		if r, ok := rawData["PopupResizable"].(bool); ok && r {

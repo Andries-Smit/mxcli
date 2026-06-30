@@ -40,6 +40,22 @@ func TestCreatePage_PopupHeaderProperties(t *testing.T) {
 	}
 }
 
+// PopupWidth: 0 is valid — 0 is Studio Pro's default (auto-size), so it must parse
+// and carry through as an explicit 0, not be rejected (issue #713).
+func TestCreatePage_PopupWidthZero(t *testing.T) {
+	prog, errs := Build(`CREATE PAGE M.P (PopupWidth: 0, PopupHeight: 0) { CONTAINER c { DYNAMICTEXT t (Content: 'x') } };`)
+	if len(errs) > 0 {
+		t.Fatalf("PopupWidth/Height: 0 should parse cleanly, got: %v", errs)
+	}
+	stmt := prog.Statements[0].(*ast.CreatePageStmtV3)
+	if stmt.PopupWidth == nil || *stmt.PopupWidth != 0 {
+		t.Errorf("PopupWidth = %v, want explicit 0", stmt.PopupWidth)
+	}
+	if stmt.PopupHeight == nil || *stmt.PopupHeight != 0 {
+		t.Errorf("PopupHeight = %v, want explicit 0", stmt.PopupHeight)
+	}
+}
+
 // Absent pop-up properties stay nil so the executor applies the Mendix defaults.
 func TestCreatePage_PopupHeaderOmitted(t *testing.T) {
 	prog, errs := Build(`CREATE PAGE M.P (Title: 'x') { CONTAINER c { DYNAMICTEXT t (Content: 'x') } };`)
@@ -58,7 +74,6 @@ func TestCreatePage_PopupHeaderErrors(t *testing.T) {
 		name, input, wantSubstr string
 	}{
 		{"unknown property", `CREATE PAGE M.P (Bogus: 5) { CONTAINER c { DYNAMICTEXT t (Content: 'x') } };`, "unknown page property"},
-		{"zero width", `CREATE PAGE M.P (PopupWidth: 0) { CONTAINER c { DYNAMICTEXT t (Content: 'x') } };`, "PopupWidth must be a positive"},
 		{"non-bool resizable", `CREATE PAGE M.P (PopupResizable: 5) { CONTAINER c { DYNAMICTEXT t (Content: 'x') } };`, "PopupResizable must be true or false"},
 	}
 	for _, c := range cases {

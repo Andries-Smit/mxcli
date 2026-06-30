@@ -1033,13 +1033,26 @@ func TestSetPageLevel_PopupResizable(t *testing.T) {
 	}
 }
 
+// SET PopupWidth = 0 is valid — 0 is Studio Pro's default (auto-size) and must be
+// stored verbatim, not rejected (issue #713).
+func TestSetPageLevel_PopupWidth_Zero(t *testing.T) {
+	rawData := makeRawPage()
+	m := &Mutator{rawData: rawData, widgetFinder: findBsonWidget}
+	if err := m.SetWidgetProperty("", "PopupWidth", 0); err != nil {
+		t.Fatalf("SET PopupWidth = 0 should be accepted, got: %v", err)
+	}
+	if got := bsonnav.DGet(m.rawData, "PopupWidth"); got != int64(0) {
+		t.Errorf("PopupWidth = %v (%T), want int64(0)", got, got)
+	}
+}
+
 func TestSetPageLevel_Popup_Invalid(t *testing.T) {
 	cases := []struct {
 		name  string
 		prop  string
 		value any
 	}{
-		{"zero width", "PopupWidth", 0},
+		{"negative width", "PopupWidth", -1},
 		{"negative height", "PopupHeight", -10},
 		{"non-whole float", "PopupWidth", 12.5},
 		{"non-number width", "PopupWidth", "wide"},

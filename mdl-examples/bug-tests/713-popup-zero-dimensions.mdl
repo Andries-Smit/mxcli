@@ -1,0 +1,61 @@
+-- ============================================================================
+-- Issue #713 — PopupWidth / PopupHeight = 0 must be allowed
+-- ============================================================================
+--
+-- Symptom: CREATE PAGE (… PopupWidth: 0, PopupHeight: 0) and
+--   ALTER PAGE … SET PopupWidth = 0 were rejected ("must be a positive number"),
+--   and even if allowed both writers coerced 0 -> 600.
+--
+-- Reality (verified against a live Studio Pro 11.12 model): 0 is Studio Pro's
+--   OWN default for a pop-up page's width/height — it means auto-size. A page
+--   created on Atlas_Core.PopupLayout stores PopupWidth: 0 / PopupHeight: 0 and
+--   passes `mx check` with 0 errors.
+--
+-- Fix: validators reject only negative values; the builder defaults to 0 (not
+--   600); both writers write the value verbatim (no 0 -> 600 coercion); DESCRIBE
+--   suppresses only the real default 0.
+--
+-- To verify in Studio Pro:
+--   1. Run this script.
+--   2. Open Bug713.ThingPopupAuto — Pop-up width/height should be 0 (automatic).
+--   3. Open Bug713.ThingPopupFixed — width 800, height 480.
+--   4. `mx check` should report 0 errors.
+-- ============================================================================
+
+CREATE MODULE Bug713;
+
+CREATE PERSISTENT ENTITY Bug713.Thing (
+  Name: String(200)
+);
+
+-- Pop-up page with explicit 0/0 (auto-size) — the case the bug rejected.
+CREATE OR REPLACE PAGE Bug713.ThingPopupAuto (
+  Title: 'Thing (auto-size pop-up)',
+  Layout: Atlas_Core.PopupLayout,
+  PopupWidth: 0,
+  PopupHeight: 0,
+  Params: { $Thing: Bug713.Thing }
+) {
+  dataview dv (DataSource: $Thing) {
+    textbox tb (Label: 'Name', Attribute: Name)
+  }
+}
+
+-- Pop-up page with explicit non-zero dimensions — must still round-trip.
+CREATE OR REPLACE PAGE Bug713.ThingPopupFixed (
+  Title: 'Thing (fixed pop-up)',
+  Layout: Atlas_Core.PopupLayout,
+  PopupWidth: 800,
+  PopupHeight: 480,
+  Params: { $Thing: Bug713.Thing }
+) {
+  dataview dv (DataSource: $Thing) {
+    textbox tb (Label: 'Name', Attribute: Name)
+  }
+}
+
+-- ALTER must accept SET PopupWidth = 0 (auto-size) too.
+ALTER PAGE Bug713.ThingPopupFixed {
+  SET PopupWidth = 0;
+  SET PopupHeight = 0;
+}

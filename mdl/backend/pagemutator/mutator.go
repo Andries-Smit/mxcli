@@ -1608,8 +1608,9 @@ func dSetOrAppend(doc bson.D, key string, value any) bson.D {
 // coercePopupDimension converts an MDL numeric value to the int64 BSON form used
 // by the page's PopupWidth/PopupHeight fields. Integer literals arrive from the
 // visitor as int (strconv.Atoi); a value written with a decimal point arrives as
-// float64. The result is bounds-checked to a positive int32-range pixel count —
-// the range Studio Pro accepts — so silent overflow can't reach the serializer.
+// float64. The result is bounds-checked to a non-negative int32-range pixel count
+// — the range Studio Pro accepts — so silent overflow can't reach the serializer.
+// 0 is valid: it is Studio Pro's default and means auto-size (issue #713).
 func coercePopupDimension(prop string, value any) (int64, error) {
 	var n int64
 	switch v := value.(type) {
@@ -1630,8 +1631,8 @@ func coercePopupDimension(prop string, value any) (int64, error) {
 	default:
 		return 0, fmt.Errorf("%s value must be a number, got %T", prop, value)
 	}
-	if n <= 0 {
-		return 0, fmt.Errorf("%s must be a positive number, got %d", prop, n)
+	if n < 0 {
+		return 0, fmt.Errorf("%s must be >= 0 (0 = auto-size), got %d", prop, n)
 	}
 	if n > math.MaxInt32 {
 		return 0, fmt.Errorf("%s value %d is out of range", prop, n)

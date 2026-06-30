@@ -135,7 +135,7 @@ func (b *Builder) applyGenericPageHeaderProp(stmt *ast.CreatePageStmtV3, name st
 	case "PopupWidth", "PopupHeight":
 		n, ok := popupDimensionValue(val)
 		if !ok {
-			b.addError(fmt.Errorf("line %d:%d: %s must be a positive whole number of pixels, got %v",
+			b.addError(fmt.Errorf("line %d:%d: %s must be a whole number of pixels >= 0 (0 = auto-size), got %v",
 				tok.GetLine(), tok.GetColumn(), name, val))
 			return
 		}
@@ -159,16 +159,17 @@ func (b *Builder) applyGenericPageHeaderProp(stmt *ast.CreatePageStmtV3, name st
 	}
 }
 
-// popupDimensionValue accepts a positive whole number within int32 range from the
-// generic property value (int literal → int, decimal literal → float64).
+// popupDimensionValue accepts a non-negative whole number within int32 range from
+// the generic property value (int literal → int, decimal literal → float64). 0 is
+// valid — it is Studio Pro's default and means auto-size (issue #713).
 func popupDimensionValue(v any) (int, bool) {
 	switch n := v.(type) {
 	case int:
-		if n > 0 && n <= math.MaxInt32 {
+		if n >= 0 && n <= math.MaxInt32 {
 			return n, true
 		}
 	case float64:
-		if n == math.Trunc(n) && n > 0 && n <= math.MaxInt32 {
+		if n == math.Trunc(n) && n >= 0 && n <= math.MaxInt32 {
 			return int(n), true
 		}
 	}

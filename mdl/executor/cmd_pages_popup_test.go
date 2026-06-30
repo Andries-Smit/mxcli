@@ -38,15 +38,16 @@ func TestBuildPageV3_PopupDimensions(t *testing.T) {
 	}
 }
 
-// When the header omits pop-up properties the Mendix defaults apply.
+// When the header omits pop-up properties the Studio Pro default applies: 0/0
+// (auto-size), matching what Studio Pro itself stores (issue #713).
 func TestBuildPageV3_PopupDefaults(t *testing.T) {
 	s := &ast.CreatePageStmtV3{Name: ast.QualifiedName{Module: "M", Name: "P"}}
 	page, err := newPopupPageBuilder().buildPageV3(s)
 	if err != nil {
 		t.Fatalf("buildPageV3: %v", err)
 	}
-	if page.PopupWidth != 600 || page.PopupHeight != 600 || page.PopupResizable {
-		t.Errorf("got %d/%d/%v, want 600/600/false", page.PopupWidth, page.PopupHeight, page.PopupResizable)
+	if page.PopupWidth != 0 || page.PopupHeight != 0 || page.PopupResizable {
+		t.Errorf("got %d/%d/%v, want 0/0/false", page.PopupWidth, page.PopupHeight, page.PopupResizable)
 	}
 }
 

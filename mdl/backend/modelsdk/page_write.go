@@ -85,12 +85,12 @@ func (b *Backend) DeletePage(id model.ID) error {
 	return b.writer.DeleteUnit(string(id))
 }
 
-// popupDimension returns the pop-up width/height for the gen Page (int32),
-// falling back to the Mendix default (600) for an unset/non-positive value so
-// pages built without explicit pop-up dimensions keep valid defaults.
+// popupDimension returns the pop-up width/height for the gen Page (int32).
+// Studio Pro's own default is 0 (auto-size), so 0 is a valid value and is
+// written through verbatim (issue #713); only a stray negative is clamped to 0.
 func popupDimension(n int) int32 {
-	if n <= 0 {
-		return 600
+	if n < 0 {
+		return 0
 	}
 	return int32(n)
 }

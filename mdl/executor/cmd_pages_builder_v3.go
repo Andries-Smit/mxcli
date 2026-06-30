@@ -43,10 +43,13 @@ func (pb *pageBuilder) buildPageV3(s *ast.CreatePageStmtV3) (*pages.Page, error)
 		URL:           s.URL,
 		MarkAsUsed:    false,
 		Excluded:      s.Excluded,
-		// Pop-up dimensions (issue #661): Mendix defaults, overridable in the
-		// page header. The writers serialize these top-level Forms$Page fields.
-		PopupWidth:     600,
-		PopupHeight:    600,
+		// Pop-up dimensions (issues #661, #713): Studio Pro's own default for a
+		// pop-up page is 0/0 (auto-size) — verified against a live 11.12 model —
+		// so an unset dimension stays 0, matching what Studio Pro stores. The
+		// page header can override. The writers serialize these top-level
+		// Forms$Page fields.
+		PopupWidth:     0,
+		PopupHeight:    0,
 		PopupResizable: false,
 	}
 	if s.PopupWidth != nil {
