@@ -4,44 +4,49 @@ package rules
 
 import "testing"
 
-// contextDataView returns a parameter-bound (edit/new-form) DataView BSON node.
-func contextDataView(name string) map[string]any {
-	return map[string]any{
-		"$Type": "Forms$DataView",
-		"Name":  name,
-		"DataSource": map[string]any{
-			"$Type":          "Forms$DataViewSource",
-			"SourceVariable": map[string]any{"$Type": "Forms$PageVariable", "PageParameter": "Customer"},
-		},
-	}
+func textbox(name string) map[string]any {
+	return map[string]any{"$Type": "Forms$TextBox", "Name": name}
 }
 
-func TestIsContextEditDataView(t *testing.T) {
-	if !isContextEditDataView(contextDataView("dv")) {
-		t.Error("parameter-bound DataView should be a context edit form")
+// dataView builds a DataView BSON node with the given direct child widgets. The
+// data source is irrelevant to the rule, so it's omitted.
+func dataView(name string, children ...any) map[string]any {
+	return map[string]any{"$Type": "Forms$DataView", "Name": name, "Widgets": children}
+}
+
+func TestIsFormDataView(t *testing.T) {
+	// A DataView with an input is a form (regardless of data source).
+	if !isFormDataView(dataView("dv", textbox("tb"))) {
+		t.Error("DataView with a textbox should be a form")
 	}
-	// Database-source DataView is NOT an edit form (no parameter binding).
-	dbDV := map[string]any{
-		"$Type":      "Forms$DataView",
-		"DataSource": map[string]any{"$Type": "Forms$DataViewSource", "EntityRef": map[string]any{"Entity": "M.E"}},
+	// An input nested in a container still counts.
+	nested := dataView("dv", map[string]any{"$Type": "Forms$DivContainer", "Widgets": []any{textbox("tb")}})
+	if !isFormDataView(nested) {
+		t.Error("DataView with an input inside a container should be a form")
 	}
-	if isContextEditDataView(dbDV) {
-		t.Error("database-source DataView should not be flagged")
+	// The pluggable ComboBox counts.
+	combo := map[string]any{"$Type": "CustomWidgets$CustomWidget", "Type": map[string]any{"WidgetId": "com.mendix.widget.web.combobox.Combobox"}}
+	if !isFormDataView(dataView("dv", combo)) {
+		t.Error("DataView with a ComboBox should be a form")
 	}
-	// A snippet-parameter binding also counts.
-	snipDV := map[string]any{
-		"$Type": "Forms$DataView",
-		"DataSource": map[string]any{
-			"$Type":          "Forms$DataViewSource",
-			"SourceVariable": map[string]any{"$Type": "Forms$PageVariable", "SnippetParameter": "Customer"},
-		},
+	// Display-only DataView (no inputs) is NOT a form.
+	display := dataView("dv", map[string]any{"$Type": "Forms$DynamicText", "Name": "t"})
+	if isFormDataView(display) {
+		t.Error("display-only DataView should not be a form")
 	}
-	if !isContextEditDataView(snipDV) {
-		t.Error("snippet-parameter DataView should be a context edit form")
+	// Container DataView wrapping a nested datagrid (no inputs) is NOT a form.
+	wrapper := dataView("dv", map[string]any{"$Type": "Forms$DataGrid", "Name": "g"})
+	if isFormDataView(wrapper) {
+		t.Error("DataView wrapping a datagrid should not be a form")
 	}
-	// Non-DataView with a similar source must not match.
-	if isContextEditDataView(map[string]any{"$Type": "Forms$TextBox"}) {
-		t.Error("non-DataView should not be flagged")
+	// An input that lives in a *nested* DataView must not make the outer one a form.
+	outer := dataView("outer", dataView("inner", textbox("tb")))
+	if isFormDataView(outer) {
+		t.Error("input in a nested DataView should not count for the outer DataView")
+	}
+	// Non-DataView is never a form.
+	if isFormDataView(map[string]any{"$Type": "Forms$DivContainer", "Widgets": []any{textbox("tb")}}) {
+		t.Error("non-DataView should not be a form")
 	}
 }
 
@@ -55,40 +60,44 @@ func collectReported(root map[string]any) []string {
 }
 
 func TestWalkForUngridedDataView_FlagsBareForm(t *testing.T) {
-	// A parameter-bound DataView placed directly under the page (no grid).
-	root := map[string]any{"$Type": "Forms$DivContainer", "Widgets": []any{contextDataView("dvBare")}}
+	root := map[string]any{"$Type": "Forms$DivContainer", "Widgets": []any{dataView("dvBare", textbox("tb"))}}
 	got := collectReported(root)
 	if len(got) != 1 || got[0] != "dvBare" {
 		t.Fatalf("expected [dvBare], got %v", got)
 	}
 }
 
+// The data source is irrelevant: a database-bound form DataView outside a grid is
+// flagged just like a parameter-bound one.
+func TestWalkForUngridedDataView_DatabaseFormFlagged(t *testing.T) {
+	dv := dataView("dvDb", textbox("tb"))
+	dv["DataSource"] = map[string]any{"$Type": "Forms$DatabaseSource"}
+	root := map[string]any{"$Type": "Forms$DivContainer", "Widgets": []any{dv}}
+	if got := collectReported(root); len(got) != 1 || got[0] != "dvDb" {
+		t.Fatalf("expected [dvDb], got %v", got)
+	}
+}
+
 func TestWalkForUngridedDataView_GridWrappedIsClean(t *testing.T) {
-	// layoutgrid → row → column → dataview (the prescribed NewEdit pattern).
 	root := map[string]any{
 		"$Type": "Forms$LayoutGrid",
 		"Rows": []any{map[string]any{
-			"Columns": []any{map[string]any{
-				"Widgets": []any{contextDataView("dvWrapped")},
-			}},
+			"Columns": []any{map[string]any{"Widgets": []any{dataView("dvWrapped", textbox("tb"))}}},
 		}},
 	}
 	if got := collectReported(root); len(got) != 0 {
-		t.Fatalf("grid-wrapped DataView should not be flagged, got %v", got)
+		t.Fatalf("grid-wrapped form should not be flagged, got %v", got)
 	}
 }
 
 func TestWalkForUngridedDataView_GridAncestorThroughContainer(t *testing.T) {
-	// grid → column → container → dataview: an ancestor grid still counts.
 	root := map[string]any{
 		"$Type": "Forms$LayoutGrid",
 		"Rows": []any{map[string]any{
-			"Columns": []any{map[string]any{
-				"Widgets": []any{map[string]any{
-					"$Type":   "Forms$DivContainer",
-					"Widgets": []any{contextDataView("dvNested")},
-				}},
-			}},
+			"Columns": []any{map[string]any{"Widgets": []any{map[string]any{
+				"$Type":   "Forms$DivContainer",
+				"Widgets": []any{dataView("dvNested", textbox("tb"))},
+			}}}},
 		}},
 	}
 	if got := collectReported(root); len(got) != 0 {
@@ -96,15 +105,11 @@ func TestWalkForUngridedDataView_GridAncestorThroughContainer(t *testing.T) {
 	}
 }
 
-func TestWalkForUngridedDataView_DatabaseFormIgnored(t *testing.T) {
-	// A non-parameter (database) DataView outside a grid is not an edit form.
-	dbDV := map[string]any{
-		"$Type":      "Forms$DataView",
-		"Name":       "dvList",
-		"DataSource": map[string]any{"$Type": "Forms$DatabaseSource"},
-	}
-	root := map[string]any{"$Type": "Forms$DivContainer", "Widgets": []any{dbDV}}
+// A display-only DataView outside a grid has no label/input-width concern.
+func TestWalkForUngridedDataView_DisplayOnlyIgnored(t *testing.T) {
+	dv := dataView("dvDisplay", map[string]any{"$Type": "Forms$DynamicText", "Name": "t"})
+	root := map[string]any{"$Type": "Forms$DivContainer", "Widgets": []any{dv}}
 	if got := collectReported(root); len(got) != 0 {
-		t.Fatalf("database DataView should not be flagged, got %v", got)
+		t.Fatalf("display-only DataView should not be flagged, got %v", got)
 	}
 }

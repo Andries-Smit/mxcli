@@ -734,7 +734,7 @@ create or replace page CRM.CustomerEdit
 {
   -- Wrap the form's DataView in a layout grid. Label width and input-control
   -- width are expressed in Bootstrap grid columns and only render correctly
-  -- inside a layoutgrid → row → column. A parameter-bound DataView placed
+  -- inside a layoutgrid → row → column. A DataView with input fields placed
   -- directly on the page (no grid) is flagged by lint rule MPR010 / mxcli check.
   layoutgrid mainGrid {
     row row1 {

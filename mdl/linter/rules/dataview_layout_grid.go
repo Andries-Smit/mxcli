@@ -9,18 +9,21 @@ import (
 	"github.com/mendixlabs/mxcli/model"
 )
 
-// DataViewLayoutGridRule (MPR010) flags an edit/new form — a DataView bound to a
-// page/snippet parameter (a "context" data source) — that is not nested inside a
-// layout grid. The DataView's label width and input-control width are expressed
-// in Bootstrap grid columns, which only render correctly when the form sits inside
-// a layoutgrid (the Studio Pro NewEdit page template wraps it in
-// layoutgrid → row → column → dataview). A parameter-bound DataView placed
-// directly on the page renders with misaligned labels/inputs.
+// DataViewLayoutGridRule (MPR010) flags a form — a DataView that contains input
+// widgets — that is not nested inside a layout grid. A DataView's label width and
+// input-control width are expressed in Bootstrap grid columns, which only render
+// correctly when the form sits inside a layoutgrid (the Studio Pro NewEdit page
+// template wraps it in layoutgrid → row → column → dataview). A form DataView
+// placed directly on the page renders with misaligned labels/inputs — regardless
+// of whether its data source is a page parameter, a database retrieve, or a
+// microflow.
 //
-// Scope is deliberately narrow (parameter-bound DataViews) to avoid false
-// positives on intentional non-grid layouts. "Inside a layout grid" means any
-// layoutgrid ancestor — a DataView under grid → column → container → dataview is
-// fine; only a DataView with no layoutgrid ancestor at all is flagged.
+// The trigger is "the DataView contains an input widget", not its data source: a
+// display-only DataView (only dynamictext) or a container DataView (wrapping a
+// nested datagrid, e.g. master-detail) has no label/input-width concern and is
+// not flagged. "Inside a layout grid" means any layoutgrid ancestor — a DataView
+// under grid → column → container → dataview is fine; only a form DataView with no
+// layoutgrid ancestor at all is flagged.
 type DataViewLayoutGridRule struct{}
 
 // NewDataViewLayoutGridRule creates a new dataview-layout-grid rule.
@@ -34,7 +37,7 @@ func (r *DataViewLayoutGridRule) Category() string                 { return "des
 func (r *DataViewLayoutGridRule) DefaultSeverity() linter.Severity { return linter.SeverityWarning }
 
 func (r *DataViewLayoutGridRule) Description() string {
-	return "A parameter-bound DataView (edit/new form) should be wrapped in a layout grid so label and input widths render correctly"
+	return "A DataView containing input widgets (a form) should be wrapped in a layout grid so label and input widths render correctly"
 }
 
 // Check walks each page and snippet, flagging parameter-bound DataViews that have
@@ -56,7 +59,7 @@ func (r *DataViewLayoutGridRule) Check(ctx *linter.LintContext) []linter.Violati
 				violations = append(violations, linter.Violation{
 					RuleID:   r.ID(),
 					Severity: r.DefaultSeverity(),
-					Message: fmt.Sprintf("DataView '%s' is bound to a parameter (edit/new form) but is not inside a layout grid — label and input widths only render correctly inside a layoutgrid",
+					Message: fmt.Sprintf("DataView '%s' contains input fields but is not inside a layout grid — label and input widths only render correctly inside a layoutgrid",
 						widgetName(dv)),
 					Location: linter.Location{
 						Module:       moduleName,
@@ -112,7 +115,7 @@ func rootWidgetNodes(rawData map[string]any) []map[string]any {
 // every parameter-bound DataView reached without crossing a Forms$LayoutGrid.
 // underGrid latches true once a LayoutGrid ancestor is seen.
 func walkForUngridedDataView(w map[string]any, underGrid bool, report func(map[string]any)) {
-	if !underGrid && isContextEditDataView(w) {
+	if !underGrid && isFormDataView(w) {
 		report(w)
 	}
 	nowUnder := underGrid || extractStr(w["$Type"]) == "Forms$LayoutGrid"
@@ -163,27 +166,48 @@ func childWidgetNodes(w map[string]any) []map[string]any {
 	return out
 }
 
-// isContextEditDataView reports whether w is a DataView whose data source binds a
-// page or snippet parameter (a Forms$DataViewSource with a Forms$PageVariable
-// SourceVariable carrying a PageParameter / SnippetParameter) — the edit/new-form
-// signature.
-func isContextEditDataView(w map[string]any) bool {
+// isFormDataView reports whether w is a DataView containing at least one input
+// widget — i.e. a form, which is what needs the layout-grid context for its
+// label/input widths (regardless of data source).
+func isFormDataView(w map[string]any) bool {
 	if extractStr(w["$Type"]) != "Forms$DataView" {
 		return false
 	}
-	ds, ok := w["DataSource"].(map[string]any)
-	if !ok {
-		return false
+	return subtreeHasInput(childWidgetNodes(w))
+}
+
+// subtreeHasInput reports whether any node in the given widget subtrees is an
+// input widget. It stops descending at a nested DataView so a nested form's
+// inputs aren't attributed to the outer DataView.
+func subtreeHasInput(nodes []map[string]any) bool {
+	for _, n := range nodes {
+		if isInputWidget(n) {
+			return true
+		}
+		if extractStr(n["$Type"]) == "Forms$DataView" {
+			continue
+		}
+		if subtreeHasInput(childWidgetNodes(n)) {
+			return true
+		}
 	}
-	if extractStr(ds["$Type"]) != "Forms$DataViewSource" {
-		return false
+	return false
+}
+
+// isInputWidget reports whether w is a form input widget (native or the pluggable
+// ComboBox) — one whose label/control width is laid out in grid columns.
+func isInputWidget(w map[string]any) bool {
+	switch extractStr(w["$Type"]) {
+	case "Forms$TextBox", "Forms$TextArea", "Forms$DatePicker", "Forms$DropDown",
+		"Forms$CheckBox", "Forms$RadioButtonGroup", "Forms$ReferenceSelector",
+		"Forms$InputReferenceSetSelector":
+		return true
 	}
-	sv, ok := ds["SourceVariable"].(map[string]any)
-	if !ok {
-		return false
+	// Pluggable ComboBox.
+	if extractStr(w["$Type"]) == "CustomWidgets$CustomWidget" {
+		if typeObj, ok := w["Type"].(map[string]any); ok {
+			return extractStr(typeObj["WidgetId"]) == "com.mendix.widget.web.combobox.Combobox"
+		}
 	}
-	if extractStr(sv["$Type"]) != "Forms$PageVariable" {
-		return false
-	}
-	return extractStr(sv["PageParameter"]) != "" || extractStr(sv["SnippetParameter"]) != ""
+	return false
 }

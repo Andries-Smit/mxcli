@@ -60,16 +60,34 @@ func TestValidatePageLayoutGrid_GridWrappedClean(t *testing.T) {
 	}
 }
 
-// A database-source DataView (e.g. an overview list) is not an edit form — no warning.
-func TestValidatePageLayoutGrid_DatabaseDataViewIgnored(t *testing.T) {
-	src := `CREATE PAGE M.Overview (
-  title: 'List', layout: Atlas_Core.Atlas_Default
+// The data source is irrelevant: a database-bound form (has inputs) outside a grid
+// warns just like a parameter-bound one.
+func TestValidatePageLayoutGrid_DatabaseFormWarns(t *testing.T) {
+	src := `CREATE PAGE M.Edit (
+  title: 'Edit', layout: Atlas_Core.PopupLayout
 ) {
-  dataview dvList (datasource: database M.Customer) {
+  dataview dvForm (datasource: database M.Customer) {
     textbox tb (label: 'Name', attribute: Name)
   }
 };`
+	msgs := layoutGridMessages(t, src)
+	if len(msgs) != 1 || !strings.Contains(msgs[0], "dvForm") {
+		t.Fatalf("expected one warning for the database form, got %v", msgs)
+	}
+}
+
+// A display-only DataView (no input widgets) has no label/input-width concern and
+// is not flagged, even outside a grid.
+func TestValidatePageLayoutGrid_DisplayOnlyClean(t *testing.T) {
+	src := `CREATE PAGE M.Show (
+  params: { $Customer: M.Customer },
+  title: 'Show', layout: Atlas_Core.PopupLayout
+) {
+  dataview dvShow (datasource: $Customer) {
+    dynamictext t (content: 'hello')
+  }
+};`
 	if msgs := layoutGridMessages(t, src); len(msgs) != 0 {
-		t.Fatalf("database DataView should not warn, got %v", msgs)
+		t.Fatalf("display-only DataView should not warn, got %v", msgs)
 	}
 }
