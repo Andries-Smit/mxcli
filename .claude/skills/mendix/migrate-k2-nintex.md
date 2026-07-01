@@ -319,11 +319,11 @@ Execute migration in this order to manage dependencies:
 ### Phase 1: Domain Model
 ```sql
 -- 1. Enumerations first (no dependencies)
-create enumeration CRM.OrderStatus as (
-  Pending: 'Pending',
-  Approved: 'Approved',
-  Rejected: 'Rejected',
-  Completed: 'Completed'
+create enumeration CRM.OrderStatus (
+  Pending 'Pending',
+  Approved 'Approved',
+  Rejected 'Rejected',
+  Completed 'Completed'
 );
 
 -- 2. Entities (may reference enumerations)

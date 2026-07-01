@@ -189,12 +189,12 @@ Delete behaviors (applied to the referenced `to` entity):
  * Order status values
  */
 create enumeration Module.OrderStatus (
-  Draft = 'Draft',
-  Pending = 'Pending',
-  Approved = 'Approved',
-  Shipped = 'Shipped',
-  Delivered = 'Delivered',
-  Cancelled = 'Cancelled'
+  Draft 'Draft',
+  Pending 'Pending',
+  Approved 'Approved',
+  Shipped 'Shipped',
+  Delivered 'Delivered',
+  Cancelled 'Cancelled'
 );
 /
 ```
@@ -245,10 +245,10 @@ index idx_product_category on (Category);
 ```mdl
 -- Enumeration
 create enumeration Shop.OrderStatus (
-  Draft = 'Draft',
-  Confirmed = 'Confirmed',
-  Shipped = 'Shipped',
-  Delivered = 'Delivered'
+  Draft 'Draft',
+  Confirmed 'Confirmed',
+  Shipped 'Shipped',
+  Delivered 'Delivered'
 );
 /
 
@@ -336,7 +336,7 @@ from Module.ChildEntity to Module.ParentEntity
 ### Enumeration Syntax
 ```mdl
 create enumeration Module.Name (
-  Value1 = 'Caption1',
-  Value2 = 'Caption2'
+  Value1 'Caption1',
+  Value2 'Caption2'
 );
 ```

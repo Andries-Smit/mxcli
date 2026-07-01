@@ -175,8 +175,8 @@ Organize scripts in dependency order:
 -- PHASE 1: Enumerations (no dependencies)
 -- ============================================
 create enumeration Module.Status (
-  Active = 'Active',
-  Inactive = 'Inactive'
+  Active 'Active',
+  Inactive 'Inactive'
 );
 /
 
