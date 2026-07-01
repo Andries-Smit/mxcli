@@ -428,7 +428,7 @@ Modify an existing page or snippet's widget tree in-place without full `CREATE O
 | Add variable | `ADD Variables $name: Type = 'expr'` | Add a page variable |
 | Drop variable | `DROP Variables $name` | Remove a page variable |
 
-**Supported SET properties:** Caption, Label, ButtonStyle, Class, Style, Editable, Visible, Name, Title (page-level), and quoted pluggable widget properties.
+**Supported SET properties:** Caption, Label, ButtonStyle, Class, Style, Editable, Visible, Name, and quoted pluggable widget properties. Page-level (no `ON` clause, case-sensitive): Title, Class, Style, PopupWidth, PopupHeight, PopupResizable.
 
 **Example:**
 ```sql

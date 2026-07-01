@@ -49,11 +49,14 @@ ALTER PAGE Module.EditPage {
 
 ### SET -- Page-Level Properties
 
-Omit the `ON` clause to set page-level properties:
+Omit the `ON` clause to set page-level properties. These names are case-sensitive:
+`Title`, `Class`, `Style`, `PopupWidth`, `PopupHeight`, `PopupResizable`.
 
 ```sql
 ALTER PAGE Module.EditPage {
-  SET Title = 'Customer Details'
+  SET Title = 'Customer Details';
+  SET Class = 'container-fluid bg-light';  -- page CSS class (Forms$Appearance)
+  SET Style = 'min-height: 100vh'          -- page inline style
 };
 ```
 

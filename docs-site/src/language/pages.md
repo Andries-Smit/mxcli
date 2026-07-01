@@ -22,6 +22,7 @@ CREATE [OR REPLACE] PAGE <Module>.<Name>
   Title: '<title>',
   Layout: <Module.LayoutName>
   [, Folder: '<path>']
+  [, Class: '<css-class>', Style: '<css: rule>']
 )
 {
   <widget-tree>
@@ -75,6 +76,8 @@ CREATE PAGE MyModule.Customer_Edit
 | `Layout` | Layout to use for the page | `Layout: Atlas_Core.PopupLayout` |
 | `Folder` | Organizational folder within the module | `Folder: 'Pages/Customers'` |
 | `Variables` | Page-level variables for conditional logic | `Variables: { $show: Boolean = 'true' }` |
+| `Class` | CSS class applied to the page (Forms$Appearance) | `Class: 'container-fluid bg-light'` |
+| `Style` | Inline CSS style applied to the page | `Style: 'min-height: 100vh'` |
 
 ## Widget Properties
 
