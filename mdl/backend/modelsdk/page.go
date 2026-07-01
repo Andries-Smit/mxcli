@@ -102,6 +102,13 @@ func pageFromGen(p *genPg.Page, containerID model.ID) *pages.Page {
 		Title:       textElementToModel(p.Title()),
 	}
 	out.ID = model.ID(p.ID())
+	// AllowedRoles (BY_NAME module-role references, stored under the
+	// "AllowedModuleRoles" BSON key). Without these, SHOW ACCESS ON PAGE and the
+	// Page section of SHOW SECURITY MATRIX report "no roles" for a restricted page
+	// — a security-audit hazard (issue #722). Mirrors microflowFromGen.
+	for _, qn := range p.AllowedRolesQualifiedNames() {
+		out.AllowedRoles = append(out.AllowedRoles, model.ID(qn))
+	}
 	for _, el := range p.ParametersItems() {
 		gp, ok := el.(*genPg.PageParameter)
 		if !ok {
