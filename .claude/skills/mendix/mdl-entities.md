@@ -141,12 +141,14 @@ create persistent entity Module.Photo (
 /**
  * Order belongs to one Customer
  */
-create association Module.Order_Customer (
-  PARENT Module.Customer,
-  CHILD Module.Order
-);
+create association Module.Order_Customer
+from Module.Order to Module.Customer
+type reference;
 /
 ```
+
+Direction: `from` the entity that holds the foreign key (the "many" / child side) `to`
+the entity being referenced (the "one" / parent side). Name convention is `Child_Parent`.
 
 ### Reference Set (Many-to-Many)
 
@@ -155,10 +157,10 @@ create association Module.Order_Customer (
  * Product can be in many Categories
  * Category can have many Products
  */
-create association Module.Product_Category (
-  PARENT Module.Category as reference set,
-  CHILD Module.Product
-);
+create association Module.Product_Category
+from Module.Product to Module.Category
+type reference_set
+owner both;
 /
 ```
 
@@ -166,20 +168,19 @@ create association Module.Product_Category (
 
 ```mdl
 /**
- * Delete orders when customer is deleted
+ * Delete orders when their customer is deleted
  */
-create association Module.Order_Customer (
-  PARENT Module.Customer,
-  CHILD Module.Order,
-  delete PARENT cascade  -- Delete orders when customer deleted
-);
+create association Module.Order_Customer
+from Module.Order to Module.Customer
+type reference
+delete_behavior DELETE_AND_REFERENCES;
 /
 ```
 
-Delete behaviors:
-- `delete PARENT cascade` - Delete children when parent deleted
-- `delete PARENT prevent` - Prevent deletion if children exist
-- `delete CHILD cascade` - Delete parent when last child deleted
+Delete behaviors (applied to the referenced `to` entity):
+- `delete_behavior DELETE_AND_REFERENCES` - delete the referencing objects too (cascade)
+- `delete_behavior DELETE_BUT_KEEP_REFERENCES` - delete, nullify the reference (default)
+- `delete_behavior DELETE_IF_NO_REFERENCES` - only delete when nothing references it
 
 ## Enumerations
 
@@ -291,23 +292,20 @@ create persistent entity Shop.OrderLine (
 /
 
 -- Associations
-create association Shop.Order_Customer (
-  PARENT Shop.Customer,
-  CHILD Shop.Order
-);
+create association Shop.Order_Customer
+from Shop.Order to Shop.Customer
+type reference;
 /
 
-create association Shop.OrderLine_Order (
-  PARENT Shop.Order,
-  CHILD Shop.OrderLine,
-  delete PARENT cascade
-);
+create association Shop.OrderLine_Order
+from Shop.OrderLine to Shop.Order
+type reference
+delete_behavior DELETE_AND_REFERENCES;
 /
 
-create association Shop.OrderLine_Product (
-  PARENT Shop.Product,
-  CHILD Shop.OrderLine
-);
+create association Shop.OrderLine_Product
+from Shop.OrderLine to Shop.Product
+type reference;
 /
 ```
 
@@ -327,11 +325,12 @@ attributename: type [(length)] [not null] [unique] [default value]
 
 ### Association Syntax
 ```mdl
-create association Module.Name (
-  PARENT Module.ParentEntity [as reference set],
-  CHILD Module.ChildEntity
-  [, delete PARENT cascade|prevent]
-);
+create association Module.Child_Parent
+from Module.ChildEntity to Module.ParentEntity
+[type reference | reference_set]
+[owner default | both]
+[storage column | table]
+[delete_behavior DELETE_AND_REFERENCES | DELETE_BUT_KEEP_REFERENCES | DELETE_IF_NO_REFERENCES];
 ```
 
 ### Enumeration Syntax

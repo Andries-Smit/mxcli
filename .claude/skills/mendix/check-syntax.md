@@ -192,9 +192,9 @@ create persistent entity Module.Customer (
 -- ============================================
 -- PHASE 3: Associations (depend on entities)
 -- ============================================
-create association Module.Order_Customer (
-  Module.Order [*] -> Module.Customer [1]
-);
+create association Module.Order_Customer
+from Module.Order to Module.Customer
+type reference;
 /
 
 -- ============================================

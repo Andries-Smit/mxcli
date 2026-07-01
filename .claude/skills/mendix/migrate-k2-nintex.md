@@ -135,9 +135,9 @@ create persistent entity CRM.Order (
 );
 
 -- SmartObject relationship → Association
-create association CRM.Order_Customer (
-  CRM.Order [*] -> CRM.Customer [1]
-);
+create association CRM.Order_Customer
+from CRM.Order to CRM.Customer
+type reference;
 ```
 
 ### Layer 2: UI (SmartForms → Pages)
@@ -331,7 +331,7 @@ create persistent entity CRM.Customer (...);
 create persistent entity CRM.Order (...);
 
 -- 3. Associations (reference entities)
-create association CRM.Order_Customer (...);
+create association CRM.Order_Customer from CRM.Order to CRM.Customer type reference;
 ```
 
 ### Phase 2: Business Logic (Microflows)

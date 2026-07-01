@@ -19,7 +19,8 @@ In MDL, reference System entities with the `System.` prefix:
 ```mdl
 -- Association to the current user
 create association MyModule.Order_CreatedBy
-  between MyModule.Order [*] and System.User [1];
+from MyModule.Order to System.User
+type reference;
 
 -- Entity that generalizes FileDocument for file uploads
 create persistent entity MyModule.Invoice extends System.FileDocument (
@@ -152,8 +153,9 @@ create persistent entity MyModule.Attachment extends System.FileDocument (
   Category: MyModule.AttachmentCategory
 );
 
-create association MyModule.Order_Attachment
-  between MyModule.Order [1] and MyModule.Attachment [*];
+create association MyModule.Order_Attachments
+from MyModule.Order to MyModule.Attachment
+type reference_set;
 ```
 
 ### System.Image
@@ -681,10 +683,12 @@ create persistent entity MyModule.Photo extends System.Image (
 
 ```mdl
 create association MyModule.Order_CreatedBy
-  between MyModule.Order [*] and System.User [1];
+from MyModule.Order to System.User
+type reference;
 
 create association MyModule.Order_ModifiedBy
-  between MyModule.Order [*] and System.User [1];
+from MyModule.Order to System.User
+type reference;
 ```
 
 ### File Attachments
@@ -695,7 +699,8 @@ create persistent entity MyModule.Attachment extends System.FileDocument (
 );
 
 create association MyModule.Order_Attachments
-  between MyModule.Order [1] and MyModule.Attachment [*];
+from MyModule.Order to MyModule.Attachment
+type reference_set;
 ```
 
 ### Workflow Context Object
@@ -710,7 +715,8 @@ create persistent entity MyModule.ExpenseReport (
 
 -- Associate with workflow instance
 create association MyModule.ExpenseReport_Workflow
-  between MyModule.ExpenseReport [1] and System.Workflow [*];
+from MyModule.ExpenseReport to System.Workflow
+type reference;
 ```
 
 ### Task Inbox Page

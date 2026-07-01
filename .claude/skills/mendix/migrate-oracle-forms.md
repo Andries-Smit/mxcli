@@ -78,9 +78,9 @@ create persistent entity MyModule.Order (
   TotalAmount: decimal
 );
 
-create association MyModule.Order_Customer (
-  MyModule.Order [*] -> MyModule.Customer [1]
-);
+create association MyModule.Order_Customer
+from MyModule.Order to MyModule.Customer
+type reference;
 /
 
 -- ============================================
