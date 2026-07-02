@@ -1,0 +1,52 @@
+-- Bug: NUMBERFILTER in a DataGrid column corrupted the .mpr — it passed
+-- `mxcli check` but failed MxBuild / Studio Pro load on Mendix 11.12 with:
+--
+--   System.InvalidOperationException: Type ...CustomWidgets.WidgetProperty does
+--   not contain a constructor with a parameter of type ...CustomWidgets.WidgetValue.
+--     at StreamingBsonUnitReader.ConstructObject ...
+--
+-- Root cause: the embedded datagrid-number-filter.json template authored its
+-- placeholder / screen-reader ClientTemplate blocks with markerless empty arrays
+-- ("Items": [], "Parameters": []). Every Mendix list must serialize with a
+-- leading marker int (Texts$Text.Items -> [3], ClientTemplate.Parameters -> [2]);
+-- a bare [] is tolerated by <= 11.11 but mis-parsed by 11.12's streaming reader,
+-- aborting the whole project load. TEXTFILTER/DATEFILTER/DROPDOWNFILTER were
+-- unaffected (their templates carried the markers).
+--
+-- Fix: add the missing markers to both number-filter templates (sdk/widgets and
+-- modelsdk/widgets). Guard: TestTemplates_NoMarkerlessEmptyArrays scans every
+-- embedded template for bare [] arrays.
+--
+-- Verify in Studio Pro: open the project (must load without the WidgetProperty/
+-- WidgetValue exception) and confirm the ReproGrid column has a working number
+-- filter.
+
+CREATE ENTITY MyFirstModule.Repro ( Name: String, Qty: Integer );
+
+CREATE OR REPLACE PAGE MyFirstModule.Repro_Overview
+(
+  Title: 'Repro Overview',
+  Layout: Atlas_Core.Atlas_Default,
+  Url: 'ReproOverview'
+)
+{
+  LAYOUTGRID mainGrid {
+    ROW row1 {
+      COLUMN colContent (DesktopWidth: 12) {
+        DATAGRID ReproGrid (
+          DataSource: DATABASE FROM MyFirstModule.Repro,
+          Selection: Single,
+          PageSize: 50,
+          Pagination: virtualScrolling
+        ) {
+          COLUMN colName (Attribute: Name, Caption: 'Name', Tooltip: 'Name') {
+            TEXTFILTER fName
+          }
+          COLUMN colQty (Attribute: Qty, Caption: 'Qty', Tooltip: 'Qty') {
+            NUMBERFILTER fQty
+          }
+        }
+      }
+    }
+  }
+}

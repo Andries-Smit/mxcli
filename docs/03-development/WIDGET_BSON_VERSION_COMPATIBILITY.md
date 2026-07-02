@@ -86,6 +86,27 @@ keyword, missing Maps API key), not BSON drift.
 | Required CustomWidget envelope fields | Embedded template + filter widget builder | ✗ fragile |
 | TextTemplate default translation population | Embedded template | ✗ fragile |
 | Boolean property default consistency | Embedded template | ✗ fragile |
+| BSON list marker on empty arrays (`[3]`/`[2]` vs bare `[]`) | Embedded template | ✗ fragile — **11.12 hard-fails**, ≤ 11.11 tolerates |
+
+### Markerless empty arrays crash 11.12 load
+
+Every Mendix list serializes as a BSON array whose first element is a marker int
+(`Texts$Text.Items`→`[3]`, `Forms$ClientTemplate.Parameters`→`[2]`,
+`Widgets`/`Objects`→`[2]`). A hand-authored template that writes an empty list as
+a bare `[]` (no marker) is tolerated by Mendix ≤ 11.11 but **mis-parsed by 11.12's
+`StreamingBsonUnitReader`**, which aborts the entire project load with:
+
+```
+System.InvalidOperationException: Type …CustomWidgets.WidgetProperty does not
+contain a constructor with a parameter of type …CustomWidgets.WidgetValue.
+```
+
+This shipped in `datagrid-number-filter.json` (placeholder / screen-reader
+`ClientTemplate` blocks had `"Items": []` / `"Parameters": []`), silently
+corrupting any `.mpr` that used a `NUMBERFILTER` — it passed `mxcli check`. The
+regression guard `TestTemplates_NoMarkerlessEmptyArrays` (in both `sdk/widgets`
+and `modelsdk/widgets`) walks every embedded template and fails on any bare `[]`.
+When onboarding or re-extracting a template, never emit an empty markerless array.
 
 ## Onboarding a new Mendix minor (e.g. 11.10, 12.0)
 
