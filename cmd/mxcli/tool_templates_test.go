@@ -68,3 +68,52 @@ func TestGenerateDockerfile_Podman(t *testing.T) {
 		t.Error("docker runtime should not include podman configuration")
 	}
 }
+
+// TestGenerateDockerfile_PlaywrightArm64 guards the arm64 Playwright provisioning
+// fix: browsers must be installed via @playwright/cli's bundled playwright-core
+// (not a transient "npx playwright"), into a world-readable shared cache, with a
+// stable headless-shell symlink that the generated cli.config.json pins.
+func TestGenerateDockerfile_PlaywrightArm64(t *testing.T) {
+	df := generateDockerfile("MyApp", "App.mpr", "docker")
+
+	if strings.Contains(df, "npx playwright install") {
+		t.Error("Dockerfile must not use 'npx playwright install' — it resolves a different playwright than the CLI's bundled core (wrong revision + wrong cache)")
+	}
+	for _, want := range []string{
+		"@playwright/cli/node_modules/playwright-core/cli.js", // install via bundled core
+		"chromium-headless-shell",                             // headless needs the shell build
+		"PLAYWRIGHT_BROWSERS_PATH",                            // shared, non-root-only cache
+		"/usr/local/bin/mx-headless-shell",                    // stable symlink for the config pin
+	} {
+		if !strings.Contains(df, want) {
+			t.Errorf("Dockerfile missing expected Playwright provisioning fragment %q", want)
+		}
+	}
+}
+
+// TestGeneratePlaywrightConfig_PinsHeadlessShell ensures the generated config is
+// valid JSON and pins executablePath to the stable symlink the Dockerfile
+// creates — without it, the alpha CLI falls back to the unavailable chrome
+// channel on arm64.
+func TestGeneratePlaywrightConfig_PinsHeadlessShell(t *testing.T) {
+	cfg := generatePlaywrightConfig()
+
+	var v struct {
+		Browser struct {
+			BrowserName   string `json:"browserName"`
+			LaunchOptions struct {
+				Headless       bool   `json:"headless"`
+				ExecutablePath string `json:"executablePath"`
+			} `json:"launchOptions"`
+		} `json:"browser"`
+	}
+	if err := json.Unmarshal([]byte(cfg), &v); err != nil {
+		t.Fatalf("playwright config is not valid JSON: %v\n%s", err, cfg)
+	}
+	if v.Browser.BrowserName != "chromium" {
+		t.Errorf("browserName = %q, want chromium", v.Browser.BrowserName)
+	}
+	if got := v.Browser.LaunchOptions.ExecutablePath; got != "/usr/local/bin/mx-headless-shell" {
+		t.Errorf("executablePath = %q, want the stable Dockerfile symlink /usr/local/bin/mx-headless-shell", got)
+	}
+}

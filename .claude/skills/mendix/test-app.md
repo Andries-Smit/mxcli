@@ -15,10 +15,10 @@ For **microflow logic testing** (business rules, calculations, entity operations
 
 ## Prerequisites
 
-The devcontainer created by `mxcli init` includes:
-- **Node.js** (LTS) — installed via devcontainer feature
+The devcontainer created by `mxcli init` installs:
+- **Node.js** (LTS) — via the base image
 - **playwright-cli** — installed globally (`npm install -g @playwright/cli@latest`)
-- **Chromium** — installed via `playwright-cli install --with-deps chromium`
+- **Chromium (headless shell)** — installed via `@playwright/cli`'s **bundled** `playwright-core`, into a shared `PLAYWRIGHT_BROWSERS_PATH`, and exposed at the stable path `/usr/local/bin/mx-headless-shell`. The generated `.playwright/cli.config.json` pins `executablePath` to that symlink.
 - **Docker-in-Docker** — Mendix + PostgreSQL running via `mxcli docker run`
 
 The app must be running before verification:
@@ -26,6 +26,39 @@ The app must be running before verification:
 ```bash
 mxcli docker run -p app.mpr --wait
 ```
+
+### `run-code` vs `eval` — read this first
+
+`@playwright/cli` has **two** evaluation commands with **different contexts**:
+
+| Command | Runs in | Use for |
+|---------|---------|---------|
+| `playwright-cli eval "() => ..."` | **browser page** (`document`, `window` exist) | DOM assertions, clicks, filling fields, reading `.mx-name-*` |
+| `playwright-cli run-code "..."` | **Node** (Playwright API; `document` is **undefined**) | Playwright-level scripting, not page DOM |
+
+`eval` takes a **function** (`"() => ..."`) and prints its return value under `### Result`. If it returns a Promise, the CLI awaits it. **Do not** use `run-code "document.querySelector(...)"` — it throws `ReferenceError: document is not defined`. Every page assertion below uses `eval`.
+
+### Browser setup gotchas (Linux arm64)
+
+If you are provisioning manually (outside `mxcli init`) or debugging a browser-launch failure, know these:
+
+- `playwright-cli install` **initializes the workspace** — it does *not* install a browser. The browser command is `playwright-cli install-browser`.
+- `open --browser` only accepts `chrome | firefox | webkit | msedge` (no `chromium`), and the default is the **chrome channel** — which has **no distribution on Linux arm64**, and neither does msedge. `npx playwright install chrome` fails with `ERROR: not supported on Linux Arm64`.
+- The fix is to use the **bundled Chromium** and pin it explicitly. Install via `@playwright/cli`'s own `playwright-core`:
+  ```bash
+  node "$(npm root -g)/@playwright/cli/node_modules/playwright-core/cli.js" install chromium chromium-headless-shell
+  ```
+  then point `.playwright/cli.config.json` at the headless-shell binary (headless mode needs the `chromium_headless_shell-*` build, not the full `chromium-*` one):
+  ```json
+  "browser": {
+    "browserName": "chromium",
+    "launchOptions": {
+      "headless": true,
+      "executablePath": "/usr/local/bin/mx-headless-shell"
+    }
+  }
+  ```
+  `mxcli init` does all of this for you (the Dockerfile installs the headless shell and creates the `/usr/local/bin/mx-headless-shell` symlink). This path is the devcontainer symlink; if you run playwright-cli natively outside the container, point `executablePath` at your own install (or drop it and let a working default resolve).
 
 ---
 
@@ -42,8 +75,8 @@ playwright-cli snapshot
 playwright-cli click e12
 playwright-cli fill e15 "some text"
 
-# Verify widget presence via javascript
-playwright-cli run-code "document.querySelector('.mx-name-dgCustomers') !== null"
+# Verify widget presence (page context -> use eval with a function)
+playwright-cli eval "() => document.querySelector('.mx-name-dgCustomers') !== null"
 
 # Take a screenshot for visual inspection
 playwright-cli screenshot
@@ -68,10 +101,10 @@ This maps directly to MDL widget names. When you generate a widget in MDL:
 actionbutton submitButton (caption: 'Submit', action: save_changes)
 ```
 
-The stable CSS selector is `.mx-name-submitButton`. Use this with `run-code` for reliable assertions:
+The stable CSS selector is `.mx-name-submitButton`. Use this with `eval` for reliable assertions:
 
 ```bash
-playwright-cli run-code "document.querySelector('.mx-name-submitButton') !== null"
+playwright-cli eval "() => document.querySelector('.mx-name-submitButton') !== null"
 ```
 
 ---
@@ -85,12 +118,12 @@ The Mendix login page uses standard HTML IDs:
 ```bash
 playwright-cli open http://localhost:8080
 playwright-cli snapshot
-playwright-cli run-code "document.querySelector('#usernameInput').value = 'MxAdmin'"
-playwright-cli run-code "document.querySelector('#passwordInput').value = 'AdminPassword1!'"
-playwright-cli run-code "document.querySelector('#loginButton').click()"
+playwright-cli eval "() => { document.querySelector('#usernameInput').value = 'MxAdmin' }"
+playwright-cli eval "() => { document.querySelector('#passwordInput').value = 'AdminPassword1!' }"
+playwright-cli eval "() => document.querySelector('#loginButton').click()"
 
 # wait for home page to load
-playwright-cli run-code "await new Promise(r => setTimeout(r, 3000))"
+playwright-cli eval "() => new Promise(r => setTimeout(r, 3000))"
 playwright-cli snapshot
 
 # Save auth state for reuse
@@ -114,10 +147,10 @@ After navigating to a page, verify that all expected widgets are present:
 playwright-cli goto http://localhost:8080/p/Customer_Overview
 
 # check multiple widgets
-playwright-cli run-code "document.querySelector('.mx-name-dgCustomers') !== null"
-playwright-cli run-code "document.querySelector('.mx-name-btnNew') !== null"
-playwright-cli run-code "document.querySelector('.mx-name-btnEdit') !== null"
-playwright-cli run-code "document.querySelector('.mx-name-btnDelete') !== null"
+playwright-cli eval "() => document.querySelector('.mx-name-dgCustomers') !== null"
+playwright-cli eval "() => document.querySelector('.mx-name-btnNew') !== null"
+playwright-cli eval "() => document.querySelector('.mx-name-btnEdit') !== null"
+playwright-cli eval "() => document.querySelector('.mx-name-btnDelete') !== null"
 ```
 
 ### Form Interaction
@@ -128,18 +161,16 @@ playwright-cli goto http://localhost:8080/p/Customer_Edit
 # Take snapshot to discover element refs
 playwright-cli snapshot
 
-# Fill form fields using .mx-name-* selectors
-playwright-cli run-code "document.querySelector('.mx-name-txtName input').value = 'Test Customer'"
-playwright-cli run-code "document.querySelector('.mx-name-txtName input').dispatchEvent(new event('input', {bubbles: true}))"
-playwright-cli run-code "document.querySelector('.mx-name-txtEmail input').value = 'test@example.com'"
-playwright-cli run-code "document.querySelector('.mx-name-txtEmail input').dispatchEvent(new event('input', {bubbles: true}))"
+# Fill form fields using .mx-name-* selectors (page context -> eval)
+playwright-cli eval "() => { const el = document.querySelector('.mx-name-txtName input'); el.value = 'Test Customer'; el.dispatchEvent(new Event('input', {bubbles: true})) }"
+playwright-cli eval "() => { const el = document.querySelector('.mx-name-txtEmail input'); el.value = 'test@example.com'; el.dispatchEvent(new Event('input', {bubbles: true})) }"
 
 # or use fill with snapshot refs (simpler when refs are known)
 playwright-cli fill e42 "Test Customer"
 playwright-cli fill e45 "test@example.com"
 
 # Click save
-playwright-cli run-code "document.querySelector('.mx-name-btnSave').click()"
+playwright-cli eval "() => document.querySelector('.mx-name-btnSave').click()"
 ```
 
 ### Page Navigation (Security OFF)
@@ -150,14 +181,14 @@ When security is OFF, direct `/p/PageName` URLs **do not work** — Mendix redir
 playwright-cli open http://localhost:8080
 
 # wait for Mendix to load
-playwright-cli run-code "await new Promise(r => { const check = () => document.querySelector('.mx-page') ? r() : setTimeout(check, 500); check(); })"
+playwright-cli eval "() => new Promise(r => { const check = () => document.querySelector('.mx-page') ? r() : setTimeout(check, 500); check(); })"
 
 # Click navigation button (from your MDL-defined NavigationMenu snippet)
-playwright-cli run-code "document.querySelector('.mx-name-btnCustomers').click()"
+playwright-cli eval "() => document.querySelector('.mx-name-btnCustomers').click()"
 
 # wait and verify target page
-playwright-cli run-code "await new Promise(r => setTimeout(r, 2000))"
-playwright-cli run-code "document.querySelector('.mx-name-dgCustomers') !== null"
+playwright-cli eval "() => new Promise(r => setTimeout(r, 2000))"
+playwright-cli eval "() => document.querySelector('.mx-name-dgCustomers') !== null"
 ```
 
 ### Page Navigation (Security ON)
@@ -167,7 +198,7 @@ Direct URLs work after login:
 ```bash
 playwright-cli state-load mendix-auth
 playwright-cli goto http://localhost:8080/p/Customer_Overview
-playwright-cli run-code "document.querySelector('.mx-name-dgCustomers') !== null"
+playwright-cli eval "() => document.querySelector('.mx-name-dgCustomers') !== null"
 ```
 
 ### Data Assertions via OQL
@@ -196,23 +227,23 @@ set -euo pipefail
 
 # Setup
 playwright-cli open http://localhost:8080
-playwright-cli run-code "document.querySelector('#usernameInput').value = 'MxAdmin'"
-playwright-cli run-code "document.querySelector('#passwordInput').value = 'AdminPassword1!'"
-playwright-cli run-code "document.querySelector('#loginButton').click()"
-playwright-cli run-code "await new Promise(r => setTimeout(r, 3000))"
+playwright-cli eval "() => { document.querySelector('#usernameInput').value = 'MxAdmin' }"
+playwright-cli eval "() => { document.querySelector('#passwordInput').value = 'AdminPassword1!' }"
+playwright-cli eval "() => document.querySelector('#loginButton').click()"
+playwright-cli eval "() => new Promise(r => setTimeout(r, 3000))"
 
 # Verify Customer overview
 playwright-cli goto http://localhost:8080/p/Customer_Overview
-playwright-cli run-code "if (!document.querySelector('.mx-name-dgCustomers')) throw new error('dgCustomers not found')"
-playwright-cli run-code "if (!document.querySelector('.mx-name-btnNew')) throw new error('btnNew not found')"
+playwright-cli eval "() => { if (!document.querySelector('.mx-name-dgCustomers')) throw new Error('dgCustomers not found') }"
+playwright-cli eval "() => { if (!document.querySelector('.mx-name-btnNew')) throw new Error('btnNew not found') }"
 
 # create a customer
-playwright-cli run-code "document.querySelector('.mx-name-btnNew').click()"
-playwright-cli run-code "await new Promise(r => setTimeout(r, 2000))"
+playwright-cli eval "() => document.querySelector('.mx-name-btnNew').click()"
+playwright-cli eval "() => new Promise(r => setTimeout(r, 2000))"
 playwright-cli fill txtName "CI Test Customer"
 playwright-cli fill txtEmail "ci@test.com"
-playwright-cli run-code "document.querySelector('.mx-name-btnSave').click()"
-playwright-cli run-code "await new Promise(r => setTimeout(r, 2000))"
+playwright-cli eval "() => document.querySelector('.mx-name-btnSave').click()"
+playwright-cli eval "() => new Promise(r => setTimeout(r, 2000))"
 
 # Verify data persistence
 mxcli oql -p app.mpr --json "SELECT Name FROM MyModule.Customer WHERE Name = 'CI Test Customer'" \
@@ -232,16 +263,17 @@ bash tests/verify-customers.sh
 # run all test scripts
 for f in tests/verify-*.sh; do bash "$f" || exit 1; done
 
-# Future: mxcli playwright verify tests/ -p app.mpr
+# via mxcli (auto-detects app port, captures a screenshot on failure)
+mxcli playwright verify tests/ -p app.mpr
 ```
 
 ### Assertion Pattern
 
-For `set -e` scripts, use `throw new error()` to trigger non-zero exit:
+For `set -e` scripts, `eval` a function that throws to trigger a non-zero exit. The throw must use JavaScript's `Error` constructor (capital E):
 
 ```bash
 # This exits non-zero if widget is missing
-playwright-cli run-code "if (!document.querySelector('.mx-name-widgetName')) throw new error('missing widgetName')"
+playwright-cli eval "() => { if (!document.querySelector('.mx-name-widgetName')) throw new Error('missing widgetName') }"
 ```
 
 ---
@@ -275,9 +307,6 @@ playwright-cli screenshot
 # Take screenshot of specific element
 playwright-cli screenshot e42
 
-# open headed browser (visible UI)
-playwright-cli open http://localhost:8080 --headed
-
 # show console messages
 playwright-cli console
 
@@ -293,6 +322,8 @@ playwright-cli tracing-stop
 playwright-cli show
 ```
 
+> **Headed mode** (`open --headed`) needs the full Chromium build and a display; the devcontainer ships only the headless shell and has no display, so use screenshots/tracing for visual debugging instead.
+
 ---
 
 ## Selector Rules
@@ -307,8 +338,8 @@ datagrid dgOrders (datasource: database Module.Order) { ... }
 
 ```bash
 # Tests: use .mx-name-* selectors for those names
-playwright-cli run-code "document.querySelector('.mx-name-btnDrivers').click()"
-playwright-cli run-code "document.querySelector('.mx-name-dgOrders') !== null"
+playwright-cli eval "() => document.querySelector('.mx-name-btnDrivers').click()"
+playwright-cli eval "() => document.querySelector('.mx-name-dgOrders') !== null"
 ```
 
 **Do NOT guess CSS selectors for Mendix built-in layout widgets.** The top navigation bar, sidebar, header, and other platform UI elements have unpredictable class names.
@@ -317,13 +348,13 @@ playwright-cli run-code "document.querySelector('.mx-name-dgOrders') !== null"
 
 ```bash
 # use text_ prefix for navigationlist items
-playwright-cli run-code "document.querySelector('.mx-name-text_itemDrivers').click()"
+playwright-cli eval "() => document.querySelector('.mx-name-text_itemDrivers').click()"
 ```
 
 **DataGrid2 rows**: Both header and data rows share `role="row"`. Filter with `:has([role="gridcell"])`:
 
 ```bash
-playwright-cli run-code "document.querySelector('.mx-name-dgCustomers [role=\"row\"]:has([role=\"gridcell\"])').textContent"
+playwright-cli eval "() => document.querySelector('.mx-name-dgCustomers [role=\"row\"]:has([role=\"gridcell\"])').textContent"
 ```
 
 ---
@@ -331,13 +362,13 @@ playwright-cli run-code "document.querySelector('.mx-name-dgCustomers [role=\"ro
 ## Known Gotchas
 
 ### Never use `waitForLoadState('networkidle')`
-Mendix maintains a permanent long-polling XHR connection. `networkidle` never fires. Use element-based waits via `run-code` instead.
+Mendix maintains a permanent long-polling XHR connection. `networkidle` never fires. Use element-based waits via `eval` instead.
 
 ### Top navigation clicks intercepted
-Clicking top nav items may fail due to `div.mx-placeholder` overlay. Use `dispatchEvent('click')`:
+Clicking top nav items may fail due to `div.mx-placeholder` overlay. Dispatch the event directly (note the capital `Event`):
 
 ```bash
-playwright-cli run-code "document.querySelector('.mx-name-navigationTree1-1').dispatchEvent(new event('click', {bubbles: true}))"
+playwright-cli eval "() => document.querySelector('.mx-name-navigationTree1-1').dispatchEvent(new Event('click', {bubbles: true}))"
 ```
 
 ### Login page selectors are stable
@@ -369,6 +400,8 @@ playwright-cli snapshot
 | Failure Type | What It Means | MDL Fix |
 |-------------|---------------|---------|
 | `.mx-name-X` not found | Widget X missing from DOM | Check widget nesting, container visibility, BSON structure |
+| `ReferenceError: document is not defined` | Used `run-code` for a page assertion | Use `eval "() => ..."` (page context), not `run-code` (Node) |
+| `Chromium distribution 'chrome' is not found` | Browser not provisioned / chrome channel on arm64 | See "Browser setup gotchas" — install bundled Chromium + pin `executablePath` |
 | Page returns 500 | Runtime error on page load | Check page layout, datasource, parameter bindings |
 | Page returns 404 | Page doesn't exist or wrong URL | Verify page qualified name and navigation |
 | OQL returns empty | Microflow didn't commit | Check COMMIT statement, error handling in microflow |
