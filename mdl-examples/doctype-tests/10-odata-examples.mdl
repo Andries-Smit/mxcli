@@ -323,22 +323,20 @@ headers (
 /**
  * Level 8.2b: Consumed OData service with a Headers microflow.
  *
- * Mendix 11.9's "Configuration source" dropdown has three options:
+ * The "Configuration source" dropdown has three options:
  *   - Constants only            (the default — set ServiceUrl as a constant)
- *   - Configuration microflow
- *   - Headers microflow
+ *   - Configuration microflow   (returns System.ConsumedODataConfiguration)
+ *   - Headers microflow         (returns list of System.HttpHeader)
  *
- * Both microflow options share a single BSON field — `ConfigurationMicroflow` —
- * and Studio Pro picks the dropdown label from the microflow's return type:
- *   - returns System.ConsumedODataConfiguration -> "Configuration microflow"
- *   - returns list of System.HttpHeader         -> "Headers microflow"
- *
- * The MDL keyword `HeadersMicroflow` is a self-documenting alias for
- * `ConfigurationMicroflow`; both write the same BSON. The microflow
- * paths are mutually exclusive with constants-based ServiceUrl / proxy
- * fields (Mendix raises CE0783/CE1135), so each variant lives in its
- * own service. HeadersConfigAPI's SetHeaders returns a list of
- * System.HttpHeader; the call site provides the service URL itself via
+ * The configuration and headers microflows are DISTINCT storage slots on
+ * Mendix >= 11.10 (BSON `ConfigurationEntityMicroflow` vs `HeaderListMicroflow`;
+ * before 11.10 they shared `ConfigurationMicroflow` and Studio Pro told them
+ * apart by return type). The MDL keywords match: `ConfigurationMicroflow:` and
+ * `HeadersMicroflow:` write to their own slots — using the wrong one triggers
+ * CE6808 (issue #728). The microflow paths are mutually exclusive with
+ * constants-based ServiceUrl / proxy fields (Mendix raises CE0783/CE1135), so
+ * each variant lives in its own service. HeadersConfigAPI's SetHeaders returns a
+ * list of System.HttpHeader; the call site provides the service URL itself via
  * the constant ServiceUrl above.
  */
 create odata client OdTest.HeadersConfigAPI (
