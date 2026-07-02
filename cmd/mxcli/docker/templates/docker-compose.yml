@@ -1,3 +1,7 @@
+# mxcli-template-version: 2
+# Regenerate with `mxcli docker init --force` when mxcli reports this file is
+# out of date — template fixes (e.g. the OQL dev-servlet flags) only reach an
+# existing .docker/ when the compose file is rewritten.
 services:
   mendix:
     image: eclipse-temurin:21-jre

@@ -126,8 +126,11 @@ func oqlDevError(raw json.RawMessage) string {
 		}
 		// "Action not found" means the OQL preview servlet isn't mounted — the app
 		// must be started with the live-preview dev flags (mxcli docker does this).
+		// A common cause is a stale docker-compose.yml: `mxcli docker init` skips an
+		// existing compose file, so a project generated before the flags were added
+		// keeps starting the runtime without them until it is regenerated.
 		if strings.Contains(strings.ToLower(msg), "not found") {
-			msg += " -- the running app does not expose the OQL preview endpoint; rebuild and restart with `mxcli docker build && mxcli docker up` (it starts the runtime with the live-preview dev flags)"
+			msg += " -- the running app does not expose the OQL preview endpoint. If your .docker/ predates this fix, regenerate it with `mxcli docker init --force`, then `mxcli docker build && mxcli docker up` (this starts the runtime with the live-preview dev flags)"
 		}
 		return msg
 	}

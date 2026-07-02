@@ -61,7 +61,26 @@ func resolveDockerDir(opts RuntimeOptions) (string, error) {
 		return "", fmt.Errorf("docker-compose.yml not found in %s (run 'mxcli docker init' first)", dir)
 	}
 
+	warnIfComposeStale(composePath, opts.Stderr)
+
 	return dir, nil
+}
+
+// warnIfComposeStale prints a warning when the project's docker-compose.yml
+// predates the current embedded template. `mxcli docker init` skips an existing
+// compose file (no --force), so template fixes never reach projects that ran
+// init before the fix — the warning tells the user how to pick them up.
+func warnIfComposeStale(composePath string, stderr io.Writer) {
+	if stderr == nil {
+		stderr = os.Stderr
+	}
+	current := currentComposeTemplateVersion()
+	have := composeFileVersion(composePath)
+	if current > 0 && have < current {
+		fmt.Fprintf(stderr, "warning: %s is out of date (template v%d, current v%d); "+
+			"regenerate with 'mxcli docker init --force' to pick up template fixes\n",
+			composePath, have, current)
+	}
 }
 
 // Up starts the Docker Compose stack.
