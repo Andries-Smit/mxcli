@@ -795,73 +795,121 @@ func formatMicroflowActivities(
 	return lines
 }
 
-type outputVariableSeen struct {
-	pos model.Point
-}
-
+// duplicateOutputVariableWarnings flags output-variable names that are assigned by
+// two activities which can BOTH run on a single execution path — i.e. one activity
+// reaches the other. Assignments in mutually-exclusive branches (then/else, enum
+// cases) are legal and not flagged.
+//
+// This uses reachability, which is O(V*E). The previous implementation enumerated
+// every execution path (cloning the visited set at each branch), which is O(2^b)
+// in the number of branch points and made `describe microflow` time out on
+// high-complexity flows — 20 sequential if/end-if diamonds already took ~10s
+// (issue #710). Microflow control flow is a DAG (loops are nested inside
+// LoopedActivity nodes, not back-edges), so reachability is exact and cheap.
 func duplicateOutputVariableWarnings(oc *microflows.MicroflowObjectCollection) []string {
 	warningPositions := make(map[string]model.Point)
+	record := func(name string, pos model.Point) {
+		if _, ok := warningPositions[name]; !ok {
+			warningPositions[name] = pos
+		}
+	}
 
-	var walkCollection func(*microflows.MicroflowObjectCollection, map[string]outputVariableSeen)
-	walkCollection = func(collection *microflows.MicroflowObjectCollection, inherited map[string]outputVariableSeen) {
+	type assignment struct {
+		id  model.ID
+		pos model.Point
+	}
+
+	var walk func(collection *microflows.MicroflowObjectCollection, inherited map[string]model.Point)
+	walk = func(collection *microflows.MicroflowObjectCollection, inherited map[string]model.Point) {
 		if collection == nil {
 			return
 		}
-		activityMap := make(map[model.ID]microflows.MicroflowObject)
 		flowsByOrigin := make(map[model.ID][]*microflows.SequenceFlow)
-		var starts []model.ID
-		for _, obj := range collection.Objects {
-			activityMap[obj.GetID()] = obj
-			if _, ok := obj.(*microflows.StartEvent); ok {
-				starts = append(starts, obj.GetID())
-			}
-		}
 		for _, flow := range collection.Flows {
 			flowsByOrigin[flow.OriginID] = append(flowsByOrigin[flow.OriginID], flow)
 		}
-		if len(starts) == 0 {
-			for _, obj := range collection.Objects {
-				starts = append(starts, obj.GetID())
+
+		// reachableFrom(id) = node IDs reachable from id via normal flows (excluding
+		// id). Memoized; the in-progress guard tolerates any stray cycle.
+		cache := make(map[model.ID]map[model.ID]bool)
+		inProgress := make(map[model.ID]bool)
+		var reachableFrom func(id model.ID) map[model.ID]bool
+		reachableFrom = func(id model.ID) map[model.ID]bool {
+			if r, ok := cache[id]; ok {
+				return r
+			}
+			if inProgress[id] {
+				return nil
+			}
+			inProgress[id] = true
+			r := make(map[model.ID]bool)
+			for _, flow := range findNormalFlows(flowsByOrigin[id]) {
+				if flow.DestinationID == "" {
+					continue
+				}
+				r[flow.DestinationID] = true
+				for k := range reachableFrom(flow.DestinationID) {
+					r[k] = true
+				}
+			}
+			delete(inProgress, id)
+			cache[id] = r
+			return r
+		}
+
+		assignments := make(map[string][]assignment)
+		var loops []*microflows.LoopedActivity
+		for _, obj := range collection.Objects {
+			switch o := obj.(type) {
+			case *microflows.ActionActivity:
+				if name := actionOutputVariableName(o.Action); name != "" {
+					assignments[name] = append(assignments[name], assignment{id: o.GetID(), pos: o.GetPosition()})
+				}
+			case *microflows.LoopedActivity:
+				loops = append(loops, o)
 			}
 		}
 
-		var walkNode func(model.ID, map[string]outputVariableSeen, map[model.ID]bool)
-		walkNode = func(currentID model.ID, seen map[string]outputVariableSeen, path map[model.ID]bool) {
-			if currentID == "" || path[currentID] {
-				return
+		for name, list := range assignments {
+			// An outer assignment on the entry path collides with any assignment here.
+			if pos, ok := inherited[name]; ok {
+				record(name, pos)
+				continue
 			}
-			obj := activityMap[currentID]
-			if obj == nil {
-				return
-			}
-			path = cloneIDBoolMap(path)
-			path[currentID] = true
-			seen = cloneSeenOutputs(seen)
-
-			if activity, ok := obj.(*microflows.ActionActivity); ok {
-				if name := actionOutputVariableName(activity.Action); name != "" {
-					if first, ok := seen[name]; ok {
-						if _, recorded := warningPositions[name]; !recorded {
-							warningPositions[name] = first.pos
-						}
-					} else {
-						seen[name] = outputVariableSeen{pos: obj.GetPosition()}
+			// Within this collection: a duplicate iff one assignment reaches another.
+			for i := range list {
+				reach := reachableFrom(list[i].id)
+				for j := range list {
+					if i != j && reach[list[j].id] {
+						record(name, list[i].pos)
 					}
 				}
 			}
-			if loop, ok := obj.(*microflows.LoopedActivity); ok {
-				walkCollection(loop.ObjectCollection, seen)
-			}
-			for _, flow := range findNormalFlows(flowsByOrigin[currentID]) {
-				walkNode(flow.DestinationID, seen, path)
-			}
 		}
 
-		for _, startID := range starts {
-			walkNode(startID, cloneSeenOutputs(inherited), nil)
+		// Recurse into loop bodies. Names visible on entry to a loop body are the
+		// inherited names plus names assigned in this collection by an activity that
+		// reaches the loop node.
+		for _, loop := range loops {
+			childInherited := make(map[string]model.Point, len(inherited))
+			for n, p := range inherited {
+				childInherited[n] = p
+			}
+			for name, list := range assignments {
+				if _, ok := childInherited[name]; ok {
+					continue
+				}
+				for _, a := range list {
+					if a.id != loop.GetID() && reachableFrom(a.id)[loop.GetID()] {
+						childInherited[name] = a.pos
+						break
+					}
+				}
+			}
+			walk(loop.ObjectCollection, childInherited)
 		}
 	}
-	walkCollection(oc, nil)
+	walk(oc, nil)
 
 	var names []string
 	for name := range warningPositions {
@@ -875,28 +923,6 @@ func duplicateOutputVariableWarnings(oc *microflows.MicroflowObjectCollection) [
 		warnings = append(warnings, fmt.Sprintf("-- WARNING: duplicate output variable $%s at position (%d, %d) - model is invalid; open in Studio Pro to fix", name, pos.X, pos.Y))
 	}
 	return warnings
-}
-
-func cloneSeenOutputs(src map[string]outputVariableSeen) map[string]outputVariableSeen {
-	if src == nil {
-		return make(map[string]outputVariableSeen)
-	}
-	dst := make(map[string]outputVariableSeen, len(src))
-	for k, v := range src {
-		dst[k] = v
-	}
-	return dst
-}
-
-func cloneIDBoolMap(src map[model.ID]bool) map[model.ID]bool {
-	if src == nil {
-		return make(map[model.ID]bool)
-	}
-	dst := make(map[model.ID]bool, len(src))
-	for k, v := range src {
-		dst[k] = v
-	}
-	return dst
 }
 
 func actionOutputVariableName(action any) string {
