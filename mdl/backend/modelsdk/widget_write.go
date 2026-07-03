@@ -345,7 +345,8 @@ func widgetToGen(w pages.Widget) (element.Element, error) {
 		g := genPg.NewActionButton()
 		applyWidgetBase(g, &x.BaseWidget)
 		g.SetAriaRole("Button")
-		g.SetRenderType("Button")
+		// "Link" for a `linkbutton` (action button rendered as a link), else "Button".
+		g.SetRenderType(orDefaultStr(string(x.RenderMode), "Button"))
 		g.SetButtonStyle(orDefaultStr(string(x.ButtonStyle), "Default"))
 		if x.CaptionTemplate != nil {
 			g.SetCaption(clientTemplateToGen(x.CaptionTemplate))

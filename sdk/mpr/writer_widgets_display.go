@@ -319,6 +319,13 @@ func serializeActionButton(ab *pages.ActionButton) bson.D {
 		buttonStyle = "Default"
 	}
 
+	// RenderType distinguishes a normal action button ("Button") from a
+	// link-rendered one ("Link", authored as `linkbutton`).
+	renderType := string(ab.RenderMode)
+	if renderType == "" {
+		renderType = "Button"
+	}
+
 	// Build caption as ClientTemplate
 	caption := serializeClientTemplate(ab.CaptionTemplate, ab.Caption, "Button")
 
@@ -334,7 +341,7 @@ func serializeActionButton(ab *pages.ActionButton) bson.D {
 		{Key: "Icon", Value: nil},
 		{Key: "Name", Value: ab.Name},
 		{Key: "NativeAccessibilitySettings", Value: nil},
-		{Key: "RenderType", Value: "Button"},
+		{Key: "RenderType", Value: renderType},
 		{Key: "TabIndex", Value: int64(0)},
 		{Key: "Tooltip", Value: bson.D{
 			{Key: "$ID", Value: idToBsonBinary(generateUUID())},

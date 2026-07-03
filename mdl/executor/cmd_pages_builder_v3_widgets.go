@@ -614,6 +614,12 @@ func (pb *pageBuilder) buildButtonV3(w *ast.WidgetV3) (*pages.ActionButton, erro
 			Name: w.Name,
 		},
 		ButtonStyle: pages.ButtonStyleDefault,
+		RenderMode:  pages.ButtonRenderModeButton,
+	}
+	// A `linkbutton` is an action button rendered as a link (Forms$ActionButton
+	// with RenderType "Link"), not the legacy address-based Forms$LinkButton.
+	if strings.ToLower(w.Type) == "linkbutton" {
+		btn.RenderMode = pages.ButtonRenderModeLink
 	}
 
 	// Handle Caption

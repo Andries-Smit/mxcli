@@ -246,6 +246,8 @@ create page PgTest.P005_OrderEdit
       }
       column col2b (desktopwidth: 6) {
         actionbutton btnCancel (caption: 'Cancel', action: cancel_changes)
+        -- linkbutton renders an action button as a link (Forms$ActionButton, RenderType=Link)
+        linkbutton lnkCancel (caption: 'Cancel', action: cancel_changes)
       }
     }
   }

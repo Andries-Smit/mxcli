@@ -280,7 +280,12 @@ func outputWidgetMDLV3(ctx *ExecContext, w rawWidget, indent int) {
 		formatWidgetProps(ctx.Output, prefix, header, props, "\n")
 
 	case "Forms$ActionButton", "Pages$ActionButton":
-		header := fmt.Sprintf("actionbutton %s", mdlIdent(w.Name))
+		// RenderType "Link" round-trips as the `linkbutton` keyword.
+		keyword := "actionbutton"
+		if w.RenderMode == "Link" {
+			keyword = "linkbutton"
+		}
+		header := fmt.Sprintf("%s %s", keyword, mdlIdent(w.Name))
 		props := []string{}
 		if w.Caption != "" {
 			props = append(props, fmt.Sprintf("Caption: %s", mdlQuote(w.Caption)))
