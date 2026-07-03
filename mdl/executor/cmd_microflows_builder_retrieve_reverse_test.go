@@ -12,12 +12,14 @@ import (
 	"github.com/mendixlabs/mxcli/sdk/microflows"
 )
 
-// A reverse Reference traversal (`$Child/Sample.Parent_Child`) is an in-memory
-// retrieve-by-association, NOT a database retrieve — Mendix returns a list and
-// mxbuild accepts it. Rewriting it to a DatabaseRetrieveSource made memory and
-// database retrieves indistinguishable on round-trip (issue #726). The output
-// variable is still typed as a list.
-func TestAddRetrieveAction_ReverseReferenceOwnerBothUsesAssociationSource(t *testing.T) {
+// A reverse Reference traversal used as a LIST over an owner="both" association
+// is the one case that must fall back to a DatabaseRetrieveSource: a reverse
+// AssociationRetrieveSource over an owner-both Reference resolves to a single
+// object in Mendix (CE0100 when fed to a loop/aggregate), so there is no
+// in-memory way to obtain the list. (Owner-default reverse traversals stay
+// association retrieves — see the DefaultOwner test — which is what keeps memory
+// and database retrieves distinct for issue #726.)
+func TestAddRetrieveAction_ReverseReferenceOwnerBothListUsesDatabaseSource(t *testing.T) {
 	fb := newRetrieveAssociationFlowBuilder(domainmodel.AssociationOwnerBoth)
 	fb.varTypes["Child"] = "Sample.Child"
 	fb.listInputVariables = map[string]bool{"Parents": true}
@@ -29,12 +31,12 @@ func TestAddRetrieveAction_ReverseReferenceOwnerBothUsesAssociationSource(t *tes
 	})
 
 	action := onlyRetrieveAction(t, fb)
-	source, ok := action.Source.(*microflows.AssociationRetrieveSource)
+	source, ok := action.Source.(*microflows.DatabaseRetrieveSource)
 	if !ok {
-		t.Fatalf("owner-both reverse retrieve source = %T, want AssociationRetrieveSource", action.Source)
+		t.Fatalf("owner-both reverse list retrieve source = %T, want DatabaseRetrieveSource", action.Source)
 	}
-	if source.StartVariable != "Child" || source.AssociationQualifiedName != "Sample.Parent_Child" {
-		t.Fatalf("association source = %#v", source)
+	if source.EntityQualifiedName != "Sample.Parent" || source.XPathConstraint != "[Sample.Parent_Child = $Child]" {
+		t.Fatalf("database source = %#v", source)
 	}
 	if got := fb.varTypes["Parents"]; got != "List of Sample.Parent" {
 		t.Fatalf("result var type = %q, want List of Sample.Parent", got)
@@ -195,7 +197,10 @@ func TestBuildFlowGraph_ReverseReferenceOwnerBothAttributeUsagePreservesAssociat
 	}
 }
 
-func TestBuildFlowGraph_ReverseReferenceOwnerBothLoopUsageUsesAssociationSource(t *testing.T) {
+// Loop usage detected via the flow graph makes an owner-both reverse Reference a
+// list consumer, so it falls back to a DatabaseRetrieveSource (see the
+// OwnerBothList test for why).
+func TestBuildFlowGraph_ReverseReferenceOwnerBothLoopUsageUsesDatabaseSource(t *testing.T) {
 	fb := newRetrieveAssociationFlowBuilder(domainmodel.AssociationOwnerBoth)
 	fb.posX = 200
 	fb.posY = 200
@@ -217,12 +222,12 @@ func TestBuildFlowGraph_ReverseReferenceOwnerBothLoopUsageUsesAssociationSource(
 	fb.buildFlowGraph(stmts, nil)
 
 	action := firstRetrieveAction(t, fb)
-	source, ok := action.Source.(*microflows.AssociationRetrieveSource)
+	source, ok := action.Source.(*microflows.DatabaseRetrieveSource)
 	if !ok {
-		t.Fatalf("owner-both loop usage source = %T, want AssociationRetrieveSource", action.Source)
+		t.Fatalf("owner-both loop usage source = %T, want DatabaseRetrieveSource", action.Source)
 	}
-	if source.StartVariable != "Child" || source.AssociationQualifiedName != "Sample.Parent_Child" {
-		t.Fatalf("association source = %#v", source)
+	if source.EntityQualifiedName != "Sample.Parent" || source.XPathConstraint != "[Sample.Parent_Child = $Child]" {
+		t.Fatalf("database source = %#v", source)
 	}
 	if got := fb.varTypes["Parents"]; got != "List of Sample.Parent" {
 		t.Fatalf("result var type = %q, want List of Sample.Parent", got)
