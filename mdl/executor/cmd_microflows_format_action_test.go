@@ -790,7 +790,11 @@ func TestFormatAction_Retrieve_Association(t *testing.T) {
 	}
 }
 
-func TestFormatAction_Retrieve_ReverseAssociationDatabaseSourceUsesCompactForm(t *testing.T) {
+// A DatabaseRetrieveSource always renders in database form, even when its XPath
+// is a reverse-association constraint — it must NOT collapse to the association
+// shorthand `from $var/Assoc`, which is the in-memory retrieve form. Rendering a
+// database retrieve that way made the two indistinguishable (issue #726).
+func TestFormatAction_Retrieve_ReverseAssociationDatabaseSourceUsesDatabaseForm(t *testing.T) {
 	e := newTestExecutor()
 	e.backend = reverseAssociationBackend(t)
 	action := &microflows.RetrieveAction{
@@ -803,7 +807,7 @@ func TestFormatAction_Retrieve_ReverseAssociationDatabaseSourceUsesCompactForm(t
 	}
 
 	got := e.formatAction(action, nil, nil)
-	want := "retrieve $Domains from $Runtime/SampleRuntime.Domain_Runtime;"
+	want := "retrieve $Domains from SampleRuntime.Domain\n    where SampleRuntime.Domain_Runtime = $Runtime;"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}

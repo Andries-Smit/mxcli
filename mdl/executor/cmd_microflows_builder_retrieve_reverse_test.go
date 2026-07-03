@@ -12,7 +12,12 @@ import (
 	"github.com/mendixlabs/mxcli/sdk/microflows"
 )
 
-func TestAddRetrieveAction_ReverseReferenceOwnerBothUsesDatabaseSource(t *testing.T) {
+// A reverse Reference traversal (`$Child/Sample.Parent_Child`) is an in-memory
+// retrieve-by-association, NOT a database retrieve — Mendix returns a list and
+// mxbuild accepts it. Rewriting it to a DatabaseRetrieveSource made memory and
+// database retrieves indistinguishable on round-trip (issue #726). The output
+// variable is still typed as a list.
+func TestAddRetrieveAction_ReverseReferenceOwnerBothUsesAssociationSource(t *testing.T) {
 	fb := newRetrieveAssociationFlowBuilder(domainmodel.AssociationOwnerBoth)
 	fb.varTypes["Child"] = "Sample.Child"
 	fb.listInputVariables = map[string]bool{"Parents": true}
@@ -24,12 +29,12 @@ func TestAddRetrieveAction_ReverseReferenceOwnerBothUsesDatabaseSource(t *testin
 	})
 
 	action := onlyRetrieveAction(t, fb)
-	source, ok := action.Source.(*microflows.DatabaseRetrieveSource)
+	source, ok := action.Source.(*microflows.AssociationRetrieveSource)
 	if !ok {
-		t.Fatalf("owner-both reverse retrieve source = %T, want DatabaseRetrieveSource", action.Source)
+		t.Fatalf("owner-both reverse retrieve source = %T, want AssociationRetrieveSource", action.Source)
 	}
-	if source.EntityQualifiedName != "Sample.Parent" || source.XPathConstraint != "[Sample.Parent_Child = $Child]" {
-		t.Fatalf("database source = %#v", source)
+	if source.StartVariable != "Child" || source.AssociationQualifiedName != "Sample.Parent_Child" {
+		t.Fatalf("association source = %#v", source)
 	}
 	if got := fb.varTypes["Parents"]; got != "List of Sample.Parent" {
 		t.Fatalf("result var type = %q, want List of Sample.Parent", got)
@@ -60,7 +65,7 @@ func TestAddRetrieveAction_ReverseReferenceOwnerBothObjectUsagePreservesAssociat
 	}
 }
 
-func TestAddRetrieveAction_ReverseReferenceDefaultOwnerUsesDatabaseSource(t *testing.T) {
+func TestAddRetrieveAction_ReverseReferenceDefaultOwnerUsesAssociationSource(t *testing.T) {
 	fb := newRetrieveAssociationFlowBuilder(domainmodel.AssociationOwnerDefault)
 	fb.varTypes["Child"] = "Sample.Child"
 
@@ -71,12 +76,12 @@ func TestAddRetrieveAction_ReverseReferenceDefaultOwnerUsesDatabaseSource(t *tes
 	})
 
 	action := onlyRetrieveAction(t, fb)
-	source, ok := action.Source.(*microflows.DatabaseRetrieveSource)
+	source, ok := action.Source.(*microflows.AssociationRetrieveSource)
 	if !ok {
-		t.Fatalf("default-owner reverse retrieve source = %T, want DatabaseRetrieveSource", action.Source)
+		t.Fatalf("default-owner reverse retrieve source = %T, want AssociationRetrieveSource", action.Source)
 	}
-	if source.EntityQualifiedName != "Sample.Parent" || source.XPathConstraint != "[Sample.Parent_Child = $Child]" {
-		t.Fatalf("database source = %#v", source)
+	if source.StartVariable != "Child" || source.AssociationQualifiedName != "Sample.Parent_Child" {
+		t.Fatalf("association source = %#v", source)
 	}
 	if got := fb.varTypes["Parents"]; got != "List of Sample.Parent" {
 		t.Fatalf("result var type = %q, want List of Sample.Parent", got)
@@ -190,7 +195,7 @@ func TestBuildFlowGraph_ReverseReferenceOwnerBothAttributeUsagePreservesAssociat
 	}
 }
 
-func TestBuildFlowGraph_ReverseReferenceOwnerBothLoopUsageUsesDatabaseSource(t *testing.T) {
+func TestBuildFlowGraph_ReverseReferenceOwnerBothLoopUsageUsesAssociationSource(t *testing.T) {
 	fb := newRetrieveAssociationFlowBuilder(domainmodel.AssociationOwnerBoth)
 	fb.posX = 200
 	fb.posY = 200
@@ -212,12 +217,12 @@ func TestBuildFlowGraph_ReverseReferenceOwnerBothLoopUsageUsesDatabaseSource(t *
 	fb.buildFlowGraph(stmts, nil)
 
 	action := firstRetrieveAction(t, fb)
-	source, ok := action.Source.(*microflows.DatabaseRetrieveSource)
+	source, ok := action.Source.(*microflows.AssociationRetrieveSource)
 	if !ok {
-		t.Fatalf("owner-both loop usage source = %T, want DatabaseRetrieveSource", action.Source)
+		t.Fatalf("owner-both loop usage source = %T, want AssociationRetrieveSource", action.Source)
 	}
-	if source.EntityQualifiedName != "Sample.Parent" || source.XPathConstraint != "[Sample.Parent_Child = $Child]" {
-		t.Fatalf("database source = %#v", source)
+	if source.StartVariable != "Child" || source.AssociationQualifiedName != "Sample.Parent_Child" {
+		t.Fatalf("association source = %#v", source)
 	}
 	if got := fb.varTypes["Parents"]; got != "List of Sample.Parent" {
 		t.Fatalf("result var type = %q, want List of Sample.Parent", got)

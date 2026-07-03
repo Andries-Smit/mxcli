@@ -1,0 +1,50 @@
+-- ============================================================================
+-- Bug #726 — database and memory (association) retrieves indistinguishable
+-- ============================================================================
+--
+-- Symptom (before fix):
+--   A retrieve-by-association (in-memory) and a database retrieve whose XPath is
+--   a reverse-association constraint both rendered as the association shorthand
+--   `retrieve $x from $Order/Module.Assoc`, so they were indistinguishable. And
+--   re-running the script turned BOTH into database retrieves — the memory
+--   retrieve was silently lost.
+--
+--   Two root causes:
+--     1. Build: a reverse-Reference `from $var/Assoc` was rewritten to a
+--        DatabaseRetrieveSource (the heuristic wrongly assumed an
+--        AssociationRetrieveSource always returns a single object). Mendix in
+--        fact returns a list for reverse traversal and mxbuild accepts it.
+--     2. Describe: a DatabaseRetrieveSource with a reverse-association XPath was
+--        rendered using the association shorthand.
+--
+-- After fix:
+--   `from $var/Assoc` is ALWAYS an AssociationRetrieveSource (memory); a
+--   database retrieve ALWAYS renders as `from Entity where …`. The two are
+--   distinct and round-trip stably.
+--
+-- Usage:
+--   mxcli exec mdl-examples/bug-tests/726-retrieve-db-vs-memory-distinct.mdl -p app.mpr
+--   mxcli -p app.mpr -c "describe microflow TestBug726.ACT_get_test"
+--   The two retrieves must render differently (one `from $Order/…`, one
+--   `from …OrderLine where …`), and mx check must report 0 errors.
+-- ============================================================================
+
+create module TestBug726;
+
+create persistent entity TestBug726.Order ( OrderNo: string(50) );
+create persistent entity TestBug726.OrderLine ( LineNo: integer );
+create association TestBug726.OrderLine_Order
+  from TestBug726.OrderLine to TestBug726.Order
+  type reference owner default;
+/
+
+create microflow TestBug726.ACT_get_test ( $Order: TestBug726.Order )
+begin
+  -- memory / retrieve-by-association (reverse Reference -> list of OrderLine)
+  retrieve $OrderLineList_M from $Order/TestBug726.OrderLine_Order;
+  -- database retrieve with the equivalent XPath
+  retrieve $OrderLineList_DB from TestBug726.OrderLine
+    where TestBug726.OrderLine_Order = $Order;
+  return;
+end;
+/

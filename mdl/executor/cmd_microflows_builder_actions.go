@@ -820,76 +820,59 @@ func (fb *flowBuilder) addRetrieveAction(s *ast.RetrieveStmt) model.ID {
 			startVarType = fb.varTypes[s.StartVariable]
 		}
 
-		outputUsedAsList := fb.listInputVariables != nil && fb.listInputVariables[s.Variable]
 		outputUsedAsObject := fb.objectInputVariables != nil && fb.objectInputVariables[s.Variable]
 		// startsFromChildSide is true when the retrieve's start variable is the
 		// child side of the association (or a subclass of it). Inheritance has
 		// to be honoured so traversals like `$httpRequest/System.HttpHeaders`
 		// — where HttpRequest extends HttpMessage and HttpHeaders has child
-		// HttpMessage — are still classified as reverse traversal.
+		// HttpMessage — are still classified as reverse traversal (which returns
+		// a list, so the output variable is typed accordingly below).
 		startsFromChildSide := assocInfo != nil &&
 			assocInfo.childEntityQN != "" &&
 			fb.entityIsSubtypeOf(startVarType, assocInfo.childEntityQN)
-		// Owner-both Reference associations need later usage context: the same
-		// compact retrieve can be consumed as either a list or a single object.
-		// Owner="" means metadata was unavailable, so keep the association source.
-		expandReverseReference := assocInfo != nil &&
-			assocInfo.Type == domainmodel.AssociationTypeReference &&
-			assocInfo.Owner != "" &&
-			assocInfo.parentPersistable &&
-			assocInfo.childEntityQN != "" &&
-			startsFromChildSide &&
-			(assocInfo.Owner != domainmodel.AssociationOwnerBoth || (outputUsedAsList && !outputUsedAsObject))
 
-		if expandReverseReference {
-			// Reverse traversal on Reference: child → parent (one-to-many)
-			// Use DatabaseRetrieveSource with XPath to get a list of parent entities
-			dbSource := &microflows.DatabaseRetrieveSource{
-				BaseElement:         model.BaseElement{ID: model.ID(types.GenerateID())},
-				EntityQualifiedName: assocInfo.parentEntityQN,
-				XPathConstraint:     "[" + assocQN + " = $" + s.StartVariable + "]",
-			}
-			source = dbSource
-			if fb.varTypes != nil {
-				fb.varTypes[s.Variable] = "List of " + assocInfo.parentEntityQN
-			}
-		} else {
-			// Forward traversal or ReferenceSet: use AssociationRetrieveSource
-			source = &microflows.AssociationRetrieveSource{
-				BaseElement:              model.BaseElement{ID: model.ID(types.GenerateID())},
-				StartVariable:            s.StartVariable,
-				AssociationQualifiedName: assocQN,
-			}
-			if fb.varTypes != nil {
-				if assocInfo != nil && assocInfo.Type == domainmodel.AssociationTypeReference {
-					// Forward Reference traversal returns a single object. Legacy or
-					// non-persistable reverse traversal can still use association
-					// source syntax, but keeps list typing for downstream actions.
-					otherEntity := assocInfo.childEntityQN
-					if startsFromChildSide {
-						otherEntity = assocInfo.parentEntityQN
-					}
-					if startsFromChildSide && !outputUsedAsObject {
-						fb.varTypes[s.Variable] = "List of " + otherEntity
-					} else {
-						fb.varTypes[s.Variable] = otherEntity
-					}
-				} else if assocInfo != nil && assocInfo.Type == domainmodel.AssociationTypeReferenceSet {
-					// ReferenceSet traversal returns a list of the entity on the other side,
-					// not a list typed as the association itself.
-					otherEntity := assocInfo.childEntityQN
-					if startsFromChildSide {
-						otherEntity = assocInfo.parentEntityQN
-					}
-					if otherEntity != "" {
-						fb.varTypes[s.Variable] = "List of " + otherEntity
-					} else {
-						fb.varTypes[s.Variable] = "List of " + assocQN
-					}
+		// The `$var/Module.Assoc` syntax is ALWAYS a retrieve-by-association (an
+		// in-memory retrieve), regardless of traversal direction. Mendix resolves
+		// the result multiplicity from the association metadata: a reverse
+		// Reference traversal (child → parent) returns a list, and mxbuild
+		// accepts an AssociationRetrieveSource for it. Rewriting it to a
+		// DatabaseRetrieveSource (as an earlier heuristic did) turns a memory
+		// retrieve into a database retrieve and makes the two indistinguishable
+		// on round-trip — issue #726. Only the output variable's *type* differs
+		// by direction; the source stays an AssociationRetrieveSource.
+		source = &microflows.AssociationRetrieveSource{
+			BaseElement:              model.BaseElement{ID: model.ID(types.GenerateID())},
+			StartVariable:            s.StartVariable,
+			AssociationQualifiedName: assocQN,
+		}
+		if fb.varTypes != nil {
+			if assocInfo != nil && assocInfo.Type == domainmodel.AssociationTypeReference {
+				// Reference: forward traversal (parent side) → single object;
+				// reverse traversal (child side) → list of the other entity.
+				otherEntity := assocInfo.childEntityQN
+				if startsFromChildSide {
+					otherEntity = assocInfo.parentEntityQN
+				}
+				if startsFromChildSide && !outputUsedAsObject {
+					fb.varTypes[s.Variable] = "List of " + otherEntity
 				} else {
-					// ReferenceSet or unknown: returns a list
+					fb.varTypes[s.Variable] = otherEntity
+				}
+			} else if assocInfo != nil && assocInfo.Type == domainmodel.AssociationTypeReferenceSet {
+				// ReferenceSet traversal returns a list of the entity on the other side,
+				// not a list typed as the association itself.
+				otherEntity := assocInfo.childEntityQN
+				if startsFromChildSide {
+					otherEntity = assocInfo.parentEntityQN
+				}
+				if otherEntity != "" {
+					fb.varTypes[s.Variable] = "List of " + otherEntity
+				} else {
 					fb.varTypes[s.Variable] = "List of " + assocQN
 				}
+			} else {
+				// ReferenceSet or unknown: returns a list
+				fb.varTypes[s.Variable] = "List of " + assocQN
 			}
 		}
 	} else {

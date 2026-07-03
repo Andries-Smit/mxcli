@@ -396,10 +396,13 @@ func formatAction(
 				entityName = "Entity"
 			}
 
-			if startVar, assocName, ok := parseReverseAssociationRetrieve(ctx, dbSource, entityName); ok {
-				return fmt.Sprintf("retrieve $%s from $%s/%s;", outputVar, startVar, assocName)
-			}
-
+			// A DatabaseRetrieveSource always renders in database form
+			// (`from Entity where …`). It must NOT be collapsed to the
+			// association shorthand `from $var/Assoc` even when its XPath is a
+			// reverse-association constraint — that shorthand is the in-memory
+			// retrieve-by-association form, and rendering a database retrieve
+			// that way makes the two indistinguishable and breaks round-trip
+			// (issue #726).
 			stmt := fmt.Sprintf("retrieve $%s from %s", outputVar, entityName)
 
 			if dbSource.XPathConstraint != "" {
