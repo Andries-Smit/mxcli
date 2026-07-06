@@ -321,7 +321,7 @@ func (w *Writer) UpdateOqlQueriesForMovedEntity(oldQualifiedName, newQualifiedNa
 		raw["Oql"] = newOql
 
 		// Re-serialize and update
-		contents, err := bson.Marshal(raw)
+		contents, err := marshalUnitIDFirst(raw)
 		if err != nil {
 			continue
 		}
@@ -506,7 +506,7 @@ func (w *Writer) CreateViewEntitySourceDocument(moduleID model.ID, moduleName, d
 		{Key: "Oql", Value: oqlQuery},
 	}
 
-	contents, err := bson.Marshal(doc)
+	contents, err := marshalUnitIDFirst(doc)
 	if err != nil {
 		return "", fmt.Errorf("failed to serialize ViewEntitySourceDocument: %w", err)
 	}
@@ -649,7 +649,7 @@ func (w *Writer) serializeDomainModel(dm *domainmodel.DomainModel) ([]byte, erro
 		{Key: "Associations", Value: associations},
 		{Key: "CrossAssociations", Value: crossAssociations},
 	}
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 func serializeEntity(e *domainmodel.Entity, moduleName string, pv *version.ProjectVersion) bson.D {

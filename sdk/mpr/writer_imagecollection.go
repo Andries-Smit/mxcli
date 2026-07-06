@@ -67,5 +67,5 @@ func serializeImageCollection(ic *ImageCollection) ([]byte, error) {
 		{Key: "Name", Value: ic.Name},
 	}
 
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }

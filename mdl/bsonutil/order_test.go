@@ -89,3 +89,84 @@ func findKey(t *testing.T, d bson.D, key string) any {
 	t.Fatalf("key %q not found in %v", key, d)
 	return nil
 }
+
+// TestHoistStorageID_PreservesOrderExceptID is the key distinction from
+// OrderStorageValue: HoistStorageID lifts "$ID" first and "$Type" second but must
+// NOT reorder the remaining keys. A blind sort (as OrderStorageValue does)
+// corrupts template-derived pluggable-widget page trees, so the nightly's
+// datagrid pages must round-trip with their widget field order intact.
+func TestHoistStorageID_PreservesOrderExceptID(t *testing.T) {
+	// A widget-shaped doc: $ID appears late, and the non-$ID keys are in a
+	// deliberately non-alphabetical order that must be preserved.
+	in := bson.D{
+		{Key: "Name", Value: "w"},
+		{Key: "LabelTemplate", Value: "lt"},
+		{Key: "$Type", Value: "Forms$TextBox"},
+		{Key: "TabIndex", Value: int32(0)},
+		{Key: "$ID", Value: "id-1"},
+		{Key: "Attribute", Value: "Attr"},
+	}
+	got, ok := HoistStorageID(in).(bson.D)
+	if !ok {
+		t.Fatalf("HoistStorageID returned %T, want bson.D", HoistStorageID(in))
+	}
+	gotKeys := make([]string, len(got))
+	for i, e := range got {
+		gotKeys[i] = e.Key
+	}
+	// $ID first, $Type second, then the rest in ORIGINAL order (not sorted).
+	want := []string{"$ID", "$Type", "Name", "LabelTemplate", "TabIndex", "Attribute"}
+	if len(gotKeys) != len(want) {
+		t.Fatalf("keys = %v, want %v", gotKeys, want)
+	}
+	for i := range want {
+		if gotKeys[i] != want[i] {
+			t.Errorf("key[%d] = %q, want %q (full: %v)", i, gotKeys[i], want[i], gotKeys)
+		}
+	}
+}
+
+// TestHoistStorageID_RecursesAndMarshalsIDFirst verifies nested objects are
+// hoisted too and the marshalled bytes lead with $ID at every level.
+func TestHoistStorageID_RecursesAndMarshalsIDFirst(t *testing.T) {
+	in := bson.D{
+		{Key: "Widget", Value: bson.D{
+			{Key: "LabelTemplate", Value: "lt"},
+			{Key: "$Type", Value: "T"},
+			{Key: "$ID", Value: "child"},
+		}},
+		{Key: "$ID", Value: "root"},
+	}
+	raw, err := bson.Marshal(HoistStorageID(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var d bson.D
+	if err := bson.Unmarshal(raw, &d); err != nil {
+		t.Fatal(err)
+	}
+	if d[0].Key != "$ID" {
+		t.Errorf("root first key = %q, want $ID", d[0].Key)
+	}
+	child := findKey(t, d, "Widget").(bson.D)
+	if child[0].Key != "$ID" {
+		t.Errorf("child first key = %q, want $ID", child[0].Key)
+	}
+}
+
+// TestHoistStorageID_MapFallbackHoistsID confirms a Go map (no inherent order)
+// still comes out $ID-first after marshalling.
+func TestHoistStorageID_MapFallbackHoistsID(t *testing.T) {
+	in := map[string]any{"Zeta": 1, "LabelTemplate": 2, "$ID": "x", "$Type": "T"}
+	raw, err := bson.Marshal(HoistStorageID(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var d bson.D
+	if err := bson.Unmarshal(raw, &d); err != nil {
+		t.Fatal(err)
+	}
+	if d[0].Key != "$ID" || d[1].Key != "$Type" {
+		t.Errorf("first two keys = %q,%q, want $ID,$Type", d[0].Key, d[1].Key)
+	}
+}

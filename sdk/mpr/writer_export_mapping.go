@@ -82,7 +82,7 @@ func (w *Writer) serializeExportMapping(em *model.ExportMapping) ([]byte, error)
 		{Key: "WsdlFile", Value: ""},
 		{Key: "MappingSourceReference", Value: nil},
 	}
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 func serializeExportMappingElement(elem *model.ExportMappingElement, parentPath string) bson.D {

@@ -65,7 +65,7 @@ func serializeJsonStructure(js *JsonStructure) ([]byte, error) {
 		{Key: "Name", Value: js.Name},
 	}
 
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 // serializeJsonElement serializes a single JsonElement to BSON.

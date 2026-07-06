@@ -80,7 +80,7 @@ func (w *Writer) serializeDatabaseConnection(conn *model.DatabaseConnection) ([]
 	// LastSelectedQuery (empty ref)
 	doc = append(doc, bson.E{Key: "LastSelectedQuery", Value: ""})
 
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 func serializeDBQuery(q *model.DatabaseQuery) bson.D {

@@ -116,7 +116,7 @@ func (w *Writer) serializeJavaScriptAction(jsa *JavaScriptAction) ([]byte, error
 		{Key: "TypeParameters", Value: typeParams},
 	}
 
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 // jsActionSourceDir returns javascriptsource/<module>/actions, using the original

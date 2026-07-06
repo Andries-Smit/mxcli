@@ -84,7 +84,7 @@ func (w *Writer) serializeConsumedRestService(svc *model.ConsumedRestService) ([
 	}
 	doc = append(doc, bson.E{Key: "Operations", Value: ops})
 
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 // serializeValueTemplate creates a Rest$ValueTemplate BSON object.
@@ -525,7 +525,7 @@ func (w *Writer) serializePublishedRestService(svc *model.PublishedRestService) 
 		{Key: "Resources", Value: resources},
 	}
 
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 // serializePublishedRestParams builds the Parameters array for a published REST operation.

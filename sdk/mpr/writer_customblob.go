@@ -71,7 +71,7 @@ func (w *Writer) writeCustomBlobDocument(in customBlobInput) error {
 		{Key: "Name", Value: in.Name},
 	}
 
-	contents, err := bson.Marshal(doc)
+	contents, err := marshalUnitIDFirst(doc)
 	if err != nil {
 		return fmt.Errorf("failed to marshal CustomBlobDocument BSON: %w", err)
 	}
@@ -111,7 +111,7 @@ func (w *Writer) updateCustomBlobDocument(in customBlobInput) error {
 		{Key: "Name", Value: in.Name},
 	}
 
-	contents, err := bson.Marshal(doc)
+	contents, err := marshalUnitIDFirst(doc)
 	if err != nil {
 		return fmt.Errorf("failed to marshal CustomBlobDocument BSON: %w", err)
 	}

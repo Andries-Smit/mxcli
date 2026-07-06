@@ -109,7 +109,7 @@ func (w *Writer) serializeWorkflow(wf *workflows.Workflow) ([]byte, error) {
 	// NOTE: OverviewPage was deleted in Mendix 9.11.0 — do not serialize it.
 	// NOTE: AllowedModuleRoles is not present in Studio Pro BSON — omitted.
 
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 // serializeWorkflowStringTemplate creates a minimal Mendix StringTemplate BSON structure for workflows.

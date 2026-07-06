@@ -55,6 +55,81 @@ func OrderStorageValue(v any) any {
 	}
 }
 
+// HoistStorageID is the minimal counterpart to OrderStorageValue: it moves "$ID"
+// first and "$Type" second in every document, but PRESERVES the original relative
+// order of all other keys (for ordered bson.D input) instead of sorting them.
+//
+// Prefer this over OrderStorageValue on trees that contain pluggable-widget /
+// datagrid page objects: those carry template-derived structures whose field
+// order Mendix is sensitive to, and a blind sort corrupts them (mx aborts with
+// "Expected '$ID' as the first property … but got 'LabelTemplate'"). This hoist
+// changes only what Mendix 11.12 actually requires — "$ID" first — and leaves
+// everything else byte-for-byte where it was. Go maps (which have no inherent
+// order) still fall back to sorted output for stability.
+func HoistStorageID(v any) any {
+	switch t := v.(type) {
+	case bson.D:
+		return hoistPairs(t)
+	case bson.M:
+		return hoistPairs(dFromMap(t))
+	case map[string]any:
+		return hoistPairs(dFromMap(t))
+	case bson.A:
+		out := make(bson.A, len(t))
+		for i, e := range t {
+			out[i] = HoistStorageID(e)
+		}
+		return out
+	case []any:
+		out := make([]any, len(t))
+		for i, e := range t {
+			out[i] = HoistStorageID(e)
+		}
+		return out
+	default:
+		return v
+	}
+}
+
+// dFromMap converts a Go map to a bson.D with keys sorted (a bare map carries no
+// order, so a stable sort is the only sensible input ordering); hoistPairs then
+// lifts "$ID"/"$Type" to the front.
+func dFromMap(m map[string]any) bson.D {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	d := make(bson.D, len(keys))
+	for i, k := range keys {
+		d[i] = bson.E{Key: k, Value: m[k]}
+	}
+	return d
+}
+
+// hoistPairs emits "$ID" first, "$Type" second, then every other element in its
+// original order, recursing into values via HoistStorageID.
+func hoistPairs(d bson.D) bson.D {
+	out := make(bson.D, 0, len(d))
+	for _, e := range d {
+		if e.Key == "$ID" {
+			out = append(out, bson.E{Key: e.Key, Value: HoistStorageID(e.Value)})
+		}
+	}
+	for _, e := range d {
+		if e.Key == "$Type" {
+			out = append(out, bson.E{Key: e.Key, Value: HoistStorageID(e.Value)})
+		}
+	}
+	for _, e := range d {
+		if e.Key == "$ID" || e.Key == "$Type" {
+			continue
+		}
+		out = append(out, bson.E{Key: e.Key, Value: HoistStorageID(e.Value)})
+	}
+	return out
+}
+
 // orderMap converts a map into an ordered bson.D with "$ID" first, "$Type"
 // second, and all other keys sorted. Values are recursed through
 // OrderStorageValue so nested storage objects gain the same ordering.

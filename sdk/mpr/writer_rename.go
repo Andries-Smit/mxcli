@@ -70,7 +70,7 @@ func (w *Writer) RenameReferences(oldName, newName string, dryRun bool) ([]Renam
 			})
 
 			if !dryRun {
-				newContents, err := bson.Marshal(updated)
+				newContents, err := marshalUnitIDFirst(updated)
 				if err != nil {
 					return hits, fmt.Errorf("failed to marshal updated document %s: %w", unit.ID, err)
 				}
@@ -135,7 +135,7 @@ func (w *Writer) RenameDocumentByName(moduleName, oldName, newName string) error
 			if elem.Key == "Name" {
 				if s, ok := elem.Value.(string); ok && s == oldName {
 					raw[i].Value = newName
-					newContents, err := bson.Marshal(raw)
+					newContents, err := marshalUnitIDFirst(raw)
 					if err != nil {
 						return fmt.Errorf("failed to marshal: %w", err)
 					}

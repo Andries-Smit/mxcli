@@ -58,7 +58,7 @@ func (w *Writer) readPatchWrite(unitID model.ID, patchFn func(doc bson.D) (bson.
 		return err
 	}
 
-	newBytes, err := bson.Marshal(doc)
+	newBytes, err := marshalUnitIDFirst(doc)
 	if err != nil {
 		return fmt.Errorf("failed to marshal BSON: %w", err)
 	}

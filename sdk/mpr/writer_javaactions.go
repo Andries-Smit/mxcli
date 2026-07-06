@@ -208,7 +208,7 @@ func (w *Writer) serializeJavaAction(ja *javaactions.JavaAction) ([]byte, error)
 		}})
 	}
 
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 // serializeReturnType serializes a CodeActionReturnType to BSON.

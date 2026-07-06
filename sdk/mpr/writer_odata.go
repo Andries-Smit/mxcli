@@ -124,7 +124,7 @@ func (w *Writer) serializeConsumedODataService(svc *model.ConsumedODataService) 
 	// HTTP configuration (required nested part)
 	doc = append(doc, bson.E{Key: "HttpConfiguration", Value: serializeHttpConfiguration(svc.HttpConfiguration)})
 
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 // serializeHttpConfiguration converts an HttpConfiguration to a BSON map.
@@ -303,7 +303,7 @@ func (w *Writer) serializePublishedODataService(svc *model.PublishedODataService
 		{Key: "ReplaceIllegalChars", Value: false},
 		{Key: "SupportsGraphQL", Value: false},
 	}
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 // serializePublishedEntityType converts a PublishedEntityType to a BSON map.

@@ -135,7 +135,7 @@ func (w *Writer) serializeEnumeration(enum *model.Enumeration) ([]byte, error) {
 		{Key: "RemoteSource", Value: nil},
 		{Key: "Values", Value: values},
 	}
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 func (w *Writer) serializeConstant(constant *model.Constant) ([]byte, error) {
@@ -150,7 +150,7 @@ func (w *Writer) serializeConstant(constant *model.Constant) ([]byte, error) {
 		{Key: "Excluded", Value: constant.Excluded},
 		{Key: "ExportLevel", Value: constant.ExportLevel},
 	}
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 // serializeConstantDataType converts a ConstantDataType to BSON.

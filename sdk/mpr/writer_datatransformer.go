@@ -116,5 +116,5 @@ func serializeDataTransformer(dt *model.DataTransformer) ([]byte, error) {
 		{Key: "Steps", Value: steps},
 	}
 
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }

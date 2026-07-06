@@ -202,7 +202,7 @@ func (w *Writer) serializeFolder(folder *model.Folder) ([]byte, error) {
 		{Key: "Name", Value: folder.Name},
 	}
 
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 // DeleteFolder deletes a folder unit if it is empty.
@@ -240,7 +240,7 @@ func (w *Writer) serializeModuleSecurity(id string) ([]byte, error) {
 		{Key: "$Type", Value: "Security$ModuleSecurity"},
 		{Key: "ModuleRoles", Value: bson.A{int32(1)}},
 	}
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 func (w *Writer) serializeModuleSettings(id string) ([]byte, error) {
@@ -255,7 +255,7 @@ func (w *Writer) serializeModuleSettings(id string) ([]byte, error) {
 		{Key: "SolutionIdentifier", Value: ""},
 		{Key: "Version", Value: "1.0.0"},
 	}
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 // UpdateModuleSettings persists the full Projects$ModuleSettings document,
@@ -327,7 +327,7 @@ func (w *Writer) serializeModuleSettingsFull(ms *types.ModuleSettings) ([]byte, 
 		{Key: "SolutionIdentifier", Value: ms.SolutionIdentifier},
 		{Key: "Version", Value: ver},
 	}
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 func (w *Writer) serializeModule(module *model.Module) ([]byte, error) {
@@ -343,5 +343,5 @@ func (w *Writer) serializeModule(module *model.Module) ([]byte, error) {
 		{Key: "IsThemeModule", Value: false},
 		{Key: "NewSortIndex", Value: int64(0)},
 	}
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }

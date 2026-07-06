@@ -27,7 +27,7 @@ func (w *Writer) UpdateQualifiedNameInAllUnits(oldName, newName string) (int, er
 		}
 
 		if replaceStringsInMap(raw, oldName, newName) {
-			contents, err := bson.Marshal(raw)
+			contents, err := marshalUnitIDFirst(raw)
 			if err != nil {
 				continue
 			}

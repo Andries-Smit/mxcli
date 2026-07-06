@@ -83,7 +83,7 @@ func (w *Writer) serializeImportMapping(im *model.ImportMapping) ([]byte, error)
 		{Key: "ServiceName", Value: ""},
 		{Key: "WsdlFile", Value: ""},
 	}
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 func serializeImportMappingElement(elem *model.ImportMappingElement, parentPath string) bson.D {

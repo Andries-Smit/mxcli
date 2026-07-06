@@ -156,7 +156,7 @@ func (w *Writer) serializeMicroflow(mf *microflows.Microflow) ([]byte, error) {
 	}
 	doc = append(doc, bson.E{Key: "WorkflowActionInfo", Value: nil})
 
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 // serializeSequenceFlow serializes a SequenceFlow to BSON with correct structure.
@@ -844,7 +844,7 @@ func (w *Writer) serializeNanoflow(nf *microflows.Nanoflow) ([]byte, error) {
 
 	// Parameters stored inside ObjectCollection.Objects, not as a separate key.
 
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 // stringOrDefault returns the value if non-empty, otherwise the default.

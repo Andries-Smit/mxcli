@@ -68,7 +68,7 @@ func (w *Writer) serializeBusinessEventService(svc *model.BusinessEventService) 
 	// SourceApi is null for service definitions
 	doc = append(doc, bson.E{Key: "SourceApi", Value: nil})
 
-	return bson.Marshal(doc)
+	return marshalUnitIDFirst(doc)
 }
 
 func serializeBusinessEventDefinition(def *model.BusinessEventDefinition) bson.D {

@@ -72,7 +72,9 @@ func (w *Writer) serializeProjectSettings(ps *model.ProjectSettings) ([]byte, er
 	}
 
 	doc = append(doc, bson.E{Key: "Settings", Value: settings})
-	return bson.Marshal(doc)
+	// The Settings array carries parsed parts as Go maps (RawParts); marshalling
+	// a map randomizes key order, so hoist "$ID"/"$Type" first per 11.12 (#nightly).
+	return marshalUnitIDFirst(doc)
 }
 
 // serializeModelSettings updates the raw BSON map with modified model settings fields.
