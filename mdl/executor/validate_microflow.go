@@ -166,6 +166,17 @@ func (v *microflowValidator) walkBody(body []ast.MicroflowStatement) {
 			// RETRIEVE populates a list variable — remove from empty tracking
 			delete(v.emptyListVars, stmt.Variable)
 		case *ast.LoopStmt:
+			// Check: @caption on a loop is silently dropped — Mendix for-loops
+			// have no caption (Microflows$LoopedActivity has no Caption
+			// property; Studio Pro auto-labels them from the iterator). The
+			// supported way to label a loop is an annotation note.
+			if stmt.Annotations != nil && stmt.Annotations.Caption != "" {
+				v.addViolation("MDL042", linter.SeverityWarning,
+					"@caption on a loop has no effect — Mendix loops have no caption "+
+						"(the loop activity has no Caption property, so it is dropped). "+
+						"Use @annotation to attach a note to the loop instead.",
+					"Replace @caption with @annotation to label the loop")
+			}
 			// Check: nested loop anti-pattern
 			if v.loopDepth > 0 {
 				v.addViolation("MDL001", linter.SeverityWarning,
