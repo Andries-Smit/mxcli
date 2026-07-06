@@ -204,10 +204,14 @@ func microflowToGen(mf *microflows.Microflow, major int) *genMf.Microflow {
 	}
 	out.SetObjectCollection(oc)
 
-	// Flows live on the microflow, not in the object collection.
+	// Flows live on the microflow, not in the object collection. Sequence flows
+	// and annotation flows share the same Flows list.
 	if mf.ObjectCollection != nil {
 		for _, f := range mf.ObjectCollection.Flows {
 			out.AddFlows(sequenceFlowToGen(f, major))
+		}
+		for _, af := range mf.ObjectCollection.AnnotationFlows {
+			out.AddFlows(annotationFlowToGen(af, major))
 		}
 	}
 
@@ -314,9 +318,41 @@ func microflowObjectToGen(obj microflows.MicroflowObject) element.Element {
 		g.SetRelativeMiddlePoint(pointStr(o.Position))
 		g.SetSize(sizeStr(o.Size))
 		return g
+	case *microflows.Annotation:
+		// A microflow annotation (yellow note); its caption is the note text.
+		// Connected to an activity by an AnnotationFlow (serialized in
+		// microflowToGen). Without this, `@annotation` was silently dropped.
+		g := genMf.NewAnnotation()
+		g.SetID(element.ID(o.ID))
+		g.SetCaption(o.Caption)
+		g.SetRelativeMiddlePoint(pointStr(o.Position))
+		g.SetSize(sizeStr(o.Size))
+		return g
 	default:
 		return nil // unsupported object type (added in later activity groups)
 	}
+}
+
+// annotationFlowToGen builds a Microflows$AnnotationFlow connecting an Annotation
+// (origin) to the activity it documents (destination). The line shape is
+// version-specific, mirroring the legacy serializeAnnotationFlow.
+func annotationFlowToGen(af *microflows.AnnotationFlow, major int) element.Element {
+	g := genMf.NewAnnotationFlow()
+	g.SetID(element.ID(af.ID))
+	g.SetOriginID(element.ID(af.OriginID))
+	g.SetDestinationID(element.ID(af.DestinationID))
+	g.SetOriginConnectionIndex(0)
+	g.SetDestinationConnectionIndex(0)
+	if major <= 9 {
+		g.SetOriginBezierVector("0;0")
+		g.SetDestinationBezierVector("0;0")
+	} else {
+		line := genMf.NewBezierCurve()
+		line.SetOriginControlVector("0;0")
+		line.SetDestinationControlVector("0;0")
+		g.SetLine(line)
+	}
+	return g
 }
 
 // loopSourceToGen builds a loop's source (iterate-over-list or while-condition).

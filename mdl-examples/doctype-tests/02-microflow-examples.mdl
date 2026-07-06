@@ -679,9 +679,13 @@ end;
 /
 
 /**
- * Example 6.1b: LOOP with custom caption
+ * Example 6.1b: LOOP with an annotation note
  *
- * Demonstrates activity metadata on a loop.
+ * Mendix for-loops have no editable caption (LoopedActivity has no Caption
+ * property — Studio Pro auto-labels them from the iterator). To document a
+ * loop, attach an annotation note with @annotation, which creates a
+ * Microflows$Annotation connected by an AnnotationFlow — the same thing you
+ * get by drawing a note onto the loop in Studio Pro.
  */
 create microflow MfTest.M021_2_LoopWithCaption (
   $ProductList: list of MfTest.Product
@@ -690,7 +694,7 @@ returns integer as $count
 begin
   declare $count integer = 0;
 
-  @caption 'Process products'
+  @annotation 'Process products'
   loop $Product in $ProductList
   begin
     set $count = $count + 1;
