@@ -1,0 +1,35 @@
+-- Bug: MOVE ENTITY left a stale reference in a view entity's OQL on the modelsdk
+-- engine, so `mx check` on Mendix 10.x reported CE0174 "does not resolve to an
+-- entity" (the 10.24 nightly failed 01-domain-model-examples/modelsdk this way).
+--
+-- Root cause: Mendix < 11 stores the OQL in TWO places — the top-level
+-- ViewEntitySourceDocument AND inline on the entity's OqlViewEntitySource.
+-- UpdateOqlQueriesForMovedEntity only rewrote the source document, leaving the
+-- inline copy pointing at the old module. (11.x keeps the OQL only on the source
+-- document, so it was unaffected — hence 10.x-only.) Fix: also rewrite the inline
+-- OqlViewEntitySource.Oql in every domain model.
+--
+-- Verify in Studio Pro (Mendix 10.x): open the project after exec — the
+-- InvoiceDetails view entity's query must join through DmTest2.Customer (the new
+-- module), and the consistency check must be clean (no CE0174).
+
+create module DmTest2;
+
+create entity DmTest.Customer ( FirstName: string(50), LastName: string(50), Email: string(100) );
+create entity DmTest.Invoice ( InvoiceNumber: string(50), IssueDate: datetime );
+create association DmTest.Invoice_Customer
+  from DmTest.Invoice to DmTest.Customer
+  type reference owner default;
+
+create view entity DmTest.InvoiceDetails (
+  InvoiceNumber: string(50),
+  CustomerName: string(200)
+) as
+  select
+    i.InvoiceNumber as InvoiceNumber,
+    c.FirstName + ' ' + c.LastName as CustomerName
+  from DmTest.Invoice as i
+  inner join i/DmTest.Invoice_Customer/DmTest.Customer as c;
+
+-- The move must rewrite BOTH OQL copies to DmTest2.Customer.
+move entity DmTest.Customer to DmTest2;

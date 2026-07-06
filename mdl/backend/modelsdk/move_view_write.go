@@ -66,6 +66,45 @@ func (b *Backend) UpdateOqlQueriesForMovedEntity(oldQualifiedName, newQualifiedN
 		}
 		updated++
 	}
+
+	// Mendix < 11 also stores the OQL inline on the entity's OqlViewEntitySource
+	// (see entityToGen), a second copy the ViewEntitySourceDocument sweep above
+	// does not touch. Without this the moved-entity reference stays stale there and
+	// `mx check` on 10.x reports CE0174 (11.x keeps the OQL only on the source
+	// document, so it isn't affected). Rewrite the inline copy in every domain model.
+	dms, err := b.ListDomainModels()
+	if err != nil {
+		return updated, fmt.Errorf("UpdateOqlQueriesForMovedEntity: list domain models: %w", err)
+	}
+	for _, info := range dms {
+		gdm, err := b.loadDomainModelGen(info.ID)
+		if err != nil {
+			return updated, err
+		}
+		changed := false
+		for _, el := range gdm.EntitiesItems() {
+			ent, ok := el.(*genDm.Entity)
+			if !ok {
+				continue
+			}
+			src, ok := ent.Source().(*genDm.OqlViewEntitySource)
+			if !ok {
+				continue
+			}
+			oql := src.Oql()
+			if oql == "" || !strings.Contains(oql, oldQualifiedName) {
+				continue
+			}
+			src.SetOql(strings.ReplaceAll(oql, oldQualifiedName, newQualifiedName))
+			changed = true
+			updated++
+		}
+		if changed {
+			if err := b.persistDM(info.ID, gdm); err != nil {
+				return updated, err
+			}
+		}
+	}
 	return updated, nil
 }
 
